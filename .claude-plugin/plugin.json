@@ -14,7 +14,7 @@
   "userConfig": {
     "api_key": {
       "type": "string",
-      "description": "ConPort API key (cport_live_...). Get one from https://me.conport.app/settings/api-keys",
+      "description": "ConPort API key (cport_live_...). Get one from https://me.conport.app/dashboard/connect",
       "secret": true
     }
   }

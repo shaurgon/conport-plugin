@@ -23,7 +23,7 @@ claude plugins install conport
 ```
 
 On install Claude asks for `api_key` — a ConPort key like `cport_live_...`.
-Generate one at [me.conport.app/settings/api-keys](https://me.conport.app/settings/api-keys).
+Generate one at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect).
 
 ## Configuration
 
