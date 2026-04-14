@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "conport": {
+      "type": "http",
+      "url": "https://api.conport.app/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${user_config.api_key}"
+      }
+    }
+  }
+}

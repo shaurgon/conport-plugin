@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CONPORT_API_KEY=\"${user_config.api_key}\" node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/check-command.js"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/user-prompt-submit.js"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "prompt_input_exit|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CONPORT_API_KEY=\"${user_config.api_key}\" node ${CLAUDE_PLUGIN_ROOT}/scripts/session-reflect.js"
+          }
+        ]
+      }
+    ]
+  }
+}

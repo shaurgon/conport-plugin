@@ -1,0 +1,21 @@
+{
+  "name": "conport",
+  "version": "1.0.0",
+  "description": "ConPort — project context & agent memory for Claude Code (MCP + skills + hooks).",
+  "author": {
+    "name": "shaurgon",
+    "url": "https://github.com/shaurgon"
+  },
+  "repository": "https://github.com/shaurgon/conport-plugin",
+  "keywords": ["conport", "context", "memory", "mcp", "agents", "graphrag"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "description": "ConPort API key (cport_live_...). Get one from https://me.conport.app/settings/api-keys",
+      "secret": true
+    }
+  }
+}
