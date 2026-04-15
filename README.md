@@ -1,31 +1,40 @@
-# ConPort Plugin
+# ConPort plugin
 
-Claude Code plugin that bundles MCP integration, skills, and hooks for
-[ConPort](https://conport.app) — project context & agent memory.
+MCP integration + portable skills for [ConPort](https://conport.app) — project
+context & agent memory. Packaged as a Claude Code plugin, but the MCP server
+and skills work across many clients.
 
-## What it installs
+## What it ships
 
-- **MCP server** `conport` (streamable HTTP → `https://api.conport.app/mcp/`) with 40+ tools for decisions, tasks, patterns, documents, custom data, links, search, GraphRAG, agent memory.
-- **Skills**
-  - `conport` — session context management (init, search, log_progress, sync_decision, …)
-  - `conport-agent` — persistent agent memory (agent_init, agent_remember, agent_recall, …)
-- **Hooks**
+- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, GraphRAG, agent memory).
+- **Skills** (plain `SKILL.md`, portable)
+  - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
+  - `conport-agent` — persistent agent identity & memory (`agent_init`, `agent_remember`, `agent_recall`, …)
+- **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns
   - `UserPromptSubmit` — context restore + save reminder every 5 messages
-  - `SessionEnd` — LLM-based reflection of unsaved decisions from the transcript
+  - `SessionEnd` — LLM-based reflection of unsaved decisions
 
 ## Install
 
-```bash
-claude plugins marketplace add https://github.com/shaurgon/conport-plugin
-claude plugins install conport
-```
+Pick your client:
 
-On install Claude asks for `api_key` — a ConPort key like `cport_live_...`.
-Generate one at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect).
+| Client | Guide |
+|---|---|
+| Claude Code | [docs/install/claude-code.md](./docs/install/claude-code.md) |
+| Cursor | [docs/install/cursor.md](./docs/install/cursor.md) |
+| Claude.ai (web) | [docs/install/claude-ai.md](./docs/install/claude-ai.md) |
+| OpenClaw | [docs/install/openclaw.md](./docs/install/openclaw.md) |
+| mcporter (generic MCP host) | [docs/install/mcporter.md](./docs/install/mcporter.md) |
+| Paperclip | [docs/install/paperclip.md](./docs/install/paperclip.md) *(stub — verifying upstream)* |
 
-## Configuration
+Onboarding an operator (e.g. an OpenClaw agent told to "add conport by
+instructions"): point them at [INSTRUCTIONS.md](./INSTRUCTIONS.md).
+
+Get an API key at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect) — format is `cport_live_...`.
+
+## Configuration (Claude Code)
 
 | Variable | Where | Purpose |
 |---|---|---|
@@ -33,34 +42,31 @@ Generate one at [me.conport.app/dashboard/connect](https://me.conport.app/dashbo
 | `CONPORT_PROJECT_ID` | `.claude/settings.local.json` env (optional) | Override numeric project id |
 | `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (optional) | Override project name |
 
-If neither override is set the hooks fall back to `basename(git remote)` or the current directory name.
+Fallback when neither override is set: `basename(git remote)` → current dir name.
 
-## Paths
+## Paths (Claude Code hooks)
 
-- `${CLAUDE_PLUGIN_ROOT}` — plugin install location (read-only: scripts, skills)
+- `${CLAUDE_PLUGIN_ROOT}` — read-only plugin install (scripts, skills)
 - `${CLAUDE_PLUGIN_DATA}` — persistent per-plugin storage
-  - `deny-list.json` — cached conventions from ConPort
+  - `deny-list.json` — cached conventions
   - `hook_state/conport_reminder.json` — save-reminder counter
   - `session_logs/<session_id>_restored.flag` — "context already restored" markers
   - `session-end.log` — reflection debug log
 
-## Migration from the manual setup
+## Migration from a manual Claude Code setup
 
-1. `claude plugins install conport`
-2. Remove the manual `conport` entry from `.claude/settings.local.json` → `mcpServers`
-3. Remove the hook entries in `~/.claude/settings.json` that pointed to `~/.claude/hooks/guardrails/*` and `~/.claude/hooks/session-reflect.py`
-4. Delete `~/.claude/skills/conport/` and `~/.claude/skills/conport-agent/`
-
-## Runtime
-
-Hook scripts are plain Node.js (no external dependencies — only built-ins: `fs`, `http`/`https`, `child_process`, `path`). Since Claude Code itself runs on Node, nothing else needs to be installed.
+1. Install the plugin (see the Claude Code guide above).
+2. Remove the manual `conport` entry from `~/.claude.json` → `mcpServers`.
+3. Remove conport-related hook entries from `~/.claude/settings.json`.
+4. Delete `~/.claude/skills/conport` and `~/.claude/skills/conport-agent`.
+5. Delete `~/.claude/hooks/guardrails/` + `user_prompt_submit.py` + `session-reflect.py`.
 
 ## Local development
 
-From the `conport-global` repo:
+From the `conport-global` repo root:
 
 ```bash
 claude --plugin-dir ./plugin
 ```
 
-Adjust scripts under `plugin/scripts/`, hot-reload `claude --plugin-dir ./plugin` to pick them up.
+Adjust files under `plugin/`, then `/reload-plugins` in the running session.
