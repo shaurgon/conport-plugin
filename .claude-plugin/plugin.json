@@ -13,9 +13,8 @@
   "mcpServers": "./.mcp.json",
   "userConfig": {
     "api_key": {
-      "type": "string",
       "description": "ConPort API key (cport_live_...). Get one from https://me.conport.app/dashboard/connect",
-      "secret": true
+      "sensitive": true
     }
   }
 }
