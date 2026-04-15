@@ -71,12 +71,3 @@ Fallback when neither override is set: `basename(git remote)` → current dir na
 ConPort is solo-maintained — top-voted Ideas get reviewed monthly, and
 roadmap commitments are announced in the Announcements category.
 
-## Local development
-
-From the `conport-global` repo root:
-
-```bash
-claude --plugin-dir ./plugin
-```
-
-Adjust files under `plugin/`, then `/reload-plugins` in the running session.
