@@ -66,6 +66,7 @@ Fallback when neither override is set: `basename(git remote)` → current dir na
 - **Discussions** — feature ideas, Q&A, show-and-tell:
   [github.com/shaurgon/conport-plugin/discussions](https://github.com/shaurgon/conport-plugin/discussions)
 - **Roadmap** — priorities and scope: [roadmap.md](./roadmap.md)
+- **Data handling** — what we store, where, who sees it, how to export/delete: [data-handling.md](./data-handling.md)
 - **Bug reports** — [Issues](https://github.com/shaurgon/conport-plugin/issues)
 
 ConPort is solo-maintained — top-voted Ideas get reviewed monthly, and
