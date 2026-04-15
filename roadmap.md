@@ -27,9 +27,12 @@ until the product earns its keep with individual users.
 
 - **Team features** — shared projects, RBAC, audit logs. Deferred until
   solo experience is rock-solid.
-- **OSS** — backend stays closed source for now (see public data handling
-  statement for the trust story). Plugin and skills are open in this repo.
-- **Self-hosted distribution** — possible if there's demand. Not a priority.
+
+> Plugin and skills in this repo are open. The backend is and will stay
+> a hosted service — it's too operationally involved (PostgreSQL +
+> pgvector, embedding model, MCP transport, auth, migrations) to make
+> self-hosting a supported path. See the public data handling statement
+> for the trust story.
 
 ## How decisions are made
 
