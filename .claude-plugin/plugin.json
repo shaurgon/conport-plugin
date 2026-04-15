@@ -8,15 +8,13 @@
   },
   "repository": "https://github.com/shaurgon/conport-plugin",
   "keywords": ["conport", "context", "memory", "mcp", "agents", "graphrag"],
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
-  "mcpServers": "./.mcp.json",
   "userConfig": {
     "api_key": {
       "type": "string",
       "title": "ConPort API key",
       "description": "ConPort API key (cport_live_...). Get one from https://me.conport.app/dashboard/connect",
-      "sensitive": true
+      "sensitive": true,
+      "required": true
     }
   }
 }
