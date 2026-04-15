@@ -61,6 +61,16 @@ Fallback when neither override is set: `basename(git remote)` → current dir na
 4. Delete `~/.claude/skills/conport` and `~/.claude/skills/conport-agent`.
 5. Delete `~/.claude/hooks/guardrails/` + `user_prompt_submit.py` + `session-reflect.py`.
 
+## Community & roadmap
+
+- **Discussions** — feature ideas, Q&A, show-and-tell:
+  [github.com/shaurgon/conport-plugin/discussions](https://github.com/shaurgon/conport-plugin/discussions)
+- **Roadmap** — priorities and scope: [roadmap.md](./roadmap.md)
+- **Bug reports** — [Issues](https://github.com/shaurgon/conport-plugin/issues)
+
+ConPort is solo-maintained — top-voted Ideas get reviewed monthly, and
+roadmap commitments are announced in the Announcements category.
+
 ## Local development
 
 From the `conport-global` repo root:
