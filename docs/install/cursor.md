@@ -47,14 +47,16 @@ It *also* reads `.claude/skills/` and `~/.claude/skills/`, so if you already
 have the Claude Code plugin installed, Cursor inherits the same skills
 automatically.
 
-Otherwise, clone them once:
+Otherwise, clone once and symlink the `conport` skill:
 
 ```bash
 git clone --depth=1 https://github.com/shaurgon/conport-plugin ~/.conport-plugin
 mkdir -p ~/.cursor/skills
-ln -s ~/.conport-plugin/skills/conport       ~/.cursor/skills/conport
-ln -s ~/.conport-plugin/skills/conport-agent ~/.cursor/skills/conport-agent
+ln -s ~/.conport-plugin/skills/conport ~/.cursor/skills/conport
 ```
+
+> The plugin also ships `conport-agent` for multi-agent frameworks (Paperclip,
+> OpenClaw, Hermes). Inside Cursor you don't need it — skip it.
 
 ## Verify
 

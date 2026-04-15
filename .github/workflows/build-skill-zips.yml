@@ -1,0 +1,56 @@
+name: Build skill zips
+
+# Runs inside the mirrored marketplace repo (shaurgon/conport-plugin).
+# On every change under skills/** rebuilds conport-skill.zip and
+# conport-agent-skill.zip and attaches them to a rolling `skills-latest`
+# release so users can download stable URLs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - '.github/workflows/build-skill-zips.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-skill-zips
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Zip skills
+        run: |
+          set -euo pipefail
+          cd skills
+          zip -qr ../conport-skill.zip       conport
+          zip -qr ../conport-agent-skill.zip conport-agent
+          cd ..
+          ls -lh conport-skill.zip conport-agent-skill.zip
+
+      - name: Publish rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: skills-latest
+          name: Skills (latest)
+          body: |
+            Auto-built zip bundles of the two portable ConPort skills.
+
+            - `conport-skill.zip` — project context (`conport`)
+            - `conport-agent-skill.zip` — agent identity & memory (`conport-agent`)
+
+            Upload each zip to Claude.ai via **Settings → Features → Skills → Upload Skill**.
+          files: |
+            conport-skill.zip
+            conport-agent-skill.zip
+          make_latest: "false"
