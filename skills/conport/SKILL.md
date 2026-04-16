@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 9.0.0
+  version: 10.0.0
 ---
 
 # ConPort — Project Management System
@@ -105,6 +105,17 @@ If auto-detection did not work, ask the user.
 | Spec / API docs | `add_document` |
 | Document update | `update_document` |
 
+### Gaps (Knowledge Base Health)
+
+| Trigger | Tool |
+|---------|------|
+| Init response shows gaps | Review `gaps.fresh` in init response |
+| "Show all gaps" | `gap_list` with optional category/state filters |
+| Seen a gap, will fix later | `gap_ack` (acknowledged, still visible) |
+| "This is not a real gap" | `gap_dismiss` with mandatory reason |
+| Re-open dismissed gap | `gap_undismiss` |
+| "How healthy is the KB?" | `gap_stats` |
+
 ---
 
 ## OUTPUT FORMAT
@@ -151,4 +162,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v8.0.0 | 40 MCP tools | Auto-detection | GraphRAG enabled*
+*v10.0.0 | 45 MCP tools | Auto-detection | GraphRAG enabled | Gap detection*
