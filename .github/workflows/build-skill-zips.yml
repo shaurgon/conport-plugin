@@ -1,9 +1,10 @@
 name: Build skill zips
 
 # Runs inside the mirrored marketplace repo (shaurgon/conport-plugin).
-# On every change under skills/** rebuilds conport-skill.zip and
-# conport-agent-skill.zip and attaches them to a rolling `skills-latest`
-# release so users can download stable URLs.
+#
+# Two triggers:
+#   1. Push to main under skills/** → rolling `skills-latest` release
+#   2. Tag push v*.*.* → versioned release (e.g. v2.0.0)
 
 on:
   push:
@@ -11,6 +12,8 @@ on:
     paths:
       - 'skills/**'
       - '.github/workflows/build-skill-zips.yml'
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +32,20 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Read plugin version
+        id: version
+        run: |
+          ver=$(jq -r '.version' .claude-plugin/plugin.json)
+          echo "plugin_version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Read skill versions
+        id: skill_versions
+        run: |
+          conport_ver=$(grep -oP 'version:\s*\K\S+' skills/conport/SKILL.md | head -1)
+          agent_ver=$(grep -oP 'version:\s*\K\S+' skills/conport-agent/SKILL.md | head -1)
+          echo "conport=$conport_ver" >> "$GITHUB_OUTPUT"
+          echo "agent=$agent_ver" >> "$GITHUB_OUTPUT"
+
       - name: Zip skills
         run: |
           set -euo pipefail
@@ -38,7 +55,8 @@ jobs:
           cd ..
           ls -lh conport-skill.zip conport-agent-skill.zip
 
-      - name: Publish rolling release
+      - name: Publish rolling release (on branch push)
+        if: github.ref_type == 'branch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: skills-latest
@@ -46,11 +64,35 @@ jobs:
           body: |
             Auto-built zip bundles of the two portable ConPort skills.
 
-            - `conport-skill.zip` — project context (`conport`)
-            - `conport-agent-skill.zip` — agent identity & memory (`conport-agent`)
+            **Plugin:** v${{ steps.version.outputs.plugin_version }}
+            **Skills:** conport v${{ steps.skill_versions.outputs.conport }}, conport-agent v${{ steps.skill_versions.outputs.agent }}
+
+            - `conport-skill.zip` — project context
+            - `conport-agent-skill.zip` — agent identity & memory
 
             Upload each zip to Claude.ai via **Settings → Features → Skills → Upload Skill**.
           files: |
             conport-skill.zip
             conport-agent-skill.zip
           make_latest: "false"
+
+      - name: Publish versioned release (on tag push)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ steps.version.outputs.plugin_version }}
+          body: |
+            ## ConPort Plugin v${{ steps.version.outputs.plugin_version }}
+
+            **Skills:** conport v${{ steps.skill_versions.outputs.conport }}, conport-agent v${{ steps.skill_versions.outputs.agent }}
+
+            ### Assets
+            - `conport-skill.zip` — project context skill
+            - `conport-agent-skill.zip` — agent identity & memory skill
+
+            Upload each zip to Claude.ai via **Settings → Features → Skills → Upload Skill**.
+          files: |
+            conport-skill.zip
+            conport-agent-skill.zip
+          make_latest: "true"
