@@ -120,6 +120,7 @@ If auto-detection did not work, ask the user.
 
 | Trigger | Tool |
 |---------|------|
+| "Clean up the graph" | `semantic_cleanup` — one-click: run pass → reject noise → apply safe mutations → show remainder |
 | "Run semantic analysis" | `semantic_pass_run` (dry_run=true first) |
 | "Show proposals" | `semantic_proposals_list` |
 | Approve a proposal | `semantic_proposal_approve` |
