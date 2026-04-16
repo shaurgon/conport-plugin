@@ -116,6 +116,18 @@ If auto-detection did not work, ask the user.
 | Re-open dismissed gap | `gap_undismiss` |
 | "How healthy is the KB?" | `gap_stats` |
 
+### Semantic Pass (LLM-driven graph analysis)
+
+| Trigger | Tool |
+|---------|------|
+| "Run semantic analysis" | `semantic_pass_run` (dry_run=true first) |
+| "Show proposals" | `semantic_proposals_list` |
+| Approve a proposal | `semantic_proposal_approve` |
+| Reject a proposal | `semantic_proposal_reject` with reason |
+| Defer for later | `semantic_proposal_defer` |
+| Apply approved proposals | `semantic_proposals_apply` |
+| "Pass stats" | `semantic_pass_stats` |
+
 ---
 
 ## OUTPUT FORMAT
@@ -162,4 +174,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v10.0.0 | 45 MCP tools | Auto-detection | GraphRAG enabled | Gap detection*
+*v10.0.0 | 52 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass*
