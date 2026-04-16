@@ -59,7 +59,7 @@ If auto-detection did not work, ask the user.
 |---------|------|
 | "We need to do X" | `add_task` with priority |
 | "X depends on Y" | `add_task_dep` |
-| "Break it into subtasks" | `add_task` with `parent_task_number` |
+| "Break it into subtasks" | `add_task` with `parent_task_id` |
 
 ### Execution
 

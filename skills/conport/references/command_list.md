@@ -21,9 +21,9 @@ mcp__conport__<tool_name>({
 })
 ```
 
-> **Identifiers:** most items are addressed by their **per-project number**
-> (`task_number`, `decision_number`, `document_number`, `pattern_number`,
-> `progress_number`). `project_id` is still the integer project ID.
+> **Identifiers:** most items are addressed by their **per-project sequential
+> ID** (`task_id`, `decision_id`, `document_id`, `pattern_id`,
+> `progress_id`). `project_id` is still the integer project ID.
 
 ---
 
@@ -132,7 +132,7 @@ mcp__conport__sync_decision({
 | rationale | string/object | no | Rationale (max 2000 chars). JSON string or object. |
 | tags | array | no | Tags |
 
-**Returns:** decision object including per-project `number`. May include
+**Returns:** decision object including per-project `id`. May include
 `_hint`, `_similar_decisions`, `_hint_message` when a cluster is detected.
 
 ### list_decisions
@@ -157,19 +157,19 @@ mcp__conport__list_decisions({
 
 ### delete_decision
 
-Delete a decision by per-project number
+Delete a decision by per-project ID
 
 ```
 mcp__conport__delete_decision({
   project_id: 11,
-  decision_number: 5
+  decision_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| decision_number | integer | yes | Per-project decision number |
+| decision_id | integer | yes | Per-project decision ID |
 
 ---
 
@@ -181,7 +181,7 @@ For tasks with statuses, use **Tasks**.
 ### log_progress
 
 Create an activity log entry. Optionally links to a task/decision/pattern
-(linked target referenced by its per-project number).
+(linked target referenced by its per-project ID).
 
 ```
 mcp__conport__log_progress({
@@ -189,7 +189,7 @@ mcp__conport__log_progress({
   description: "Started work on auth module",
   title: "Auth update",
   linked_item_type: "task",
-  linked_item_number: 5
+  linked_item_id: 5
 })
 ```
 
@@ -198,11 +198,11 @@ mcp__conport__log_progress({
 | project_id | integer | yes | Project ID |
 | description | string | yes | Description (max 2000 chars) |
 | title | string | no | Title (max 200 chars) |
-| parent_number | integer | no | Per-project number of parent progress entry (threading) |
+| parent_number | integer | no | Per-project ID of parent progress entry (threading) |
 | linked_item_type | string | no | task \| decision \| pattern |
-| linked_item_number | integer | no | Per-project number of the linked item |
+| linked_item_id | integer | no | Per-project ID of the linked item |
 
-**Returns:** progress entry with per-project `number`.
+**Returns:** progress entry with per-project `id`.
 
 ### update_progress
 
@@ -211,7 +211,7 @@ Update an activity entry
 ```
 mcp__conport__update_progress({
   project_id: 11,
-  progress_number: 45,
+  progress_id: 45,
   description: "Updated implementation notes"
 })
 ```
@@ -219,7 +219,7 @@ mcp__conport__update_progress({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| progress_number | integer | yes | Per-project progress entry number |
+| progress_id | integer | yes | Per-project progress entry ID |
 | title | string | no | New title |
 | description | string | no | New description |
 
@@ -248,14 +248,14 @@ Delete a progress entry
 ```
 mcp__conport__delete_progress({
   project_id: 11,
-  progress_number: 8
+  progress_id: 8
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| progress_number | integer | yes | Per-project progress entry number |
+| progress_id | integer | yes | Per-project progress entry ID |
 
 ---
 
@@ -281,7 +281,7 @@ mcp__conport__add_task({
 | description | string | no | Description (max 2000 chars) |
 | status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| DONE \| CANCELLED (default: TODO) |
 | priority | integer | no | 1-5 (5=highest, default: 3) |
-| parent_task_number | integer | no | Per-project number of parent task |
+| parent_task_id | integer | no | Per-project ID of parent task |
 
 ### update_task
 
@@ -290,7 +290,7 @@ Update a task
 ```
 mcp__conport__update_task({
   project_id: 11,
-  task_number: 5,
+  task_id: 5,
   status: "DONE"
 })
 ```
@@ -298,7 +298,7 @@ mcp__conport__update_task({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| task_number | integer | yes | Per-project task number |
+| task_id | integer | yes | Per-project task ID |
 | title | string | no | New title |
 | description | string | no | New description |
 | status | string | no | New status |
@@ -321,7 +321,7 @@ mcp__conport__list_tasks({
 | project_id | integer | yes | Project ID |
 | status | string | no | Filter by status. Comma-separated or "ALL" (default: "TODO,IN_PROGRESS") |
 | priority | integer | no | Filter by priority |
-| parent_task_number | integer | no | Filter by parent per-project number (0 = root tasks only) |
+| parent_task_id | integer | no | Filter by parent per-project ID (0 = root tasks only) |
 | limit | integer | no | Max results (default: 50) |
 | include_description | boolean | no | Include task descriptions (default: false) |
 
@@ -332,14 +332,14 @@ Task details with dependencies and subtasks
 ```
 mcp__conport__get_task({
   project_id: 11,
-  task_number: 5
+  task_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| task_number | integer | yes | Per-project task number |
+| task_id | integer | yes | Per-project task ID |
 
 ### add_task_dep
 
@@ -348,8 +348,8 @@ Add a dependency between two tasks
 ```
 mcp__conport__add_task_dep({
   project_id: 11,
-  task_number: 5,
-  depends_on_task_number: 3,
+  task_id: 5,
+  depends_on_task_id: 3,
   dependency_type: "blocks"
 })
 ```
@@ -357,8 +357,8 @@ mcp__conport__add_task_dep({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| task_number | integer | yes | Per-project number of the dependent task |
-| depends_on_task_number | integer | yes | Per-project number of the task it depends on |
+| task_id | integer | yes | Per-project ID of the dependent task |
+| depends_on_task_id | integer | yes | Per-project ID of the task it depends on |
 | dependency_type | string | no | blocks \| requires \| suggests (default: blocks) |
 
 ### delete_task
@@ -368,14 +368,14 @@ Delete a task (also removes its dependencies)
 ```
 mcp__conport__delete_task({
   project_id: 11,
-  task_number: 5
+  task_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| task_number | integer | yes | Per-project task number |
+| task_id | integer | yes | Per-project task ID |
 
 ---
 
@@ -402,7 +402,7 @@ mcp__conport__add_document({
 | doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| other |
 | author | string | no | Author (max 100 chars) |
 | tags | array | no | Tags |
-| parent_document_number | integer | no | Per-project number of parent document |
+| parent_document_id | integer | no | Per-project ID of parent document |
 
 ### update_document
 
@@ -411,7 +411,7 @@ Update a document (creates a new version by default)
 ```
 mcp__conport__update_document({
   project_id: 11,
-  document_number: 5,
+  document_id: 5,
   content: "# Updated API\n..."
 })
 ```
@@ -419,7 +419,7 @@ mcp__conport__update_document({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| document_number | integer | yes | Per-project document number |
+| document_id | integer | yes | Per-project document ID |
 | title | string | no | New title |
 | content | string | no | New content |
 | create_new_version | boolean | no | Create a new version (default: true) |
@@ -448,14 +448,14 @@ Get a document
 ```
 mcp__conport__get_document({
   project_id: 11,
-  document_number: 5
+  document_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| document_number | integer | yes | Per-project document number |
+| document_id | integer | yes | Per-project document ID |
 
 ### document_versions
 
@@ -464,14 +464,14 @@ Document version history
 ```
 mcp__conport__document_versions({
   project_id: 11,
-  document_number: 5
+  document_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| document_number | integer | yes | Per-project document number |
+| document_id | integer | yes | Per-project document ID |
 
 ### delete_document
 
@@ -480,14 +480,14 @@ Delete a document
 ```
 mcp__conport__delete_document({
   project_id: 11,
-  document_number: 5
+  document_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| document_number | integer | yes | Per-project document number |
+| document_id | integer | yes | Per-project document ID |
 
 ---
 
@@ -538,15 +538,15 @@ mcp__conport__list_patterns({
 ### link_items
 
 Create a link between two items. Both source and target are referenced by
-their **per-project numbers** (not internal IDs).
+their **per-project IDs** (sequential within the project).
 
 ```
 mcp__conport__link_items({
   project_id: 11,
   source_type: "decision",
-  source_number: 7,
+  source_id: 7,
   target_type: "pattern",
-  target_number: 3,
+  target_id: 3,
   relationship: "implements",
   description: "Decision implements this pattern"
 })
@@ -556,9 +556,9 @@ mcp__conport__link_items({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | source_type | string | yes | decision \| progress \| pattern \| task \| document |
-| source_number | integer | yes | Per-project number of source item |
+| source_id | integer | yes | Per-project ID of source item |
 | target_type | string | yes | decision \| progress \| pattern \| task \| document |
-| target_number | integer | yes | Per-project number of target item |
+| target_id | integer | yes | Per-project ID of target item |
 | relationship | string | no | Link type (default: relates_to) |
 | description | string | no | Link description |
 
@@ -572,7 +572,7 @@ Get items linked to a specific item
 mcp__conport__get_linked({
   project_id: 11,
   item_type: "decision",
-  item_number: 7,
+  item_id: 7,
   direction: "outgoing"
 })
 ```
@@ -581,7 +581,7 @@ mcp__conport__get_linked({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | item_type | string | yes | decision \| progress \| pattern \| task \| document |
-| item_number | integer | yes | Per-project number of the item |
+| item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Filter by link type |
 | direction | string | no | outgoing \| incoming \| both (default: both) |
 
@@ -804,13 +804,13 @@ mcp__conport__recent_activity({
 
 ### item_history
 
-Version history of a specific item (by per-project number)
+Version history of a specific item (by per-project ID)
 
 ```
 mcp__conport__item_history({
   project_id: 11,
   item_type: "decision",
-  item_number: 5
+  item_id: 5
 })
 ```
 
@@ -818,7 +818,7 @@ mcp__conport__item_history({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | item_type | string | yes | decision \| progress \| pattern \| custom_data \| context |
-| item_number | integer | yes | Per-project item number (for `custom_data`/`context` the raw ID is used) |
+| item_id | integer | yes | Per-project item ID (for `custom_data`/`context` the raw ID is used) |
 
 ---
 

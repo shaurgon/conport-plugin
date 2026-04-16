@@ -34,7 +34,7 @@ Last 48h
 
 ## Variants
 
-- "Give me the status of epic #88" → add `parent_task_number: 88` to
+- "Give me the status of epic #88" → add `parent_task_id: 88` to
   `list_tasks`, skip global activity.
 - "What changed since Monday?" → `recent_activity` with a wider window.
 - "Just the numbers" → use the `stats` from `init` and stop there.

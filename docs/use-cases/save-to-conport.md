@@ -13,7 +13,7 @@ picking the right tool for each piece:
   (summary + rationale + tags). One decision per distinct trade-off, not
   one per commit.
 - **Progress / what-was-done** → `mcp__conport__log_progress` (title +
-  description, optionally `linked_item_type + linked_item_number` to tie it
+  description, optionally `linked_item_type + linked_item_id` to tie it
   to a task or decision).
 - **Reusable pattern learned** → `mcp__conport__log_pattern` (name +
   description + tags).

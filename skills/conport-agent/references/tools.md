@@ -13,9 +13,9 @@
 |------|------|-------------|
 | `agent_remember` | `agent_uuid`, `content`, `memory_type?`, `tags?`, `category?`, `entity_ref?`, `pinned?` | Store memory with auto-dedup. Similar existing memories are superseded. |
 | `agent_recall` | `agent_uuid`, `query`, `memory_type?`, `category?`, `limit?`, `pinned_only?`, `tags?`, `include_linked?` | Semantic search with decay scoring. Hot memories rank higher. |
-| `agent_forget` | `agent_uuid`, `memory_number`, `hard_delete?` | Supersede (default) or hard-delete a memory by its per-agent number. |
+| `agent_forget` | `agent_uuid`, `memory_id`, `hard_delete?` | Supersede (default) or hard-delete a memory by its per-agent id. |
 | `agent_reflect` | `agent_uuid`, `scope?` | Analyze memories: promotable notes, stale, duplicates. scope=full auto-supersedes >0.92 dupes. |
-| `agent_link_memories` | `agent_uuid`, `source_memory_number`, `target_memory_number`, `relation_type`, `similarity_score?` | Create directional link between memories (per-agent numbers). |
+| `agent_link_memories` | `agent_uuid`, `source_memory_id`, `target_memory_id`, `relation_type`, `similarity_score?` | Create directional link between memories (per-agent ids). |
 
 ## Decay Scoring
 
