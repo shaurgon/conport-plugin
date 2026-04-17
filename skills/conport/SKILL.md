@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 10.0.0
+  version: 10.1.0
 ---
 
 # ConPort — Project Management System
@@ -60,6 +60,7 @@ If auto-detection did not work, ask the user.
 | "We need to do X" | `add_task` with priority |
 | "X depends on Y" | `add_task_dep` |
 | "Break it into subtasks" | `add_task` with `parent_task_id` |
+| Need a task in another project I own (no context switch) | `add_linked_task` with `target_project` name |
 
 ### Execution
 
@@ -175,4 +176,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v10.0.0 | 52 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass*
+*v10.1.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks*
