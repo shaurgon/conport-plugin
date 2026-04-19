@@ -406,22 +406,46 @@ mcp__conport__add_document({
 
 ### update_document
 
-Update a document (creates a new version by default)
+Surgically patch a document via a list of operations. Creates a new version by default.
+
+There is **no** `content` field for a full rewrite — use `operations: [{op: "set_content", content: "..."}]` instead. This keeps large-document edits cheap: you point at a section or substring and replace just that piece.
 
 ```
 mcp__conport__update_document({
   project_id: 11,
   document_id: 5,
-  content: "# Updated API\n..."
+  operations: [
+    { op: "replace_section_body", heading: "## API Endpoints", content: "...new body..." },
+    { op: "append_to_section",   heading: "## Changelog",      content: "- 2026-04-19: patched" },
+    { op: "find_replace",        find: "old-name", replace: "new-name", replace_all: true }
+  ]
 })
 ```
+
+**Operation kinds** (all take a discriminator `op`):
+
+| op | fields | effect |
+|----|--------|--------|
+| `set_content` | `content` | replace entire document body |
+| `replace_section_body` | `heading`, `content` | replace body under a heading; heading line preserved; subsections untouched |
+| `append_to_section` | `heading`, `content` | append a paragraph at the end of a section's body |
+| `insert_section_after` | `heading`, `content` | insert a sibling block after the section (past its subsections) |
+| `delete_section` | `heading` | remove the section including its subsections |
+| `find_replace` | `find`, `replace`, `replace_all?` | literal string replace; errors on 0 matches or on multiple matches when `replace_all=false` |
+
+`heading` accepts either the literal heading line (`"## API Endpoints"`) or a disambiguating path (`"## Architecture > ### Database"`). Ambiguous matches return an error listing all matching heading paths.
+
+Operations are applied sequentially in memory; if any operation fails, nothing is persisted and no new version is written. One new version per call regardless of how many operations it contains.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | document_id | integer | yes | Per-project document ID |
+| operations | array | no | List of patch operations (see above). Omit for metadata-only update. |
 | title | string | no | New title |
-| content | string | no | New content |
+| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| other |
+| tags | array | no | New tag list |
+| author | string | no | New author |
 | create_new_version | boolean | no | Create a new version (default: true) |
 
 ### list_documents

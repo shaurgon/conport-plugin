@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 10.1.0
+  version: 11.0.0
 ---
 
 # ConPort — Project Management System
@@ -176,4 +176,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v10.1.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks*
+*v11.0.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching*
