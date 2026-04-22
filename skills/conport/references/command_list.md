@@ -427,7 +427,7 @@ mcp__conport__update_document({
 | op | fields | effect |
 |----|--------|--------|
 | `set_content` | `content` | replace entire document body |
-| `replace_section_body` | `heading`, `content` | replace body under a heading; heading line preserved; subsections untouched |
+| `replace_section_body` | `heading`, `content` | replace everything under a heading (body + all subsections); heading line preserved |
 | `append_to_section` | `heading`, `content` | append a paragraph at the end of a section's body |
 | `insert_section_after` | `heading`, `content` | insert a sibling block after the section (past its subsections) |
 | `delete_section` | `heading` | remove the section including its subsections |
@@ -446,7 +446,7 @@ Operations are applied sequentially in memory; if any operation fails, nothing i
 | doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| other |
 | tags | array | no | New tag list |
 | author | string | no | New author |
-| create_new_version | boolean | no | Create a new version (default: true) |
+| create_new_version | boolean | no | Snapshot-per-edit history. Default **false** — the current row is updated in place and `document_id` stays stable. Set `true` only when you want a new version row with a fresh `document_id` and the old row marked `is_current=false`. |
 
 ### list_documents
 
