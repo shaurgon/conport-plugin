@@ -70,7 +70,7 @@ After the user responds:
 
 3. **Link external docs** (only if the user pointed to any):
    - Read the doc(s) with the `Read` tool first (don't guess).
-   - Store the link in `active_context.recent_changes` or as a document via `add_document`.
+   - Store the link as a document via `add_document`.
 
 ---
 

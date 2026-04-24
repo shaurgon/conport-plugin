@@ -46,8 +46,13 @@ mcp__conport__init({
 | description | string | no | Project description (max 2000 chars) |
 
 **Returns:** `project_id`, `name`, `recent_decisions`, `recent_patterns`,
-`active_tasks` (TODO+IN_PROGRESS), `stats`, `active_context`, `instructions`,
-`summary`, and `reconciliation` when stale IN_PROGRESS tasks are detected.
+`backlog` (`total_todo`, `total_in_progress`, `top` — up to 5 items with
+`effective_priority` and `subtask_count`), `stats`, `active_context`
+(`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
+entries), `instructions`, `summary`, and `reconciliation` when stale
+IN_PROGRESS tasks are detected. Top-5 excludes subtasks of active epics so
+you see roots + orphans; `effective_priority` rolls up the max priority of
+direct children.
 
 ---
 
@@ -73,20 +78,23 @@ mcp__conport__update_product_context({
 
 ### update_active_context
 
-Update a single active context field (current_focus, open_questions, etc.)
+Update a single active context field. `current_focus` is usually managed
+automatically — it snaps to the task you move to IN_PROGRESS and clears when
+that task leaves IN_PROGRESS, so manual writes are rarely needed.
+`open_questions` is the free-form human field for pending questions.
 
 ```
 mcp__conport__update_active_context({
   project_id: 11,
-  field: "current_focus",
-  value: "Implementing OAuth2"
+  field: "open_questions",
+  value: ["How should we handle rate limits?"]
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| field | string | yes | current_focus \| recent_changes \| open_questions \| risks |
+| field | string | yes | current_focus \| open_questions |
 | value | string/array | yes | New value |
 
 ### context_history

@@ -18,7 +18,9 @@ picking the right tool for each piece:
 - **Reusable pattern learned** → `mcp__conport__log_pattern` (name +
   description + tags).
 - **Focus / open questions drift** → `mcp__conport__update_active_context`
-  (merge into `current_focus`, `open_questions`, `recent_changes`).
+  (field: `current_focus` or `open_questions`). `current_focus` is usually
+  updated automatically by the task-status hook — write it by hand only to
+  override.
 
 It deliberately does **not** write:
 - Code diffs (those live in git).

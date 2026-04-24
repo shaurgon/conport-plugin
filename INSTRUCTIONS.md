@@ -67,7 +67,7 @@ args: { "name": "<project-name>" }
 
 Expected response: a JSON object with `project_id`, `summary`,
 `instructions`, and (for existing projects) `recent_decisions`,
-`active_tasks`, `stats`.
+`backlog` (top-5 + totals), `stats`.
 
 If the first call after a server redeploy returns `Missing session ID`,
 reconnect the MCP client once — this is expected behaviour for HTTP

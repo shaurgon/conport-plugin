@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 12.0.0
+  version: 13.0.0
 ---
 
 # ConPort — Project Management System
@@ -43,7 +43,7 @@ If auto-detection did not work, ask the user.
 
 1. **Print summary:** `[CONPORT] {summary from response}`
 2. **Execute instructions** from the response (read files, apply rules)
-3. **Report active tasks** (if `active_tasks` is present — TODO and IN_PROGRESS)
+3. **Report backlog:** `N задач в TODO, M в работе. Топ-5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
 4. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
 
 **Without init you cannot:** answer questions about the project or work with tasks.
@@ -176,4 +176,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v12.0.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id*
+*v13.0.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id | Priority-rollup backlog | Auto-synced current_focus*
