@@ -4,7 +4,7 @@
 
 | Tool | Args | Description |
 |------|------|-------------|
-| `agent_init` | `uuid?`, `name?`, `type?`, `soul?` | Find or create agent. Returns uuid, soul, memories, projects |
+| `agent_init` | `uuid?`, `name?`, `type?` | Find or create agent. Returns uuid, memories, projects |
 | `agent_attach_project` | `agent_uuid`, `project` | Attach to project by name/ID. Returns project context |
 
 ## Memory

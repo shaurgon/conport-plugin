@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and project attachments in multi-agent systems. Must run agent_init at session start.
 metadata:
-  version: 3.0.1
+  version: 4.0.0
 ---
 
 # ConPort Agent — Persistent Memory & Identity
@@ -30,7 +30,7 @@ All tool names below are short forms. Prepend the prefix for your environment.
    3. Fallback: a stable role-derived slug like `"ceo@acme"` or `"builder@repo-name"`
 2. `agent_init({ uuid: "<resolved_uuid>", name: "<display name, e.g. CEO>" })`
 3. `agent_attach_project({ agent_uuid: "<uuid>", project: "<name>" })` if applicable
-4. Review `recent_memories`, `attached_projects`, `soul` from the init response
+4. Review `recent_memories` and `attached_projects` from the init response
 
 ---
 
@@ -89,4 +89,4 @@ All tool names below are short forms. Prepend the prefix for your environment.
 
 ---
 
-*v3.0.1 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links*
+*v4.0.0 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links*
