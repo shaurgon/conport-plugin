@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and project attachments in multi-agent systems. Must run agent_init at session start.
 metadata:
-  version: 3.0.0
+  version: 3.0.1
 ---
 
 # ConPort Agent — Persistent Memory & Identity
@@ -89,4 +89,4 @@ All tool names below are short forms. Prepend the prefix for your environment.
 
 ---
 
-*v2.1.0 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links*
+*v3.0.1 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links*
