@@ -454,6 +454,7 @@ Operations are applied sequentially in memory; if any operation fails, nothing i
 | doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| other |
 | tags | array | no | New tag list |
 | author | string | no | New author |
+| status | string | no | Lifecycle status — `active` (default) or `archived`. Archived documents are hidden from default `list_documents`/`search` but remain readable by id. |
 | create_new_version | boolean | no | Default **true** — the current row is updated in place (`document_id` stays stable, so every incoming link stays valid); the previous state is snapshotted as a new row with `is_current=false`, and `version` is incremented on the main row. Pass `false` for bulk patch loops where intermediate versions add no value (e.g. mass re-import): the current row is updated in place without snapshot and without version bump. |
 
 ### list_documents
