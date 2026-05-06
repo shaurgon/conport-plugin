@@ -454,7 +454,7 @@ Operations are applied sequentially in memory; if any operation fails, nothing i
 | doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| other |
 | tags | array | no | New tag list |
 | author | string | no | New author |
-| create_new_version | boolean | no | Snapshot-per-edit history. Default **false** — the current row is updated in place and `document_id` stays stable. Set `true` only when you want a new version row with a fresh `document_id` and the old row marked `is_current=false`. |
+| create_new_version | boolean | no | Default **true** — every update writes a new version row with a fresh `document_id`, links `previous_version_id` to the prior row, and marks the old row `is_current=false`. The document version always reflects the edit. Pass `false` only for bulk patch loops where intermediate versions add no value (e.g. mass re-import, multi-step migration script): the current row is updated in place and `document_id` stays stable. |
 
 ### list_documents
 
