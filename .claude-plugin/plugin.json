@@ -1,6 +1,6 @@
 {
   "name": "conport",
-  "version": "7.7.0",
+  "version": "7.8.0",
   "description": "ConPort — project context & agent memory for Claude Code (MCP + skills + hooks).",
   "author": {
     "name": "shaurgon",

@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.7.0
+  version: 13.8.0
 ---
 
 # ConPort — Project Management System
@@ -186,6 +186,7 @@ flow, examples per callout, anchor mechanics, gap-resolution paths).
 | "Show all gaps" | `gap_list` with optional category/state filters |
 | Seen a gap, will fix later | `gap_ack` (acknowledged, still visible) |
 | "This is not a real gap" | `gap_dismiss` with mandatory reason |
+| "Dismiss a whole cluster of gaps" | `gap_dismiss_bulk` with shared reason + filter (category/gap_type/subject_type) |
 | Re-open dismissed gap | `gap_undismiss` |
 | "How healthy is the KB?" | `gap_stats` |
 
@@ -249,4 +250,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.7.0 | 66 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract*
+*v13.8.0 | 67 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal*

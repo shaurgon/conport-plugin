@@ -185,18 +185,18 @@ on their own layer (cross-cutting concern), use `gap_dismiss` with a
 short reason. The dismissal is keyed on a stable hash of the gap
 identity, so it survives re-detection runs and threshold tuning.
 
-For mass dismissal of a known cross-cutting cluster during onboarding,
-the migration runbook documents the SQL fallback (`UPDATE gap_state SET
-state='dismissed', dismissed_reason=...`) until the bulk MCP tool ships.
+For mass dismissal of a known cross-cutting cluster, use
+`gap_dismiss_bulk(project_id, reason, category|gap_type|subject_type)` —
+one shared reason gets stamped on every affected gap. At least one filter
+is required so the call cannot wipe the whole backlog by accident.
 
 ## Spec docs that contain example markup
 
 If the doc you're writing is itself documenting Wave 5 conventions, the
-parser currently doesn't honor fenced code blocks for callouts and
+parser ignores fenced code blocks when scanning for callouts and
 wikilinks. Examples like `> [!moved] [[doc-12]]` inside a ` ```markdown`
-block will be parsed as real edges and may produce false-positive drift
-or dangling wikilink gaps. Until the parser fence-awareness is shipped,
-dismiss those gaps with reason `"example in spec, not author-issued"`.
+block won't be parsed as real edges, so they don't produce false-positive
+drift or dangling wikilink gaps.
 
 ## Tools
 
@@ -212,6 +212,9 @@ dismiss those gaps with reason `"example in spec, not author-issued"`.
   Pass `raw=true` to bypass.
 - `gap_dismiss(project_id, gap_hash, reason)` — close a drift gap that
   isn't actually drift; reason is mandatory for audit.
+- `gap_dismiss_bulk(project_id, reason, category|gap_type|subject_type)`
+  — close a whole cluster of gaps with one shared reason. At least one
+  filter is required.
 
 ## Cross-references
 
