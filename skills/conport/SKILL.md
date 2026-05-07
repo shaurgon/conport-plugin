@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.6.0
+  version: 13.7.0
 ---
 
 # ConPort — Project Management System
@@ -161,6 +161,23 @@ answer. Choose:
 When in doubt, default to `> [!relates-to]` — Wave 5 drift detection will
 surface real supersessions later.
 
+#### Documentation Graph: callout decision
+
+Before `add_document` with longer-form content, `search` first. If you find
+overlapping material, pick one callout:
+
+| If… | Use | Place callout in |
+|---|---|---|
+| New replaces old wholesale | `[!supersedes]` | **newer** doc |
+| New answers an open question stated elsewhere | `[!resolves]` | **answering** doc |
+| New adds detail; both stay canonical for their layer | `[!extends]` | **extension** |
+| Cross-cutting concern; both authoritative | `[!relates-to]` | **either** (doc-level, one edge per pair) |
+
+Default to `[!relates-to]` when unsure. Pin critical anchors with `^id`
+(`## Auth Flow ^auth-flow`) — protects wikilinks across heading renames.
+Full agent reference in `references/documentation_graph.md` (decision
+flow, examples per callout, anchor mechanics, gap-resolution paths).
+
 ### Gaps (Knowledge Base Health)
 
 | Trigger | Tool |
@@ -232,4 +249,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.6.0 | 66 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related*
+*v13.7.0 | 66 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract*
