@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.5.2
+  version: 13.6.0
 ---
 
 # ConPort — Project Management System
@@ -120,6 +120,10 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 |---------|------|
 | Spec / API docs | `add_document` |
 | Document update | `update_document` |
+| Read a doc (with rendered Wave 5 stubs) | `get_document` (pass `raw=true` for unmodified markdown) |
+| "Who references this doc/section?" | `get_section_backlinks` (omit `section_anchor` for whole doc) |
+| "What's similar to this section but not yet linked?" | `get_related_sections` |
+| List item-graph + Wave 5 section edges for a doc | `get_linked` with `include_section_links=true` |
 
 #### Anti-patterns: don't create a doc when an edit will do
 
@@ -228,4 +232,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.5.2 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard*
+*v13.6.0 | 66 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related*

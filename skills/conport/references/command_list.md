@@ -476,12 +476,17 @@ mcp__conport__list_documents({
 
 ### get_document
 
-Get a document
+Get a document. By default the response carries Wave 5 render-time stubs
+injected for sections with incoming `supersedes` / `resolves` / `extends`
+edges (when the server-side `DOC_GRAPH_RENDER_STUBS` flag is on). Pass
+`raw=true` for the unmodified markdown — useful for parser tests, raw
+exports, and version history reads.
 
 ```
 mcp__conport__get_document({
   project_id: 11,
-  document_id: 5
+  document_id: 5,
+  raw: false
 })
 ```
 
@@ -489,6 +494,56 @@ mcp__conport__get_document({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | document_id | integer | yes | Per-project document ID |
+| raw | boolean | no | If true, bypass stub injection. Default false. |
+
+### get_section_backlinks
+
+Incoming Wave 5 edges (`document_links`) pointing at this document or one
+of its sections. Surfaces *authored* references — the markdown callout/
+wikilink that produced each edge sits in `source_text`.
+
+```
+mcp__conport__get_section_backlinks({
+  project_id: 11,
+  document_id: 12,
+  section_anchor: "authentication",   // omit for whole-doc + all sections
+  edge_types: ["supersedes", "resolves"]
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| document_id | integer | yes | Document targeted by incoming edges |
+| section_anchor | string | no | Restrict to one section's incoming edges |
+| edge_types | string[] | no | Filter: `supersedes`, `resolves`, `relates_to`, `extends`, `wikilink`. Unknown values raise 400. |
+| limit | integer | no | 1..200 (default 50) |
+| offset | integer | no | Pagination offset |
+
+### get_related_sections
+
+Top-N semantically related sections by centroid similarity. Excludes the
+source section itself and any sections already linked to/from it via
+`document_links` — surfaces *discovered* relationships, not already-
+authored ones. Companion to `get_section_backlinks`.
+
+```
+mcp__conport__get_related_sections({
+  project_id: 11,
+  document_id: 12,
+  section_anchor: "authentication",
+  limit: 5,
+  threshold: 0.7
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| document_id | integer | yes | Source document |
+| section_anchor | string | yes | Source section (must have at least one embedded chunk) |
+| limit | integer | no | 1..50 (default 10) |
+| threshold | number | no | Min cosine similarity in [0, 1] (default 0.6) |
 
 ### document_versions
 
@@ -599,14 +654,19 @@ mcp__conport__link_items({
 
 ### get_linked
 
-Get items linked to a specific item
+Get items linked to a specific item. By default returns rows from the
+`item_links` graph (manually authored item-graph edges). When
+`item_type='document'` and `include_section_links=true`, the response also
+includes `section_links: { incoming, outgoing }` — Wave 5 `document_links`
+rows where this document is either source or target. Default is `false`
+for backwards-compat.
 
 ```
 mcp__conport__get_linked({
   project_id: 11,
-  item_type: "decision",
-  item_id: 7,
-  direction: "outgoing"
+  item_type: "document",
+  item_id: 12,
+  include_section_links: true
 })
 ```
 
@@ -617,6 +677,7 @@ mcp__conport__get_linked({
 | item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Filter by link type |
 | direction | string | no | outgoing \| incoming \| both (default: both) |
+| include_section_links | boolean | no | Document only — also return Wave 5 `document_links`. Default false. |
 
 ---
 
@@ -862,7 +923,7 @@ mcp__conport__item_history({
 | Session | `init` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task` |
-| Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions` |
+| Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_section_backlinks`, `get_related_sections` |
 | Decisions | `sync_decision`, `list_decisions`, `delete_decision` |
 | Progress | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
 | Patterns | `log_pattern`, `list_patterns` |
