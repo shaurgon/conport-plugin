@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.3.0
+  version: 13.4.0
 ---
 
 # ConPort — Project Management System
@@ -67,8 +67,22 @@ If auto-detection did not work, ask the user.
 | Trigger | Tool |
 |---------|------|
 | Starting work | `update_task` → IN_PROGRESS |
-| Done / Finished | `update_task` → DONE |
+| Done / Finished | `update_task` → DONE **with `resolution=...`** (see below) |
+| Cancelled | `update_task` → CANCELLED **with `resolution=...`** (why dropped) |
 | Blocked | `update_task` → BLOCKED |
+
+**Closing tasks — always pass `resolution`:**
+On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
+(what was done / why cancelled). The server will:
+
+1. Append a `## Resolution` section to the task's description (preserves the
+   original spec verbatim).
+2. Auto-create a linked `progress_entry` so the close shows up in
+   `recent_activity`, `list_progress`, and search.
+
+**Do NOT call `log_progress` separately for task closes** — that would
+duplicate the entry. `log_progress` is for progress events that don't belong
+to a single closing task (e.g. mid-implementation notes, infra changes).
 
 ### Patterns
 
@@ -96,7 +110,8 @@ If auto-detection did not work, ask the user.
 
 | Trigger | Tool |
 |---------|------|
-| Something was done | `log_progress` |
+| Standalone progress note (not a task close) | `log_progress` |
+| **Closing a task** | `update_task` with `resolution=...` (auto-creates progress; do **not** also call `log_progress`) |
 | Context has changed | `update_active_context` |
 
 ### Documentation
@@ -141,7 +156,7 @@ MCP tools return JSON with a `summary` field. Use it to inform the user.
 | `init` | `[CONPORT] {summary}` |
 | `search` | `[ConPort: N results found for "query"] ...` |
 | `update_task` | `✅ {summary}` |
-| Task DONE | `✅ {summary}` + suggest updating active_context |
+| Task DONE/CANCELLED | `✅ {summary}` (progress entry was auto-logged from `resolution`) + suggest updating active_context |
 
 ---
 
@@ -167,7 +182,8 @@ On an `Invalid arguments for tool` error:
 - [ ] Has `init` been run?
 - [ ] Question about the project → has `search` been done?
 - [ ] New work → task created/updated?
-- [ ] Work finished → task = DONE?
+- [ ] Work finished → task = DONE **with `resolution`**?
+- [ ] Closing a task → did NOT call `log_progress` separately (it's auto-logged)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
 
@@ -176,4 +192,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.3.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus*
+*v13.4.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution*
