@@ -141,11 +141,13 @@ or *react to* an existing doc. Instead:
   > Adds detail on the JWT validation pipeline.
   ```
 
-  See spec doc #44 §3.2 for the supported callout types.
+  Supported callout types: `[!supersedes]`, `[!resolves]`, `[!extends]`,
+  `[!relates-to]`.
 
 **2. Clarifications / addenda / FAQ as a standalone doc with no edge.**
-Same shape as #1. The reader has no way to find the addendum from the
-original; the original keeps showing the stale answer. Choose:
+Same shape as the meta-doc anti-pattern: the reader has no way to find
+the addendum from the original, and the original keeps showing the stale
+answer. Choose:
 
 - `update_document` of the original (best when the original is yours and
   small), OR
