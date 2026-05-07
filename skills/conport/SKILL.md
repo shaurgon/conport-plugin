@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.5.0
+  version: 13.5.1
 ---
 
 # ConPort — Project Management System
@@ -123,10 +123,9 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 
 #### Anti-patterns: don't create a doc when an edit will do
 
-These mistakes accumulate **synthesis drift** in the knowledge base — readers
-end up with multiple half-stale documents on the same topic and no signal
-about which one to trust. Both have been observed in conport-global
-(historical proposals doc #21 / #24 / #41 / #42, since archived).
+These mistakes accumulate **synthesis drift** in the knowledge base —
+readers end up with multiple half-stale documents on the same topic and
+no signal about which one to trust.
 
 **1. Meta-documents (a doc commenting on another doc).**
 Never create a new `add_document` whose purpose is to *describe*, *amend*,
@@ -227,4 +226,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.5.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard*
+*v13.5.1 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard*
