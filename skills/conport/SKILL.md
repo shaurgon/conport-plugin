@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.4.0
+  version: 13.5.0
 ---
 
 # ConPort — Project Management System
@@ -121,6 +121,41 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 | Spec / API docs | `add_document` |
 | Document update | `update_document` |
 
+#### Anti-patterns: don't create a doc when an edit will do
+
+These mistakes accumulate **synthesis drift** in the knowledge base — readers
+end up with multiple half-stale documents on the same topic and no signal
+about which one to trust. Both have been observed in conport-global
+(historical proposals doc #21 / #24 / #41 / #42, since archived).
+
+**1. Meta-documents (a doc commenting on another doc).**
+Never create a new `add_document` whose purpose is to *describe*, *amend*,
+or *react to* an existing doc. Instead:
+
+- Update the original via `update_document` with `replace_section_body` /
+  `append_to_section`, OR
+- Create an addendum doc with an explicit Wave 5 callout that links it to
+  the source:
+
+  ```markdown
+  > [!extends] [[doc-12]]
+  > Adds detail on the JWT validation pipeline.
+  ```
+
+  See spec doc #44 §3.2 for the supported callout types.
+
+**2. Clarifications / addenda / FAQ as a standalone doc with no edge.**
+Same shape as #1. The reader has no way to find the addendum from the
+original; the original keeps showing the stale answer. Choose:
+
+- `update_document` of the original (best when the original is yours and
+  small), OR
+- a new doc with `> [!extends] [[doc-N]]` for additive material, or
+  `> [!supersedes] [[doc-N]]` if you're replacing the original's claim.
+
+When in doubt, default to `> [!relates-to]` — Wave 5 drift detection will
+surface real supersessions later.
+
 ### Gaps (Knowledge Base Health)
 
 | Trigger | Tool |
@@ -192,4 +227,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.4.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution*
+*v13.5.0 | 53 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard*
