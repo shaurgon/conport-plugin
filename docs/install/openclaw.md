@@ -70,3 +70,25 @@ Then in an agent session:
 > Call the `init` tool on the `conport` MCP server with name `<your-project>`.
 
 Expected: JSON with `project_id`, `summary`, and `instructions`.
+
+## Updating
+
+Pull the latest plugin into your install location:
+
+```bash
+cd <openclaw-plugins-dir>/conport-plugin
+git pull
+```
+
+Then restart your OpenClaw runtime so it picks up the refreshed SKILL.md
+and MCP config.
+
+The server reports skill drift via `init`: if your `skill_version` lags,
+the next `agent_attach_project` (which forwards to project init) returns a
+`skill_update_available` payload, and the agent surfaces a one-line notice.
+After `git pull` the next session is clean.
+
+> **Versioning.** `skill_version` is the SKILL.md content version, NOT the
+> plugin release tag. A `git pull` may bring scripts/hooks updates without
+> moving SKILL.md — in that case no notice fires. If the notice IS
+> showing, SKILL.md genuinely changed.

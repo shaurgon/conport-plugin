@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.9.0
+  version: 13.10.0
 ---
 
 # ConPort — Project Management System
@@ -34,10 +34,17 @@ If it's not set, fall back in this priority order:
 ### Step 2: Call init
 
 ```
-mcp__conport__init({ name: "<detected_name>" })
+mcp__conport__init({
+  name: "<detected_name>",
+  skill_id: "conport",
+  skill_version: "13.10.0",   // value of metadata.version in this SKILL.md frontmatter
+  client_type: "claude-code"  // or claude-ai / cursor / openclaw / mcporter / paperclip
+})
 ```
 
-If auto-detection did not work, ask the user.
+`skill_id` / `skill_version` / `client_type` are optional but strongly recommended — they let the server tell you when SKILL.md has been updated upstream so manual installs (Claude.ai project files, hand-copied skills) don't silently drift. Pick `client_type` from the list above; fall back to omitting it if running somewhere else.
+
+If auto-detection of the project name did not work, ask the user.
 
 ### After init — MANDATORY:
 
@@ -45,6 +52,15 @@ If auto-detection did not work, ask the user.
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N задач в TODO, M в работе. Топ-5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
 4. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
+5. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
+
+   ```
+   [SKILL UPDATE] {skill_id} {current} → {latest} ({severity}). Changelog: {changelog_url} · Install: {install_guide}
+   ```
+
+   - When `current == "unknown"` — phrase as `cannot determine version, see {install_guide}`.
+   - When `severity == "security"` — emit a stronger line (`[SECURITY UPDATE]`) and recommend updating before proceeding.
+   - Do NOT re-emit the notice in subsequent turns — once per session.
 
 **Without init you cannot:** answer questions about the project or work with tasks.
 **Ignoring instructions is FORBIDDEN.**
@@ -262,4 +278,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.9.0 | 69 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly*
+*v13.10.0 | 69 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Skill version notification*

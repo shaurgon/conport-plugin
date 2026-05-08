@@ -57,3 +57,26 @@ Expected: a list including `init`, `search`, `add_task`, `sync_decision`, and
 ~40 other ConPort tools. If you see `Missing session ID` on the very first
 call after a server redeploy, reconnect once — that is expected for HTTP
 transport.
+
+## Updating
+
+mcporter pulls the MCP server config from this repo, so updating means
+re-running the install command (or whichever package-update flow your
+mcporter setup uses):
+
+```bash
+npx mcporter install conport --upgrade
+```
+
+The skill files (`SKILL.md`) under `skills/` come along with the same
+update. After upgrade, reconnect MCP if your client caches tool lists.
+
+When your local `skill_version` is behind the server's published one, the
+next session's `init` response carries `skill_update_available` and the
+agent prints one short notice line — that's your signal to upgrade. Once
+done, the notice clears on the next session.
+
+> The `skill_version` in SKILL.md frontmatter is independent of plugin
+> release tags — bumped only when SKILL.md content meaningfully shifts. A
+> regular plugin release without skill behaviour changes will not produce
+> a notice.

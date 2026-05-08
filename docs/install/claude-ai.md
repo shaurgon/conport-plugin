@@ -48,3 +48,33 @@ Claude.ai skills are per-user — every teammate uploads their own copy.
 - **Connector** (once OAuth is live): the connectors panel shows `ConPort`
   green, and asking Claude to call `mcp__conport__init` in a new chat
   returns a JSON response with `project_id` and `summary`.
+
+## Updating
+
+Claude.ai has no plugin auto-update — you replace the skill files manually.
+
+The good news: the server tells you when an update is available. After a
+session start, if your local SKILL.md is older than the published version,
+the agent will print one line at the top of its first reply:
+
+```
+[SKILL UPDATE] conport 13.0.0 → 13.10.0 (minor). Changelog: <url> · Install: <url>
+```
+
+To apply the update:
+
+1. Open the [releases page](https://github.com/shaurgon/conport-plugin/releases)
+   and read the changelog for the entries between your version and the
+   latest.
+2. Download the latest `SKILL.md` for whichever skills you have installed
+   from `skills/conport/` and `skills/conport-agent/` in this repo.
+3. **Settings → Features → Skills** — find each ConPort skill, click ⋯, and
+   replace the file with the new one.
+4. Reload any open chat or start a new session; the notice should disappear
+   on the next `init` call.
+
+> **Note on versioning.** `skill_version` (in SKILL.md frontmatter
+> `metadata.version`) is independent of plugin release tags. A new plugin
+> release does **not** automatically mean your SKILL.md is stale — the
+> notice fires only when the SKILL.md content has actually been bumped.
+> No notice = nothing to do.

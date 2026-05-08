@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and project attachments in multi-agent systems. Must run agent_init at session start.
 metadata:
-  version: 4.0.0
+  version: 4.1.0
 ---
 
 # ConPort Agent — Persistent Memory & Identity
@@ -29,8 +29,8 @@ All tool names below are short forms. Prepend the prefix for your environment.
    2. A system-specific env var (`PAPERCLIP_AGENT_ID`, `HERMES_AGENT_ID`, `OPENCLAW_AGENT_ID`, etc. — whichever your platform injects)
    3. Fallback: a stable role-derived slug like `"ceo@acme"` or `"builder@repo-name"`
 2. `agent_init({ uuid: "<resolved_uuid>", name: "<display name, e.g. CEO>" })`
-3. `agent_attach_project({ agent_uuid: "<uuid>", project: "<name>" })` if applicable
-4. Review `recent_memories` and `attached_projects` from the init response
+3. `agent_attach_project({ agent_uuid: "<uuid>", project: "<name>" })` if applicable. When attaching, also pass `skill_id: "conport-agent"`, `skill_version: "4.1.0"` (current `metadata.version` of this SKILL.md), and `client_type` (e.g. `"openclaw"`, `"paperclip"`, `"hermes"`) so the server can flag SKILL.md drift via `skill_update_available` on the project init response. Optional but recommended for hand-installed environments.
+4. Review `recent_memories` and `attached_projects` from the init response. If `skill_update_available` is present (when project init is invoked alongside `agent_attach_project`), surface ONE short notice in your first reply with changelog and install URLs; do not re-emit later in the session.
 
 ---
 
@@ -89,4 +89,4 @@ All tool names below are short forms. Prepend the prefix for your environment.
 
 ---
 
-*v4.0.0 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links*
+*v4.1.0 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links | Skill version notification*
