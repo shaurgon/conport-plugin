@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.8.0
+  version: 13.9.0
 ---
 
 # ConPort — Project Management System
@@ -98,6 +98,18 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 |---------|------|
 | Question about the project | `search` BEFORE answering |
 | "What was decided about Y?" | `search` by topic |
+
+### Context assembly (recipe-pattern)
+
+Structural context packages for a single node — task or spec — assembled by deterministic graph traversals. Complements `init` (whole-project, session start) and `search` (fuzzy on-ramp from free text). Use when you already know the anchor and want the neighbourhood in one call.
+
+| Trigger | Tool |
+|---------|------|
+| "Open task #N and brief me" / agent opens a task | `assemble_context` with `recipe='task_briefing'`, `start_id=<task_id>` |
+| "What's the implementation status of spec doc-N?" | `assemble_context` with `recipe='spec_implementation_status'`, `start_id=<doc_id>` |
+| "What recipes are available?" | `list_context_recipes` |
+
+`task_briefing` returns parent chain, motivating doc (walks up to parents if direct link missing), siblings, relevant decisions/patterns ranked by tag overlap, recent progress. `spec_implementation_status` returns implementation matrix grouped by epic, decisions taken since the spec was written, drift signals on outgoing references, recent progress on implementing tasks. Both support `format='markdown'` (default) or `format='json'`.
 
 ### Sync
 
@@ -250,4 +262,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.8.0 | 67 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal*
+*v13.9.0 | 69 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly*
