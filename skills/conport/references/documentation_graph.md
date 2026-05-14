@@ -200,10 +200,10 @@ drift or dangling wikilink gaps.
 
 ## Tools
 
-- `get_section_backlinks(project_id, document_id, [section_anchor], [edge_types])`
-  — incoming `document_links` for the doc or one of its sections.
-- `get_related_sections(project_id, document_id, section_anchor, [limit], [threshold])`
-  — top-N semantically similar sections in OTHER docs, excluding already-
+- `get_block_backlinks(project_id, document_id, [block_ulid], [edge_types])`
+  — incoming `document_links` for the doc or one of its blocks.
+- `get_semantically_related_blocks(project_id, document_id, block_ulid, [limit], [threshold])`
+  — top-N semantically similar blocks in OTHER docs, excluding already-
   linked targets.
 - `get_linked(project_id, item_type='document', item_id, include_section_links=true)`
   — combined item-graph + Wave 5 section edges for one document.

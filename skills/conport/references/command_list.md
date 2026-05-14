@@ -560,17 +560,17 @@ mcp__conport__get_document({
 | document_id | integer | yes | Per-project document ID |
 | raw | boolean | no | If true, bypass stub injection. Default false. |
 
-### get_section_backlinks
+### get_block_backlinks
 
-Incoming Wave 5 edges (`document_links`) pointing at this document or one
-of its sections. Surfaces *authored* references — the markdown callout/
+Incoming Wave 6 edges (`document_links`) pointing at this document or one
+of its blocks. Surfaces *authored* references — the markdown callout/
 wikilink that produced each edge sits in `source_text`.
 
 ```
-mcp__conport__get_section_backlinks({
+mcp__conport__get_block_backlinks({
   project_id: 11,
   document_id: 12,
-  section_anchor: "authentication",   // omit for whole-doc + all sections
+  block_ulid: "01HZ...",   // omit for whole-doc + all blocks
   edge_types: ["supersedes", "resolves"]
 })
 ```
@@ -579,23 +579,23 @@ mcp__conport__get_section_backlinks({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | document_id | integer | yes | Document targeted by incoming edges |
-| section_anchor | string | no | Restrict to one section's incoming edges |
+| block_ulid | string | no | Restrict to one block's incoming edges |
 | edge_types | string[] | no | Filter: `supersedes`, `resolves`, `relates_to`, `extends`, `wikilink`. Unknown values raise 400. |
 | limit | integer | no | 1..200 (default 50) |
 | offset | integer | no | Pagination offset |
 
-### get_related_sections
+### get_semantically_related_blocks
 
-Top-N semantically related sections by centroid similarity. Excludes the
-source section itself and any sections already linked to/from it via
+Top-N semantically related blocks by embedding similarity. Excludes the
+source block itself and any blocks already linked to/from it via
 `document_links` — surfaces *discovered* relationships, not already-
-authored ones. Companion to `get_section_backlinks`.
+authored ones. Companion to `get_block_backlinks`.
 
 ```
-mcp__conport__get_related_sections({
+mcp__conport__get_semantically_related_blocks({
   project_id: 11,
   document_id: 12,
-  section_anchor: "authentication",
+  block_ulid: "01HZ...",
   limit: 5,
   threshold: 0.7
 })
@@ -605,9 +605,9 @@ mcp__conport__get_related_sections({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | document_id | integer | yes | Source document |
-| section_anchor | string | yes | Source section (must have at least one embedded chunk) |
+| block_ulid | string | yes | Source block ULID (must exist and have an embedding) |
 | limit | integer | no | 1..50 (default 10) |
-| threshold | number | no | Min cosine similarity in [0, 1] (default 0.6) |
+| threshold | number | no | Min cosine similarity in [0, 1] (default 0.8) |
 
 ### document_versions
 
@@ -987,7 +987,7 @@ mcp__conport__item_history({
 | Session | `init` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task` |
-| Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_section_backlinks`, `get_related_sections`, `get_block`, `update_block`, `insert_block`, `delete_block` |
+| Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_block_backlinks`, `get_semantically_related_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
 | Decisions | `sync_decision`, `list_decisions`, `delete_decision` |
 | Progress | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
 | Patterns | `log_pattern`, `list_patterns` |

@@ -156,8 +156,8 @@ Structural context packages for a single node — task or spec — assembled by 
 | Insert a block | `insert_block(document_id, markdown, after?\|before?)` |
 | Delete a block | `delete_block(document_id, block_ulid)` |
 | Read a doc (with rendered Wave 5 stubs) | `get_document` (pass `raw=true` for unmodified markdown) |
-| "Who references this doc/section?" | `get_section_backlinks` (omit `section_anchor` for whole doc) |
-| "What's similar to this section but not yet linked?" | `get_related_sections` |
+| "Who references this doc/block?" | `get_block_backlinks` (omit `block_ulid` for whole doc) |
+| "What's similar to this block but not yet linked?" | `get_semantically_related_blocks` |
 | List item-graph + Wave 5 section edges for a doc | `get_linked` with `include_section_links=true` |
 
 **Block-level editing:** prefer `update_block` for surgical one-block edits — it re-embeds only that block. Use `update_document(content=...)` for whole-document rewrites.
