@@ -414,7 +414,7 @@ mcp__conport__add_document({
 
 ### update_document
 
-Replace the document body and/or update metadata. Creates a new version by default.
+Replace the document body and/or update metadata. Body changes go through the block reconciliation engine (unchanged blocks keep ULIDs + embeddings, changed blocks re-embed, deleted blocks are dropped).
 
 ```
 mcp__conport__update_document({
@@ -440,7 +440,6 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 | tags | array | no | New tag list |
 | author | string | no | New author |
 | status | string | no | Lifecycle status — `active` (default) or `archived`. |
-| create_new_version | boolean | no | Default **true** — the current row is updated in place (`document_id` stays stable, so every incoming link stays valid); the previous state is snapshotted as a new row with `is_current=false`, and `version` is incremented. Pass `false` for bulk patch loops where intermediate versions add no value. |
 
 ### get_block
 
