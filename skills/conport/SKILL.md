@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 13.11.0
+  version: 14.0.0
 ---
 
 # ConPort — Project Management System
@@ -150,11 +150,17 @@ Structural context packages for a single node — task or spec — assembled by 
 | Trigger | Tool |
 |---------|------|
 | Spec / API docs | `add_document` |
-| Document update | `update_document` |
+| Document body / metadata update | `update_document(content=<full markdown>, ...)` |
+| Read one block | `get_block(document_id, block_ulid)` |
+| Edit one block (surgical) | `update_block(document_id, block_ulid, markdown)` |
+| Insert a block | `insert_block(document_id, markdown, after?\|before?)` |
+| Delete a block | `delete_block(document_id, block_ulid)` |
 | Read a doc (with rendered Wave 5 stubs) | `get_document` (pass `raw=true` for unmodified markdown) |
 | "Who references this doc/section?" | `get_section_backlinks` (omit `section_anchor` for whole doc) |
 | "What's similar to this section but not yet linked?" | `get_related_sections` |
 | List item-graph + Wave 5 section edges for a doc | `get_linked` with `include_section_links=true` |
+
+**Block-level editing:** prefer `update_block` for surgical one-block edits — it re-embeds only that block. Use `update_document(content=...)` for whole-document rewrites.
 
 #### Anti-patterns: don't create a doc when an edit will do
 
@@ -166,8 +172,7 @@ no signal about which one to trust.
 Never create a new `add_document` whose purpose is to *describe*, *amend*,
 or *react to* an existing doc. Instead:
 
-- Update the original via `update_document` with `replace_section_body` /
-  `append_to_section`, OR
+- Update the original via `update_document(content=...)` OR a surgical `update_block` / `insert_block` on the relevant block, OR
 - Create an addendum doc with an explicit Wave 5 callout that links it to
   the source:
 
@@ -184,8 +189,7 @@ Same shape as the meta-doc anti-pattern: the reader has no way to find
 the addendum from the original, and the original keeps showing the stale
 answer. Choose:
 
-- `update_document` of the original (best when the original is yours and
-  small), OR
+- `update_document(content=...)` of the original (best when the original is yours and small), OR
 - a new doc with `> [!extends] [[doc-N]]` for additive material, or
   `> [!supersedes] [[doc-N]]` if you're replacing the original's claim.
 
@@ -281,4 +285,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v13.11.0 | 69 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification*
+*v14.0.0 | 73 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Surgical document patching | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools*

@@ -414,48 +414,112 @@ mcp__conport__add_document({
 
 ### update_document
 
-Surgically patch a document via a list of operations. Creates a new version by default.
-
-There is **no** `content` field for a full rewrite — use `operations: [{op: "set_content", content: "..."}]` instead. This keeps large-document edits cheap: you point at a section or substring and replace just that piece.
+Replace the document body and/or update metadata. Creates a new version by default.
 
 ```
 mcp__conport__update_document({
   project_id: 11,
   document_id: 5,
-  operations: [
-    { op: "replace_section_body", heading: "## API Endpoints", content: "...new body..." },
-    { op: "append_to_section",   heading: "## Changelog",      content: "- 2026-04-19: patched" },
-    { op: "find_replace",        find: "old-name", replace: "new-name", replace_all: true }
-  ]
+  content: "# Auth Design\n\nFull markdown body — replaces the document content.\n\n## API\n..."
 })
 ```
 
-**Operation kinds** (all take a discriminator `op`):
+The body is parsed into blocks server-side via the block reconciliation algorithm — unchanged blocks keep their ULIDs (and their embeddings/entity mentions), changed blocks get re-embedded, deleted blocks are dropped. Cheaper than naive replace because only the dirty parts hit Mistral.
 
-| op | fields | effect |
-|----|--------|--------|
-| `set_content` | `content` | replace entire document body |
-| `replace_section_body` | `heading`, `content` | replace everything under a heading (body + all subsections); heading line preserved |
-| `append_to_section` | `heading`, `content` | append a paragraph at the end of a section's body |
-| `insert_section_after` | `heading`, `content` | insert a sibling block after the section (past its subsections) |
-| `delete_section` | `heading` | remove the section including its subsections |
-| `find_replace` | `find`, `replace`, `replace_all?` | literal string replace; errors on 0 matches or on multiple matches when `replace_all=false` |
+Metadata-only updates work without a `content` field — pass just `title`, `doc_type`, `tags`, etc. and the body is untouched.
 
-`heading` accepts either the literal heading line (`"## API Endpoints"`) or a disambiguating path (`"## Architecture > ### Database"`). Ambiguous matches return an error listing all matching heading paths.
-
-Operations are applied sequentially in memory; if any operation fails, nothing is persisted and no new version is written. One new version per call regardless of how many operations it contains.
+For surgical single-block edits, prefer `update_block` (skips the parse/reconcile round-trip).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | document_id | integer | yes | Per-project document ID |
-| operations | array | no | List of patch operations (see above). Omit for metadata-only update. |
+| content | string | no | Full markdown body. Omit for metadata-only update. |
 | title | string | no | New title |
 | doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| other |
 | tags | array | no | New tag list |
 | author | string | no | New author |
-| status | string | no | Lifecycle status — `active` (default) or `archived`. Archived documents are hidden from default `list_documents`/`search` but remain readable by id. |
-| create_new_version | boolean | no | Default **true** — the current row is updated in place (`document_id` stays stable, so every incoming link stays valid); the previous state is snapshotted as a new row with `is_current=false`, and `version` is incremented on the main row. Pass `false` for bulk patch loops where intermediate versions add no value (e.g. mass re-import): the current row is updated in place without snapshot and without version bump. |
+| status | string | no | Lifecycle status — `active` (default) or `archived`. |
+| create_new_version | boolean | no | Default **true** — the current row is updated in place (`document_id` stays stable, so every incoming link stays valid); the previous state is snapshotted as a new row with `is_current=false`, and `version` is incremented. Pass `false` for bulk patch loops where intermediate versions add no value. |
+
+### get_block
+
+Read one block by ULID.
+
+```
+mcp__conport__get_block({
+  project_id: 11,
+  document_id: 5,
+  block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| document_id | integer | yes | Per-project document ID |
+| block_ulid | string | yes | ULID of the block to read |
+
+Returns the block JSON: `{id, ulid, document_id, ord, type, text, attrs, content_hash, created_at, updated_at}`.
+
+### update_block
+
+Replace one block's markdown without touching the rest of the document. Surgical — only this block re-embeds.
+
+```
+mcp__conport__update_block({
+  project_id: 11,
+  document_id: 5,
+  block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF",
+  markdown: "## API Endpoints\n\nNew content for just this heading-block."
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| document_id | integer | yes | Per-project document ID |
+| block_ulid | string | yes | ULID of the block to update |
+| markdown | string | yes | New markdown for this block |
+
+### insert_block
+
+Insert a new block. Pass `after=<ulid>` OR `before=<ulid>` to position; omit both to append at end. Pass at most one of `after`/`before`.
+
+```
+mcp__conport__insert_block({
+  project_id: 11,
+  document_id: 5,
+  markdown: "## New Section\n\nFresh paragraph.",
+  after: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| document_id | integer | yes | Per-project document ID |
+| markdown | string | yes | Markdown for the new block |
+| after | string | no | ULID to insert after (mutually exclusive with `before`) |
+| before | string | no | ULID to insert before (mutually exclusive with `after`) |
+
+### delete_block
+
+Delete one block by ULID. Returns 404 if the block doesn't exist.
+
+```
+mcp__conport__delete_block({
+  project_id: 11,
+  document_id: 5,
+  block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| document_id | integer | yes | Per-project document ID |
+| block_ulid | string | yes | ULID of the block to delete |
 
 ### list_documents
 
@@ -923,7 +987,7 @@ mcp__conport__item_history({
 | Session | `init` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task` |
-| Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_section_backlinks`, `get_related_sections` |
+| Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_section_backlinks`, `get_related_sections`, `get_block`, `update_block`, `insert_block`, `delete_block` |
 | Decisions | `sync_decision`, `list_decisions`, `delete_decision` |
 | Progress | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
 | Patterns | `log_pattern`, `list_patterns` |
