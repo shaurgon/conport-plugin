@@ -93,7 +93,7 @@ without collapsing them — readers get a discovery hint, not a redirect.
 # Multi-tenancy + RLS Spec
 
 > [!relates-to] [[doc-15]]
-> Cross-cutting Security Guidelines (doc #15) detail policies; this doc
+> Cross-cutting Security Guidelines (doc-15) detail policies; this doc
 > details RLS implementation. Both canonical at their layer.
 ```
 
