@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.1.0
+  version: 14.5.0
 ---
 
 # ConPort — Project Management System
@@ -37,7 +37,7 @@ If it's not set, fall back in this priority order:
 mcp__conport__init({
   name: "<detected_name>",
   skill_id: "conport",
-  skill_version: "14.1.0",   // value of metadata.version in this SKILL.md frontmatter
+  skill_version: "14.5.0",   // value of metadata.version in this SKILL.md frontmatter
   client_type: "claude-code"  // or claude-ai / cursor / openclaw / mcporter / paperclip
 })
 ```
@@ -76,6 +76,7 @@ If auto-detection of the project name did not work, ask the user.
 | "We need to do X" | `add_task` with priority |
 | "X depends on Y" | `add_task_dep` |
 | "Break it into subtasks" | `add_task` with `parent_task_id` |
+| "Move task X under epic Y" / re-parent an existing task | `update_task` with `parent_task_id` (use `0` to detach to root) |
 | Need a task in another project I own (no context switch) | `add_linked_task` with `target_project` name |
 
 ### Execution
@@ -240,6 +241,43 @@ flow, examples per callout, anchor mechanics, gap-resolution paths).
 
 ---
 
+## CROSS-REFERENCE FORMAT (canonical grammar)
+
+Every reference to another ConPort item — in `summary`, `rationale`,
+`description`, document body, commit messages — uses the canonical form
+`<type>-<number>`.
+
+**Type vocabulary (lowercase):** `decision`, `task`, `doc`, `pattern`,
+`progress`. No aliases (no `document`, no `tasks`, no `dec`).
+
+**Forms accepted by the parser:**
+- Plain prose: `decision-321`, `task-271`, `doc-76`.
+- Wikilink: `[[decision-321]]`, `[[task-271]]`, `[[doc-76]]` — preferred inside
+  document bodies; the autolinker reifies them as `item_links` rows.
+- Block anchor (documents only): `[[doc-89#<block_ulid>]]` — link to a
+  specific block (Wave 6).
+
+**Anti-patterns** (silently break tag/graph navigation):
+
+| ❌ Don't write | ✅ Write |
+|---|---|
+| `decision #321` (typed legacy with `#`) | `decision-321` |
+| `Task #123, #124, #125` (untyped continuation) | `task-123, task-124, task-125` |
+| `#634` (untyped, ambiguous) | `decision-634` (or the correct type) |
+| `decision #1155` (pre-migration global id) | drop — autolinker can't resolve; cite the new per-project id |
+
+**Microcheck (extends POST-WRITE VERIFICATION):**
+Before the write call, scan your `summary` / `rationale` / `description`
+payload for `#\d+`. If you find one:
+1. Replace with `<type>-<number>` if you know the type.
+2. Untyped or pre-migration id → either drop, or flag explicitly ("legacy id
+   #N, not resolvable") so a reader knows it's intentional, not an oversight.
+
+The parser currently accepts both legacy `#N` and canonical `<type>-N` so
+older corpus stays linked; emit canonical-only in new writes.
+
+---
+
 ## OUTPUT FORMAT
 
 MCP tools return JSON with a `summary` field. Use it to inform the user.
@@ -250,6 +288,60 @@ MCP tools return JSON with a `summary` field. Use it to inform the user.
 | `search` | `[ConPort: N results found for "query"] ...` |
 | `update_task` | `✅ {summary}` |
 | Task DONE/CANCELLED | `✅ {summary}` (progress entry was auto-logged from `resolution`) + suggest updating active_context |
+
+### Slim create/update responses
+
+MCP create / update tools (`sync_decision`, `add_task`, `update_task`,
+`log_progress`, `update_progress`, `log_pattern`, `add_document`,
+`update_document`, `update_active_context`, `update_product_context`) do
+**not** echo the full entity body back. They return a slim payload to save
+agent context:
+
+| Field | Always present | Notes |
+|---|---|---|
+| `id` | yes | The created / updated row id |
+| `tags` | when entity has tags | Echoed even as `[]` — verification channel for POST-WRITE VERIFICATION |
+| `summary` | when computed | Short server-side confirmation string |
+| `version` | for `add_document`, `update_document`, context updates | Auto-bumped revision number |
+| `status`, `parent_epic_ready_to_close` | `update_task` only | Closing-batch signals |
+| `_hint*` | when present | Server-side emergence signals (pattern candidates, etc.) |
+
+Need the full entity body? Use the matching read tool — `get_task`,
+`get_document`, `list_decisions`, etc. The REST API still returns full
+bodies; only MCP write responses are slimmed.
+
+---
+
+## POST-WRITE VERIFICATION (Claude.ai XML quirk)
+
+Claude.ai's MCP client occasionally drops optional parameters silently when
+the surrounding XML is malformed (most often a missing `antml:` prefix on a
+closing tag). The next parameter gets folded into the previous string field
+and the tool returns 200 OK with the truncated payload — the write happened,
+just not the way you intended. Real incident: a `sync_decision` call lost its
+`tags` array because the tags ended up inside `rationale` text; the decision
+landed without tags and broke tag-based graph navigation.
+
+After **every** create/update call that took optional fields, verify the
+response echo against intent:
+
+| You passed | Check on the response |
+|---|---|
+| `tags=[...]` | Response `tags` is non-empty and matches intent (count + values) |
+| `description=...` | `description` length ≈ what you sent (not visibly truncated) |
+| `priority=N` | `priority` equals `N` |
+| `parent_task_id`, `tag_kinds`, links | Field is present and equal to intent |
+
+**On mismatch.** Re-issue the call with the field re-stated explicitly (often a
+single retry fixes XML-parse glitches). If the second attempt still loses the
+field, flag the mismatch to the user verbatim ("graph integrity: tags lost on
+decision N, please re-run") rather than silently moving on — the damage is
+mute graph drift, easy to miss.
+
+Applies to: `sync_decision`, `add_task`, `update_task`, `log_progress`,
+`log_pattern`, `add_document`, `update_document`, `update_active_context`,
+`update_product_context`, block ops (`add_block`, `update_block`,
+`insert_block`).
 
 ---
 
@@ -279,10 +371,12 @@ On an `Invalid arguments for tool` error:
 - [ ] Closing a task → did NOT call `log_progress` separately (it's auto-logged)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
+- [ ] After every write → response echo verified (tags / description / priority match intent)?
+- [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #321`)?
 
 **Full API:** `references/command_list.md`
 **Fresh-project onboarding:** `references/bootstrap.md`
 
 ---
 
-*v14.1.0 | 73 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (add_block / update_block / insert_block / delete_block)*
+*v14.5.0 | 73 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (add_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar*
