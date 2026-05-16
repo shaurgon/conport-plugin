@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.7.0
+  version: 14.8.0
 ---
 
 # ConPort — Project Management System
@@ -128,6 +128,8 @@ Structural context packages for a single node — task or spec — assembled by 
 | "What's the implementation status of spec doc-N?" | `assemble_context` with `recipe='spec_implementation_status'`, `start_id='doc-N'` |
 | User pasted a wikilink like `[[task-271]]` | `assemble_context` with `start_id='[[task-271]]'` (wikilink accepted verbatim) |
 | "What recipes are available?" | `list_context_recipes` |
+| "What's the current architecture of subsystem X?" | `render_current_architecture` with `scope=["X", ...]` — L1 synthesis (decisions + patterns + specs) with supersession-walk and provenance |
+| "Is this architecture doc safe to archive?" | `audit_doc_l1_coverage(doc_id)` — per-block coverage report; promote capture-gaps via `sync_decision` / `log_pattern` before archiving |
 
 **`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-271'`, `'doc-76'`). Type vocabulary: `task`, `doc`, `decision`, `pattern`, `progress`. The wikilink form `'[[task-271]]'` is also accepted so a recipe response can be copy-pasted into the next call without translation. Plain integers still work as legacy fallback (resolved against the recipe's expected type), but the prefix form gives a clean 400 on type mismatch with an inverse-recipe suggestion — preferred when the type matters. Per-project ids autoincrement per table, so the same numeric id often exists across multiple namespaces; the prefix removes the guesswork.
 
@@ -165,6 +167,13 @@ Structural context packages for a single node — task or spec — assembled by 
 | List item-graph + Wave 5 section edges for a doc | `get_linked` with `include_section_links=true` |
 
 **Block-level editing:** prefer `update_block` for surgical one-block edits — it re-embeds only that block. Use `update_document(content=...)` for whole-document rewrites.
+
+**Spec append-only invariant (epic-296).** When updating a body of a `doc_type='spec'` document, `update_document` requires `change_kind`:
+
+- `change_kind='amend'` — clarification / typo / formatting fix. Allowed; logged into `spec_amendments` with a mandatory `reason`.
+- `change_kind='substantive'` — meaningful claim change. **Rejected.** Author a new spec via `add_document` and link the old one with `link_items(relationship='supersedes')`.
+
+`doc_role='derived_view'` documents (synthesised from L1 by recipes like `current_architecture`) reject any body edit — regenerate via the recipe runner, don't hand-edit.
 
 #### Anti-patterns: don't create a doc when an edit will do
 
@@ -382,4 +391,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v14.7.0 | 76 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (add_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar*
+*v14.8.0 | 78 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (add_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit*
