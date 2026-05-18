@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.8.0
+  version: 14.9.0
 ---
 
 # ConPort — Project Management System
@@ -157,6 +157,7 @@ Structural context packages for a single node — task or spec — assembled by 
 |---------|------|
 | Spec / API docs | `add_document` |
 | Document body / metadata update | `update_document(content=<full markdown>, ...)` |
+| List a doc's blocks (pick ulids before surgical edit) | `list_blocks(document_id)` |
 | Read one block | `get_block(document_id, block_ulid)` |
 | Edit one block (surgical) | `update_block(document_id, block_ulid, markdown)` |
 | Insert a block | `insert_block(document_id, markdown, after?\|before?)` |
@@ -352,8 +353,8 @@ mute graph drift, easy to miss.
 
 Applies to: `sync_decision`, `add_task`, `update_task`, `log_progress`,
 `log_pattern`, `add_document`, `update_document`, `update_active_context`,
-`update_product_context`, block ops (`add_block`, `update_block`,
-`insert_block`).
+`update_product_context`, block ops (`update_block`, `insert_block`,
+`delete_block`).
 
 ---
 
@@ -391,4 +392,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v14.8.0 | 78 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (add_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit*
+*v14.9.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit*
