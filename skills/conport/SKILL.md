@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.9.0
+  version: 14.10.0
 ---
 
 # ConPort — Project Management System
@@ -75,8 +75,11 @@ If auto-detection of the project name did not work, ask the user.
 |---------|------|
 | "We need to do X" | `add_task` with priority |
 | "X depends on Y" | `add_task_dep` |
-| "Break it into subtasks" | `add_task` with `parent_task_id` |
-| "Move task X under epic Y" / re-parent an existing task | `update_task` with `parent_task_id` (use `0` to detach to root) |
+| "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` (replaces the legacy `EPIC:` title prefix) |
+| "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |
+| "Move task X under epic Y" / re-parent an existing task | `update_task` with `parent_task_id` (target must be `kind='epic'`; use `0` to detach to root) |
+| "Promote this task to an epic" | `update_task` with `kind='epic'` (task must be root — combine with `parent_task_id=0` to detach + promote atomically) |
+| "Demote this epic to a task" | `update_task` with `kind='task'` (epic must have no children) |
 | Need a task in another project I own (no context switch) | `add_linked_task` with `target_project` name |
 
 ### Execution
@@ -254,6 +257,50 @@ flow, examples per callout, anchor mechanics, gap-resolution paths).
 
 ---
 
+## TASK HIERARCHY (2 levels, schema-enforced)
+
+The task tree is **two levels** and the database enforces it (decision-683, migration 030):
+
+- `kind='task'` — leaf node. May have `parent_task_id` pointing to an epic. Cannot have children.
+- `kind='epic'` — root container. Always `parent_task_id=NULL`. Other tasks attach under it.
+
+No third level. Trying to attach a task under another task (kind=task with kind=task parent) is **rejected at the DB level**. The MCP/REST layer maps the rejection to a structured `parent_not_epic` payload with two recovery options.
+
+### Recovery: `parent_not_epic` error
+
+When `add_task(parent_task_id=X)` or `update_task(parent_task_id=X)` returns:
+
+```json
+{
+  "error": "parent_not_epic",
+  "message": "Cannot attach a task under task-X — a task can only have an epic as parent.",
+  "context": {
+    "intended_parent": {"id": X, "kind": "task", "title": "..."},
+    "resolved_epic":   {"id": Y, "kind": "epic", "title": "..."}
+  },
+  "suggestions": [
+    {"action": "promote_parent",  "call": "update_task(task_id=X, kind='epic')"},
+    {"action": "attach_to_epic",  "call": "add_task(..., parent_task_id=Y)"}
+  ]
+}
+```
+
+Decide by local context:
+
+- **promote_parent** when X is itself a substantial body of work and the new task is a subtask of it → make X an epic, attach the new task under it.
+- **attach_to_epic** when X is just another leaf inside an epic Y → attach the new task to Y as a sibling of X.
+
+If `resolved_epic` is `null`, only `promote_parent` is offered — there's no ancestor epic in the chain.
+
+### Promote / demote rules
+
+- **Promote `task` → `epic`**: task must be root (no parent). Combine `kind='epic'` with `parent_task_id=0` in one `update_task` call to atomically detach + promote.
+- **Demote `epic` → `task`**: epic must have no children. Close or reparent subtasks first.
+
+Cross-references stay `task-N` for both kinds — epic is a subtype, not a separate namespace.
+
+---
+
 ## CROSS-REFERENCE FORMAT (canonical grammar)
 
 Every reference to another ConPort item — in `summary`, `rationale`,
@@ -317,6 +364,7 @@ agent context:
 | `summary` | when computed | Short server-side confirmation string |
 | `version` | for `add_document`, `update_document`, context updates | Auto-bumped revision number |
 | `status`, `parent_epic_ready_to_close` | `update_task` only | Closing-batch signals |
+| `kind` | `add_task` / `update_task` | Echoed for POST-WRITE verification on promote/demote |
 | `_hint*` | when present | Server-side emergence signals (pattern candidates, etc.) |
 
 Need the full entity body? Use the matching read tool — `get_task`,
@@ -344,6 +392,7 @@ response echo against intent:
 | `description=...` | `description` length ≈ what you sent (not visibly truncated) |
 | `priority=N` | `priority` equals `N` |
 | `parent_task_id`, `tag_kinds`, links | Field is present and equal to intent |
+| `kind='epic'` / `kind='task'` on `add_task` / `update_task` | Response `kind` matches; on promote/demote the slim echo includes the new value |
 
 **On mismatch.** Re-issue the call with the field re-stated explicitly (often a
 single retry fixes XML-parse glitches). If the second attempt still loses the
@@ -392,4 +441,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v14.9.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit*
+*v14.10.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced)*
