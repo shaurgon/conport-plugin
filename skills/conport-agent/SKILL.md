@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and project attachments in multi-agent systems. Must run agent_init at session start.
 metadata:
-  version: 4.1.0
+  version: 4.2.0
 ---
 
 # ConPort Agent — Persistent Memory & Identity
@@ -29,7 +29,7 @@ All tool names below are short forms. Prepend the prefix for your environment.
    2. A system-specific env var (`PAPERCLIP_AGENT_ID`, `HERMES_AGENT_ID`, `OPENCLAW_AGENT_ID`, etc. — whichever your platform injects)
    3. Fallback: a stable role-derived slug like `"ceo@acme"` or `"builder@repo-name"`
 2. `agent_init({ uuid: "<resolved_uuid>", name: "<display name, e.g. CEO>" })`
-3. `agent_attach_project({ agent_uuid: "<uuid>", project: "<name>" })` if applicable. When attaching, also pass `skill_id: "conport-agent"`, `skill_version: "4.1.0"` (current `metadata.version` of this SKILL.md), and `client_type` (e.g. `"openclaw"`, `"paperclip"`, `"hermes"`) so the server can flag SKILL.md drift via `skill_update_available` on the project init response. Optional but recommended for hand-installed environments.
+3. `agent_attach_project({ agent_uuid: "<uuid>", project: "<name>" })` if applicable. When attaching, also pass `skill_id: "conport-agent"`, `skill_version: "4.2.0"` (current `metadata.version` of this SKILL.md), and `client_type` (e.g. `"openclaw"`, `"paperclip"`, `"hermes"`) so the server can flag SKILL.md drift via `skill_update_available` on the project init response. Optional but recommended for hand-installed environments.
 4. Review `recent_memories` and `attached_projects` from the init response. If `skill_update_available` is present (when project init is invoked alongside `agent_attach_project`), surface ONE short notice in your first reply with changelog and install URLs; do not re-emit later in the session.
 
 ---
@@ -46,6 +46,29 @@ All tool names below are short forms. Prepend the prefix for your environment.
 3. **Use the right type.** feedback/pattern are searchable by type. Don't dump everything as fact.
 4. **Supersede outdated memories.** Bug fixed? Config changed? Call `agent_forget`.
 5. **Pin critical decisions.** Use `pinned=true` for memories that should never decay.
+
+### ⛔ NEVER cross project boundaries
+
+If you are attached to more than one project, **always pass `project_id`** to
+`agent_remember`, `agent_recall`, and `agent_reflect` when the call is about
+one specific project's work. Otherwise recall returns top-K across every
+project you've touched, and using that content in `add_task` or
+`log_progress` leaks material from project A into project B (task-331).
+
+Rule of thumb:
+
+- **Omit `project_id`** only for truly cross-project memories — identity,
+  general feedback ("the user prefers concise answers"), reusable patterns
+  that work everywhere. These stay agent-global (project_id NULL) and show
+  up in every recall.
+- **Pass `project_id`** for anything tied to a specific codebase, decision,
+  bug, or task in that project. Recall then returns `(global OR project_id =
+  N)` — never another project's content.
+
+When you don't know which project the call belongs to (e.g. background cron
+without conversation context): **default to omitting `agent_recall` from
+project-shaped outputs entirely**. Use ConPort project tools (`search`,
+`list_decisions`) for project material instead.
 
 ### Choosing type + category
 
@@ -83,10 +106,11 @@ All tool names below are short forms. Prepend the prefix for your environment.
 - [ ] `agent_init` done?
 - [ ] Project attached?
 - [ ] `agent_recall` before answering questions about past context?
+- [ ] **`project_id` passed when the call is project-shaped** (remember/recall/reflect)?
 - [ ] New learning saved with correct type + category?
 - [ ] No secrets in memory content?
 - [ ] `agent_reflect(scope=day)` at end of session?
 
 ---
 
-*v4.1.0 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links | Skill version notification*
+*v4.2.0 | 7 tools | PARA categories | Decay | Auto-dedup | Reflection | Memory links | Skill version notification | Project scoping*
