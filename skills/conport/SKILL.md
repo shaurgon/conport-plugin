@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.10.0
+  version: 14.10.1
 ---
 
 # ConPort — Project Management System
@@ -170,12 +170,14 @@ Structural context packages for a single node — task or spec — assembled by 
 | "What's similar to this block but not yet linked?" | `get_semantically_related_blocks` |
 | List item-graph + Wave 5 section edges for a doc | `get_linked` with `include_section_links=true` |
 
-**Block-level editing:** prefer `update_block` for surgical one-block edits — it re-embeds only that block. Use `update_document(content=...)` for whole-document rewrites.
+**Block-level editing is the default for any narrow change** — including specs. Use `update_block` / `insert_block` / `delete_block` for surgical edits; only one block re-embeds per call, structure is preserved, and the spec append-only invariant below doesn't engage. `update_document(content=...)` is the **wholesale-rewrite** channel: use it only when you really mean to replace most of the body at once.
 
-**Spec append-only invariant (epic-296).** When updating a body of a `doc_type='spec'` document, `update_document` requires `change_kind`:
+**Spec append-only invariant (epic-296).** The invariant guards the **wholesale-rewrite path**. When `update_document` is called on a `doc_type='spec'` body it requires `change_kind`:
 
 - `change_kind='amend'` — clarification / typo / formatting fix. Allowed; logged into `spec_amendments` with a mandatory `reason`.
 - `change_kind='substantive'` — meaningful claim change. **Rejected.** Author a new spec via `add_document` and link the old one with `link_items(relationship='supersedes')`.
+
+Block tools are not subject to `change_kind` (they're surgical by construction) — but the same rule applies in spirit: don't use a chain of block edits to rewrite a spec's claims. Substantive claim changes → new spec with `supersedes`. Accumulating `spec_amendments` rows on a single spec is almost always a signal the author was bouncing between block tools and `update_document` to repair structure, not a real spec evolution.
 
 `doc_role='derived_view'` documents (synthesised from L1 by recipes like `current_architecture`) reject any body edit — regenerate via the recipe runner, don't hand-edit.
 
@@ -441,4 +443,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v14.10.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced)*
+*v14.10.1 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced)*
