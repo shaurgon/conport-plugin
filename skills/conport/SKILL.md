@@ -37,7 +37,7 @@ If it's not set, fall back in this priority order:
 mcp__conport__init({
   name: "<detected_name>",
   skill_id: "conport",
-  skill_version: "14.7.0",   // value of metadata.version in this SKILL.md frontmatter
+  skill_version: "14.11.1",  // value of metadata.version in this SKILL.md frontmatter
   client_type: "claude-code"  // or claude-ai / cursor / openclaw / mcporter / paperclip
 })
 ```

@@ -5,6 +5,15 @@ agent, so the right way to give a Paperclip agent ConPort is: install our
 Claude Code plugin into the agent's `~/.claude/` — the adapter picks it up
 automatically on the next heartbeat.
 
+> **Endpoints recap.** Claude Code's plugin points at the project surface
+> (`https://api.conport.app/mcp/`, 72 tools). The agent layer
+> (`/mcp-agent`, 29 `agent_*` tools) is what your Paperclip agent
+> actually needs — Step 3 wires those via Claude Code's MCP integration
+> too, so the agent sees both surfaces. If you ever bypass Claude Code
+> and register the MCP server directly, point at `/mcp-agent` and use
+> the [`conport-agent`](../../skills/conport-agent/SKILL.md) skill —
+> never `/mcp` for harness agents per decision-666.
+
 Reference: https://github.com/paperclipai/paperclip/blob/master/docs/adapters/claude-local.md
 
 ## 1. Prepare the agent's shell
