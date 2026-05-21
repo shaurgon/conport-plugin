@@ -10,6 +10,7 @@ and skills work across many clients.
 - **Skills** (plain `SKILL.md`, portable)
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
   - `conport-agent` — persistent agent identity & memory (`agent_init`, `agent_remember`, `agent_recall`, …)
+  - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent.
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns
