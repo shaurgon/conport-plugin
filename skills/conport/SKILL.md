@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.10.1
+  version: 14.11.0
 ---
 
 # ConPort — Project Management System
@@ -73,7 +73,7 @@ If auto-detection of the project name did not work, ask the user.
 
 | Trigger | Tool |
 |---------|------|
-| "We need to do X" | `add_task` with priority |
+| "We need to do X" | `add_task` with priority **and `estimated_seconds`** (effort estimate in seconds; epic rows leave it NULL — sum-from-children at read time) |
 | "X depends on Y" | `add_task_dep` |
 | "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` (replaces the legacy `EPIC:` title prefix) |
 | "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |
@@ -443,4 +443,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v14.10.1 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced)*
+*v14.11.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced) | Per-task time tracking (estimated_seconds + started_at + completed_at + project rollups)*
