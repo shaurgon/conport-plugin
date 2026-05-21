@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity and persistent memory in multi-agent systems. Must run agent_init at session start. Agent Memory v2 — tree-structured memory with gravity-driven consolidation and skill emergence.
 metadata:
-  version: 5.0.0
+  version: 5.0.1
 ---
 
 # ConPort Agent — Tree Memory & Skill Emergence (v2)
@@ -219,4 +219,17 @@ These v1 tools are **gone**. Plugin version 5.0.0+ won't have them:
 
 ---
 
-*v5.0.0 | 26 tools | Tree memory | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only)*
+## MCP payload contamination (since 5.0.1)
+
+If a write tool returns `error: "mcp_payload_contaminated"`, the call had a
+literal MCP tool-call fragment (`<parameter …>`, `<invoke …>`, `</invoke>`,
+`<function_calls>`, `antml:*`) leaked into a string field — almost always a
+client-side XML serialization glitch. The response lists every contaminated
+field. Recovery: re-issue the call with the field(s) cleaned up. The bad
+write did not land — nothing was persisted. Applies to all `agent_*` write
+tools (`agent_remember`, `agent_emit_artifact`, `agent_add_skill_note`,
+`agent_create_branch`, …).
+
+---
+
+*v5.0.1 | 26 tools | Tree memory | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage*

@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.11.0
+  version: 14.11.1
 ---
 
 # ConPort — Project Management System
@@ -385,6 +385,15 @@ just not the way you intended. Real incident: a `sync_decision` call lost its
 `tags` array because the tags ended up inside `rationale` text; the decision
 landed without tags and broke tag-based graph navigation.
 
+**Server-side reject (since 14.11.1).** The ConPort server now rejects any
+write whose string field contains literal MCP tool-call fragments
+(`<parameter …>`, `<invoke …>`, `</invoke>`, `<function_calls>`, `antml:*`).
+The response is a structured error with `error: "mcp_payload_contaminated"`
+listing the contaminated fields. Recovery: re-issue the call with the field
+cleaned up. The bad write does not land. This catches the worst class of
+XML-leak corruption automatically; the verification table below still applies
+to the subtler quirks (silently dropped fields, truncated descriptions).
+
 After **every** create/update call that took optional fields, verify the
 response echo against intent:
 
@@ -443,4 +452,4 @@ On an `Invalid arguments for tool` error:
 
 ---
 
-*v14.11.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced) | Per-task time tracking (estimated_seconds + started_at + completed_at + project rollups)*
+*v14.11.1 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced) | Per-task time tracking (estimated_seconds + started_at + completed_at + project rollups) | Server-side reject of MCP tool-call XML leakage*
