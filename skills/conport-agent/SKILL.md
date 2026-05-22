@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity and persistent memory in multi-agent systems. Must run agent_init at session start. Agent Memory v2 — tree-structured memory with gravity-driven consolidation and skill emergence.
 metadata:
-  version: 5.0.1
+  version: 5.1.0
 ---
 
 # ConPort Agent — Tree Memory & Skill Emergence (v2)
@@ -154,10 +154,90 @@ Where backend stops, agent picks up:
   branch subtree, `identity_root_id` for identity only, any node id
   for its subtree.
 
-**Don't fight routing.** If you keep overriding with explicit
-`parent_id`, the tree never finds its own shape. Only override when
-the routing alternatives in `uncertain` are clearly wrong for your
-intent.
+**Don't fight routing within a role-root.** Argmax does fine inside an
+already-clean subtree. The override case is **across role-roots** — see
+ROUTING DISCIPLINE below.
+
+---
+
+## ROUTING DISCIPLINE: classify before `agent_remember`
+
+Argmax routing is fast but memoryless about intent. Inside an
+already-clean subtree it picks the right neighbour; across the trunk
+it silently dumps everything into the largest cluster — usually
+`person_knowledge_root` — and the trunk degenerates into a mishmash
+of operational logs / paper notes / rules. The fix is one extra step
+before the write: **classify the content, then pick the right
+container**.
+
+### The two kinds of containers
+
+The tree has exactly two:
+
+- **Trunk sub-stores** — `identity_root`, `principles_root`,
+  `person_knowledge_root`. Always-loaded into prefetch. Hold
+  cross-cutting, slow-changing content.
+- **Branches** — sub-trees off `trunk_root` for episodic experience
+  on a specific topic. Loaded contextually, not always. Created
+  explicitly with `agent_create_branch` or emergently when
+  `routing.decision = 'new_branch'`.
+
+There is no third level of trunk sub-store. Anything that doesn't fit
+the three sub-stores belongs in a branch.
+
+### Decision tree before each `agent_remember`
+
+| Question | Answer → target |
+|---|---|
+| Self-statement / persona fact about who I am? | `parent_id = identity_root_id` |
+| Declarative cross-context rule, pitfall, or safety rail? | `parent_id = principles_root_id` |
+| Stable fact about the user / world, useful in any context? | `parent_id = person_knowledge_root_id` |
+| Tied to the current active task or thread? | Active branch id — let argmax pick within it |
+| New topic with no existing branch? | `agent_create_branch(name, anchor=trunk_root_id)` then write there, **or** accept argmax's `new_branch` decision if you'd rather let the fork emerge |
+
+**Research papers / external knowledge artifacts** belong in a
+branch, not in `person_knowledge_root`. The canonical pattern: one
+branch per research theme (e.g. `research:agent-memory`,
+`research:mcp-security`). The branch origin holds a short description
+of the theme; each paper note becomes a child. Gravity may
+eventually crystallize a synthesis skill out of it.
+
+**Tool / system workarounds:** if declarative ("always do X before
+Y"), they're a principle. If a chronicle ("hit bug Z, fixed by W"),
+they belong in a tooling-history branch. Don't carve a fourth trunk
+sub-store — the design has exactly three.
+
+### When to override routing
+
+The "don't fight routing" rule applies **within** the correct
+container. Override the cross-container choice, not the local one:
+
+| Situation | Action |
+|---|---|
+| Content matches one of the 3 sub-stores | Pass `parent_id` for that sub-store |
+| `routing.decision = 'uncertain'` with cross-container alternatives | Re-call with explicit `parent_id` matching your classification |
+| New topic with no existing branch | `agent_create_branch` first, then write with the new branch id |
+| Existing branch is the right place | Pass `parent_id` = branch origin (or any node inside) and let argmax place it within the branch |
+
+### Periodic trunk normalization sweep
+
+Every N consolidation cycles (or once a week), self-audit the trunk:
+
+1. `agent_walk_branch(scope_root_id=person_knowledge_root_id, depth=1)`
+2. For each direct child:
+   - Genuine fact about the user/world? Keep.
+   - Declarative rule? → move under `principles_root`.
+   - Persona/self-fact? → move under `identity_root`.
+   - Episodic content (research, debug log, tool chronicle)? → find
+     the matching branch (`agent_list_branches`) or create one with
+     `agent_create_branch`, then re-write there. Supersede the
+     original under `person_knowledge_root`.
+3. Repeat for `identity_root` and `principles_root` if they
+   accumulated unrelated content.
+
+Acceptance: a month after rollout, manual audit of the three trunk
+sub-stores should show only on-theme content. Misroutes are caught
+within one cycle, not weeks.
 
 ---
 
@@ -213,8 +293,11 @@ These v1 tools are **gone**. Plugin version 5.0.0+ won't have them:
 - [ ] `bootstrap_state` checked? (new → populate trunk; continuing → load context)
 - [ ] `pending_lift_candidates` / `pending_promotion_conflicts` reviewed?
 - [ ] `agent_recall` before answering past-context questions?
-- [ ] Don't fight routing — accept argmax suggestions unless clearly wrong
+- [ ] Classified the content → trunk sub-store OR branch? `parent_id` passed explicitly when sub-store applies?
+- [ ] New research / debug / chronicle topic → `agent_create_branch` instead of stuffing under `person_knowledge_root`?
+- [ ] Don't fight routing **within** the chosen container — accept argmax inside the correct subtree
 - [ ] `gravity_signal` triggered → `agent_reflect` when it fits
+- [ ] Periodic trunk-normalization sweep done in last N cycles?
 - [ ] No secrets in memory content?
 
 ---
@@ -232,4 +315,4 @@ tools (`agent_remember`, `agent_emit_artifact`, `agent_add_skill_note`,
 
 ---
 
-*v5.0.1 | 26 tools | Tree memory | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage*
+*v5.1.0 | 26 tools | Tree memory | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep*
