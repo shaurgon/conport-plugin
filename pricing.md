@@ -55,9 +55,10 @@ opens. During it:
 
 ## Billing provider
 
-Stripe handles all payments. We don't store card details — Stripe does.
-If you're on a Russian card and need ЮKassa, let us know in Discussions;
-we haven't wired it up yet.
+[Polar.sh](https://polar.sh) handles all payments. We don't store card
+details — Polar does, under their merchant-of-record setup. Cards,
+subscriptions, invoices, and tax compliance all live on Polar's side;
+ConPort just receives webhooks and toggles plan state.
 
 All prices are in **USD**. Your bank converts.
 
