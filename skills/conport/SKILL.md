@@ -73,7 +73,7 @@ If auto-detection of the project name did not work, ask the user.
 
 | Trigger | Tool |
 |---------|------|
-| "We need to do X" | `add_task` with priority **and `estimated_seconds`** (effort estimate in seconds; epic rows leave it NULL — sum-from-children at read time) |
+| "We need to do X" | `add_task` with priority **and `estimated_seconds`** (priority is industry-standard 1-5 where 1=critical and 5=idle, default 3; effort in seconds — epic rows leave it NULL, sum-from-children at read time) |
 | "X depends on Y" | `add_task_dep` |
 | "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` (replaces the legacy `EPIC:` title prefix) |
 | "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |

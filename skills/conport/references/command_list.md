@@ -51,8 +51,9 @@ mcp__conport__init({
 (`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
 entries), `instructions`, `summary`, and `reconciliation` when stale
 IN_PROGRESS tasks are detected. Top-5 excludes subtasks of active epics so
-you see roots + orphans; `effective_priority` rolls up the max priority of
-direct children.
+you see roots + orphans; `effective_priority` rolls up the most-important
+priority across direct children (priority is industry-standard 1-5 where
+1=critical and 5=idle, so "most important" = the smallest number).
 
 ---
 
@@ -278,7 +279,7 @@ mcp__conport__add_task({
   project_id: 11,
   title: "Implement auth",
   status: "TODO",
-  priority: 4
+  priority: 2
 })
 ```
 
@@ -288,7 +289,7 @@ mcp__conport__add_task({
 | title | string | yes | Title (max 200 chars) |
 | description | string | no | Description (max 2000 chars) |
 | status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| DONE \| CANCELLED (default: TODO) |
-| priority | integer | no | 1-5 (5=highest, default: 3) |
+| priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
 | parent_task_id | integer | no | Per-project ID of parent task |
 
 ### update_task
@@ -310,7 +311,7 @@ mcp__conport__update_task({
 | title | string | no | New title |
 | description | string | no | New description |
 | status | string | no | New status |
-| priority | integer | no | New priority (1-5) |
+| priority | integer | no | New priority 1-5 (1=critical, 5=idle) |
 
 ### list_tasks
 
@@ -328,7 +329,7 @@ mcp__conport__list_tasks({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | status | string | no | Filter by status. Comma-separated or "ALL" (default: "TODO,IN_PROGRESS") |
-| priority | integer | no | Filter by priority |
+| priority | integer | no | Filter by priority 1-5 (1=critical, 5=idle) |
 | parent_task_id | integer | no | Filter by parent per-project ID (0 = root tasks only) |
 | limit | integer | no | Max results (default: 50) |
 | include_description | boolean | no | Include task descriptions (default: false) |
