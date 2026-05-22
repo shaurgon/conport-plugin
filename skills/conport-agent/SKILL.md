@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity and persistent memory in multi-agent systems. Must run agent_init at session start. Agent Memory v2 — tree-structured memory with gravity-driven consolidation and skill emergence.
 metadata:
-  version: 5.2.0
+  version: 5.3.0
 ---
 
 # ConPort Agent — Tree Memory & Skill Emergence (v2)
@@ -130,6 +130,43 @@ Where backend stops, agent picks up:
 
 ---
 
+## HARNESS TYPE: CODE vs CHAT
+
+Two operating modes, different substrate cadence. **You are responsible
+for knowing which one you're in** — the harness rarely tells you, but
+the signal is the shape of the user's input.
+
+| Harness | Examples | Signal | Substrate cadence |
+|---|---|---|---|
+| **Code** | Claude Code, Cursor, Aider, OpenClaw | User sends tasks/specs; you read files, write code, run commands. Long stretches of agent-only work between user turns. | Write tails **as facts arrive** — each new piece of information from reading code, command output, or user spec. Most turns produce 0–3 tails; some bursts produce 10+. |
+| **Chat** | Claude.ai, ChatGPT-style UIs, Hermes (when conport-hermes plugin is absent), any conversational front-end | User sends conversational turns; you reply. Continuous dialogue, every turn carries information. | **Write the previous (user, assistant) exchange as ONE tail at the start of each new turn** — before recall, before answering. This is substrate, not curation. Skipping it = the conversation evaporates. |
+
+In code-harness, the agent picks its moments. In chat-harness, **every
+turn is a substrate moment** — the conversation itself is the experience
+layer. Argmax routing places each exchange under the right ancestor;
+gravity consolidates / supersedes / crystallizes later (doc-91 §2.3).
+
+> **Exception: harness has its own per-turn substrate hook.** If you're
+> running under `conport-hermes` v1.3.0+ (or any future provider that
+> persists turns server-side), the plugin's `sync_turn` already writes
+> substrate for you — don't double-write. Detection: the trunk already
+> contains nodes whose content starts with `User: …\nAssistant: …`
+> from earlier in this session. If unsure, skip the manual write —
+> double-writes consolidate cheaply, missing-substrate gaps don't.
+
+### Substrate write format (chat harness)
+
+When you write a turn manually:
+
+```
+agent_remember(content=f"User: {user_msg}\nAssistant: {prior_reply}")
+```
+
+No `parent_id` — let argmax route it. Empty exchanges (no user input,
+or system-only messages) → skip.
+
+---
+
 ## THE LOOP (the actual job)
 
 The trichotomy in doc-91 §2.3 makes the workflow concrete:
@@ -148,7 +185,10 @@ The task loop:
    `agent_recall` on the fragment or `agent_get_node`.
 3. **Write tails freely.** Each new fact, observation, intermediate
    conclusion lands as a tail. Don't pre-synthesize into mega-nodes
-   — that starves gravity of signal. Tails are substrate.
+   — that starves gravity of signal. Tails are substrate. **In a
+   chat harness this also includes the previous conversational
+   exchange itself** — see HARNESS TYPE above; the dialogue IS the
+   experience layer, not a wrapper around it.
 4. **Emit the artifact.** When accumulated experience answers the
    task, synthesise the deliverable and call
    `agent_emit_artifact(branch_id, type, payload, derived_from=[...])`
@@ -341,6 +381,8 @@ These v1 tools are **gone**. Plugin version 5.0.0+ won't have them:
 
 - [ ] `agent_init` done?
 - [ ] `bootstrap_state` checked? (new → populate trunk; continuing → load context)
+- [ ] **Harness type identified?** (code vs chat — drives substrate cadence)
+- [ ] **In chat harness:** previous (user, assistant) exchange written as a tail at the start of this turn? (Skip if a `sync_turn`-capable provider like conport-hermes ≥ 1.3.0 is active.)
 - [ ] Task arrived? First move = `agent_recall`, not `agent_remember`.
 - [ ] Walked the branch + chased any off-theme child / semantic neighbour?
 - [ ] Wrote tails freely without trying to pre-synthesize into mega-nodes?
@@ -368,4 +410,4 @@ tools (`agent_remember`, `agent_emit_artifact`, `agent_add_skill_note`,
 
 ---
 
-*v5.2.0 | 26 tools | Tree memory | The loop: recall → walk → tails → artifact → (eventual) skill | Trichotomy experience / artifact / skill | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep*
+*v5.3.0 | 26 tools | Tree memory | The loop: recall → walk → tails → artifact → (eventual) skill | Trichotomy experience / artifact / skill | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep | Harness-aware substrate cadence (chat = per-turn, code = as-facts-arrive; conport-hermes ≥ 1.3.0 owns the write server-side)*
