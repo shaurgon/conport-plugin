@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity and persistent memory in multi-agent systems. Must run agent_init at session start. Agent Memory v2 — tree-structured memory with gravity-driven consolidation and skill emergence.
 metadata:
-  version: 5.1.0
+  version: 5.2.0
 ---
 
 # ConPort Agent — Tree Memory & Skill Emergence (v2)
@@ -127,6 +127,56 @@ Where backend stops, agent picks up:
 - **Secrets, passwords, API keys, tokens** — even partially.
   Bad: `"API key starts with 0a73..."`
   Good: `"API key is in $API_KEY env var"`
+
+---
+
+## THE LOOP (the actual job)
+
+The trichotomy in doc-91 §2.3 makes the workflow concrete:
+**experience** (tail nodes — substrate that accumulates freely),
+**artifacts** (curated outputs synthesised from multiple experience
+nodes — the deliverable), **skills** (frozen mature origins that
+emerge passively through gravity over many cycles).
+
+The task loop:
+
+1. **Recall.** `agent_recall(task_query)` — composite score finds
+   relevant nodes anywhere in the tree.
+2. **Walk + investigate.** Walk the branch the hit lives in. If you
+   spot an off-theme child or a semantic neighbour in another
+   branch, **chase it** — anomalies are signals, not noise. Use
+   `agent_recall` on the fragment or `agent_get_node`.
+3. **Write tails freely.** Each new fact, observation, intermediate
+   conclusion lands as a tail. Don't pre-synthesize into mega-nodes
+   — that starves gravity of signal. Tails are substrate.
+4. **Emit the artifact.** When accumulated experience answers the
+   task, synthesise the deliverable and call
+   `agent_emit_artifact(branch_id, type, payload, derived_from=[...])`
+   pulling from the experience nodes that contributed. The artifact
+   IS the task's answer; the tails are how it got built. Cross-
+   branch `derived_from` is normal — that's why the link graph
+   exists.
+5. **Let skill emergence happen.** Origins ripen via gravity over
+   many cycles; crystallization is the long game, not per-task.
+   Don't try to force a skill.
+
+> **Worked example: "Что я знаю про Потешные войска?"**
+>
+> 1. `agent_recall("Потешные войска")` → node "Потешные войска".
+> 2. Walk → tails: Семёновский, Преображенский, Лефортовский полки;
+>    бой со Швецией; красные гольфы в форме.
+> 3. "Красные гольфы" looks off-theme — `agent_recall("красные
+>    гольфы")` connects to the same battle and the colour of the
+>    bloodied snow. You may add a tail like "три полка остались
+>    биться, остальные бежали" — substrate, not deliverable.
+> 4. `agent_emit_artifact(branch_id=…, type='historical_brief',
+>    derived_from=[потешные_id, бой_id, гольфы_id, …])` with the
+>    narrative: игрушечное войско Петра → бой против шведов →
+>    кровавый снег → красные гольфы в память. **This is the
+>    deliverable.**
+> 5. Months later, the origin "Потешные войска" may ripen enough to
+>    crystallize a "Russian military origins" skill — separate
+>    story, not part of this task.
 
 ---
 
@@ -291,8 +341,11 @@ These v1 tools are **gone**. Plugin version 5.0.0+ won't have them:
 
 - [ ] `agent_init` done?
 - [ ] `bootstrap_state` checked? (new → populate trunk; continuing → load context)
+- [ ] Task arrived? First move = `agent_recall`, not `agent_remember`.
+- [ ] Walked the branch + chased any off-theme child / semantic neighbour?
+- [ ] Wrote tails freely without trying to pre-synthesize into mega-nodes?
+- [ ] Task answer = `agent_emit_artifact` with `derived_from=[…]`, not a tail?
 - [ ] `pending_lift_candidates` / `pending_promotion_conflicts` reviewed?
-- [ ] `agent_recall` before answering past-context questions?
 - [ ] Classified the content → trunk sub-store OR branch? `parent_id` passed explicitly when sub-store applies?
 - [ ] New research / debug / chronicle topic → `agent_create_branch` instead of stuffing under `person_knowledge_root`?
 - [ ] Don't fight routing **within** the chosen container — accept argmax inside the correct subtree
@@ -315,4 +368,4 @@ tools (`agent_remember`, `agent_emit_artifact`, `agent_add_skill_note`,
 
 ---
 
-*v5.1.0 | 26 tools | Tree memory | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep*
+*v5.2.0 | 26 tools | Tree memory | The loop: recall → walk → tails → artifact → (eventual) skill | Trichotomy experience / artifact / skill | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep*
