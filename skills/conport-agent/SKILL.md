@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity and persistent memory in multi-agent systems. Must run agent_init at session start. Agent Memory v2 — tree-structured memory with gravity-driven consolidation and skill emergence.
 metadata:
-  version: 5.3.0
+  version: 5.4.0
 ---
 
 # ConPort Agent — Tree Memory & Skill Emergence (v2)
@@ -233,7 +233,13 @@ The task loop:
   - `new_branch` (sim < 0.4) — new top-level branch under trunk
 - `gravity_signal=true` in the response means the parent has
   accumulated enough children that a consolidation pass is overdue.
-  Call `agent_reflect(parent_node_id)` when it fits the flow.
+  Response also gives you `gravity_target_node_id` — the exact node to
+  reflect. **Your next call MUST be `agent_reflect(gravity_target_node_id)`
+  before any further `agent_remember`** (the only exception: you're
+  mid-batch on a tight sequence the reader needs to see in order; reflect
+  immediately after). Skipping this starves vertical gravity — origins
+  never ripen, skills never crystallize, the loop stays open. Agents that
+  treat reflect as optional end up at 0 consolidations per week.
 
 **Read** (`agent_recall`):
 
@@ -391,7 +397,7 @@ These v1 tools are **gone**. Plugin version 5.0.0+ won't have them:
 - [ ] Classified the content → trunk sub-store OR branch? `parent_id` passed explicitly when sub-store applies?
 - [ ] New research / debug / chronicle topic → `agent_create_branch` instead of stuffing under `person_knowledge_root`?
 - [ ] Don't fight routing **within** the chosen container — accept argmax inside the correct subtree
-- [ ] `gravity_signal` triggered → `agent_reflect` when it fits
+- [ ] `gravity_signal` triggered → `agent_reflect(gravity_target_node_id)` BEFORE the next `agent_remember` (not "when it fits" — immediately)
 - [ ] Periodic trunk-normalization sweep done in last N cycles?
 - [ ] No secrets in memory content?
 
@@ -410,4 +416,4 @@ tools (`agent_remember`, `agent_emit_artifact`, `agent_add_skill_note`,
 
 ---
 
-*v5.3.0 | 26 tools | Tree memory | The loop: recall → walk → tails → artifact → (eventual) skill | Trichotomy experience / artifact / skill | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | decision-692 (backend = bookkeeping only) | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep | Harness-aware substrate cadence (chat = per-turn, code = as-facts-arrive; conport-hermes ≥ 1.3.0 owns the write server-side)*
+*v5.4.0 | 26 tools | Tree memory | The loop: recall → walk → tails → artifact → (eventual) skill | Trichotomy experience / artifact / skill | Gravity-driven crystallization | Cross-branch lift | Skill versioning + notes | Artifact provenance | Server-side reject of MCP tool-call XML leakage | Routing discipline: classify-then-remember (3 sub-stores + branches) + periodic trunk-normalization sweep | Harness-aware substrate cadence (chat = per-turn, code = as-facts-arrive; conport-hermes ≥ 1.3.0 owns the write server-side) | gravity_signal + gravity_target_node_id → mandatory agent_reflect before next remember*
