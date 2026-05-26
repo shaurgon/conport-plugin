@@ -1,4 +1,4 @@
-# Integrating ConPort into an agent system (v5.0.0+)
+# Integrating ConPort into an agent system (v6.0.0+)
 
 Copy the blocks below into the corresponding agent-system files
 (`AGENTS.md`, `HEARTBEAT.md`, or whatever your platform calls them).
@@ -12,15 +12,17 @@ similar agent framework.
 ```markdown
 ## Memory Rules
 
-ConPort is your single memory system. Memory is **tree-structured**:
-trunk roots (identity / principles / person_knowledge) anchor agent
-identity; branches accumulate episodic experience; gravity consolidates
-nodes and crystallizes skills over time.
+ConPort is your single memory system. Memory is a **sphere graph**:
+typed nodes (identity / principle / fact / observation / skill /
+artifact) connected via typed edges (semantic / derived_from / temporal
+/ skill_of / competing_view / supersedes). No tree, no branches.
+Topics emerge via edge density; skills crystallize from stable
+communities — you decide when to promote.
 
 Full reference: the `conport-agent` skill (`SKILL.md` +
 `references/tools.md`).
 
-### ⛔ NEVER store
+### NEVER store
 - **Secrets, passwords, API keys, tokens** — even partial ones.
 - Store the env var name instead:
   Bad: `"API key: 0a732108..."` → Good: `"API key is in $API_KEY env var"`
@@ -29,41 +31,23 @@ Full reference: the `conport-agent` skill (`SKILL.md` +
 - Bad: `"Task 107 completed: added skill to 7 agents via sync endpoint"`
 - Good: `"desiredSkills defaults to null for new agents — must call POST /api/agents/{id}/skills/sync"`
 
-### Just call agent_remember — routing is automatic
+### Writing memory
 
-Don't classify upfront. `agent_remember(content)` runs argmax similarity
-routing and attaches the new node next to its semantic neighbours, or
-opens a new top-level branch if nothing is close enough. The response
-tells you what happened via `routing.decision`:
+Two paths:
+1. **Chat buffer:** `agent_chat_turn(role, text)` → when
+   `extraction_signal` fires → `agent_extract_thread(message_ids)`.
+   The LLM extracts typed nodes + edges automatically.
+2. **Direct write:** `agent_remember_v3(meta_type, content, edges?)`.
+   Use when you already know what to record.
 
-- `linear` — attached silently to the nearest node.
-- `uncertain` — attached but the routing is ambiguous; alternatives
-  are returned so you can re-call with an explicit `parent_id` if the
-  routing was wrong.
-- `new_branch` — opened a new top-level branch under `trunk_root`.
-
-`gravity_signal=true` in the response means the parent has accumulated
-enough children that a consolidation pass is overdue. Call
-`agent_reflect(parent_node_id)` when it fits the flow.
+Write atomic nodes. Edge density creates structure, not pre-organization.
 
 ### decision-692: backend does not think for you
 
-Backend is bookkeeping. When it detects a lift candidate / promotion
-conflict / re-crystallization opportunity, it surfaces the situation
-and waits. **You** synthesise the merged content and pass it back via
-`agent_confirm_lift` / `agent_resolve_promotion_conflict` /
-`agent_complete_re_crystallization`.
-
-### Automatic server-side behaviour (no action needed)
-
-- **Routing on write** — argmax similarity decides parent/branch.
-- **Counter maintenance** — direct_children_count, content_hash,
-  depth, etc. via triggers.
-- **Recall scoring** — composite (similarity + recall_factor +
-  foundational_boost). Top-K hits bump recall_count_7d.
-- **Nightly recall decay** — sliding-window approximation.
-- **Weekly lift scan** — emits `agent_lift_candidate` rows for review.
-- **Weekly promotion check** — auto-promotes or marks `conflict_held`.
+Backend is bookkeeping. When it detects mature communities (skill
+candidates) or borderline nodes (ambiguous membership), it surfaces
+hints in `agent_init_v3`. **You** decide what to promote, merge, or
+ignore.
 ```
 
 ---
@@ -71,35 +55,34 @@ and waits. **You** synthesise the merged content and pass it back via
 ## Block for `HEARTBEAT.md`
 
 Every agent platform has a heartbeat / tick loop. The first heartbeat
-of a session MUST initialise the agent memory; later heartbeats can
-call `agent_reflect` and review pending counts.
+of a session MUST initialise the agent memory.
 
 ```markdown
 ## 1. ConPort Agent (MANDATORY)
 
 **First action** after identifying yourself:
-`agent_init({ uuid: "<AGENT_UUID>", name: "<YOUR_DISPLAY_NAME>" })`
+`agent_init_v3({ uuid: "<AGENT_UUID>", name: "<YOUR_DISPLAY_NAME>" })`
 
 Resolve `<AGENT_UUID>` via (in order):
 1. `CONPORT_AGENT_UUID` env var
 2. Platform-specific env var (`PAPERCLIP_AGENT_ID`, `HERMES_AGENT_ID`,
    `OPENCLAW_AGENT_ID`, …)
-3. Fallback: a stable role-derived slug like `ceo@acme` or
-   `builder@repo-name`
+3. Fallback: a stable role-derived slug
 
 Use the init response payload:
-- If `bootstrap_state='new'` — populate trunk via subsequent
-  `agent_remember` calls (identity / principles / person facts).
-- If `bootstrap_state='continuing'` — load `trunk_context` into your
-  prompt prefix.
-- If `pending_lift_candidates > 0` or `pending_promotion_conflicts > 0`
-  — review when convenient via the respective `agent_review_*` tools.
+- If `bootstrap_state='new'` — write identity + principles via
+  `agent_remember_v3(meta_type='identity'|'principle', content=...)`.
+- If `bootstrap_state='continuing'` — identity + principles +
+  broadcast_facts are your context baseline.
+- If `pending_extraction` is present — call `agent_extract_thread`
+  with the listed message_ids before anything else.
+- If `mature_communities` is non-empty — review and decide whether
+  to promote via `agent_promote_skill`.
 
 Then, as needed:
-- `agent_recall(query, scope_root_id?)` — fetch relevant context.
-  Pass `scope_root_id=identity_root_id` for identity-only,
-  `branch_origin_id` for one branch's subtree, etc.
-- `agent_remember(content)` — persist new facts.
+- `agent_recall_v3(query, scope?)` — fetch relevant context.
+- `agent_remember_v3(meta_type, content, edges?)` — persist new facts.
+- `agent_chat_turn(role, text)` — record conversational turns.
 
 ---
 
@@ -107,7 +90,7 @@ Then, as needed:
 
 | Every | Action |
 |---|---|
-| Heartbeat | If a `gravity_signal=true` response surfaced in a recent `agent_remember`, call `agent_reflect(parent_node_id)`. |
-| Daily | Review `agent_review_re_crystallization()` if you're maintaining skills — fold accumulated notes into a new version via `agent_complete_re_crystallization`. |
-| Weekly | Review `agent_review_lift_candidates()` and `agent_review_promotion_conflicts()`. Synthesise content and resolve. |
+| Turn (chat harness) | `agent_chat_turn` per message; `agent_extract_thread` when `extraction_signal` fires. |
+| As facts arrive (code harness) | `agent_remember_v3` with relevant `meta_type` and edges. |
+| Session start | Review `mature_communities` and `borderline_nodes` from init. |
 ```
