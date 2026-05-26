@@ -1,8 +1,8 @@
 ---
 name: conport-agent
-description: Use when managing agent identity and persistent memory in multi-agent systems. Must run agent_init_v3 at session start. Agent Memory v3 — sphere graph with typed nodes, visibility model, and skill emergence via community detection.
+description: Use when managing agent identity, persistent memory, and operational workspace in multi-agent systems. Must run agent_init_v3 at session start. Agent Memory v3 (sphere graph) + Workspace v1 (event-sourced entities, runs, projections).
 metadata:
-  version: 6.0.0
+  version: 6.1.0
 ---
 
 # ConPort Agent — Sphere Graph Memory (v3)
@@ -236,6 +236,116 @@ field(s) cleaned up. The bad write did not land — nothing was persisted.
 
 ---
 
+## WORKSPACE — operational state
+
+Sphere graph (sections above) is **memory**: what you observed, who you
+are, what principles you follow. It is NOT the place for:
+
+- Stateful entities with numeric parameters (cities with scores)
+- Workflow runs (skill executions with params and outputs)
+- Event streams (news, measurements, observations with structured metadata)
+- Provenance trails (what influenced this conclusion)
+
+For that — Workspace.
+
+### When to use what
+
+| What | Where |
+|---|---|
+| "Юра предпочитает Екатеринбург" | memory (fact node) |
+| "Юра спросил про переезд" | memory (observation) |
+| City as entity with scores | workspace (`agent_entity_upsert`) |
+| News about that city | workspace (`agent_event_record`) |
+| Daily refresh skill run | workspace (`agent_run_start` / `agent_run_finish`) |
+| Current city score | workspace (`agent_projection_record` / `agent_projection_current`) |
+| "observation mentioned a city" | cross-link (`agent_link_node_to_entity`) |
+
+Rule of thumb: **structured fields + history matters in order → workspace**.
+Free text + embedding for recall → memory.
+
+### Workspace primitives (11 tools)
+
+**Entity** — typed domain object with JSONB attrs, natural key (entity_type + name):
+
+- `agent_entity_upsert(entity_type, name, attrs?)` — create or merge attrs
+- `agent_entity_get(entity_type, name)` — lookup by natural key
+- `agent_entity_list(entity_type, attrs_filter?, limit?)` — list with JSONB containment filter
+
+**Event** — append-only, immutable once written:
+
+- `agent_event_record(event_type, payload, entity_id?, occurred_at?, run_id?)` — record event
+- `agent_event_query(entity_id?, event_type?, since?, until?, run_id?, limit?)` — query with filters
+
+**Run** — skill execution trace:
+
+- `agent_run_start(skill_name, params?, skill_node_id?)` — start (status=running)
+- `agent_run_finish(run_id, status, outputs?)` — finish (completed/failed/cancelled)
+
+**Projection** — derived snapshots with provenance:
+
+- `agent_projection_record(entity_id, projection_type, value, derived_from_event_ids?, derived_from_run_id?)` — record snapshot
+- `agent_projection_current(entity_id, projection_type)` — latest snapshot
+- `agent_projection_history(entity_id, projection_type, since?, until?, limit?)` — all snapshots over time
+
+**Cross-link** — connect memory nodes to workspace entities:
+
+- `agent_link_node_to_entity(node_id, entity_id, link_type?)` — 'mentions', 'about', or 'derived_from'
+
+### Example: cities with daily scoring
+
+```
+# Setup entities once
+agent_entity_upsert('city', 'Екатеринбург', attrs={'population': 1500000})
+agent_entity_upsert('city', 'Новосибирск', attrs={...})
+
+# Daily news events
+agent_event_record('news_published', payload={'headline': '...', 'source': 'e1.ru',
+    'impacted_aspects': ['safety']}, entity_id=<ekb_id>, occurred_at='2026-05-25T10:00Z')
+
+# Daily refresh run
+run_id = agent_run_start('daily_city_refresh', params={'date': '2026-05-25'})
+# ... compute scores locally from events ...
+agent_projection_record(entity_id=<ekb_id>, projection_type='overall_score',
+    value={'score': 6.9, 'delta': -0.1}, derived_from_event_ids=[...], derived_from_run_id=run_id)
+agent_run_finish(run_id, status='completed', outputs={'cities_processed': 3})
+
+# Query current state
+agent_projection_current(entity_id=<ekb_id>, projection_type='overall_score')
+# → latest score with provenance to events
+```
+
+### Example: dream mode research
+
+```
+agent_entity_upsert('dream_topic', 'agent-memory-evolution', attrs={'first_explored': '2026-05-20'})
+run_id = agent_run_start('dream_explore', params={'topic': 'agent-memory-evolution'})
+
+# Each search result → event
+agent_event_record('search_result', payload={'url': '...', 'summary': '...'},
+    entity_id=<topic_id>, run_id=run_id)
+
+# Synthesis → projection with provenance
+agent_projection_record(entity_id=<topic_id>, projection_type='dream_conclusion',
+    value={'summary': '...', 'key_insights': [...]},
+    derived_from_event_ids=[<all_event_ids>], derived_from_run_id=run_id)
+agent_run_finish(run_id, status='completed')
+```
+
+### Conventions
+
+- `entity_type`, `event_type`, `projection_type` — agent-defined strings.
+  Be consistent within a workflow (always `'city'`, not `'City'` / `'cities'`).
+- `projection.value` is freeform JSONB. If you plan ranking, keep a
+  numeric `score` field at top level.
+- `event.occurred_at` is real-world time; `recorded_at` is when stored.
+  Pass `occurred_at` explicitly when you know it.
+- `derived_from_event_ids` — pass ALL events that actually influenced
+  the projection. The junction gives full provenance trail.
+- Entity `attrs` merge on upsert (new keys added, existing overwritten).
+  Use for stable attributes; use events for time-varying data.
+
+---
+
 ## SUNSET (removed in v6.0.0)
 
 These v2 tools are **gone** in v6.0.0:
@@ -267,12 +377,12 @@ These v2 tools are **gone** in v6.0.0:
 - [ ] Task arrived? First move = `agent_recall_v3`, not `agent_remember_v3`.
 - [ ] `extraction_signal` fired → `agent_extract_thread` called IMMEDIATELY?
 - [ ] `mature_communities` present → reviewed, decided promote or skip?
-- [ ] `borderline_nodes` present → added explicit edges if disambiguation matters?
-- [ ] Writing atomic nodes, not mega-nodes?
-- [ ] Connected new nodes to existing ones via edges where relevant?
 - [ ] `private` vs `shared` vs `broadcast` — chosen correctly?
-- [ ] No secrets in memory content?
+- [ ] No secrets in memory or workspace content?
+- [ ] Structured domain data → workspace (entity + event + projection), not memory?
+- [ ] Workflow execution → `agent_run_start` / `agent_run_finish` wrapping it?
+- [ ] Derived result → `agent_projection_record` with `derived_from_event_ids`?
 
 ---
 
-*v6.0.0 | 7 tools | Sphere graph | 6 meta_types (identity / principle / fact / observation / skill / artifact) | 6 edge_types (semantic / derived_from / temporal / skill_of / competing_view / supersedes) | Visibility model (private / shared / broadcast) | Turn-based extraction with extraction_signal | Always-load anchors (identity + principles + broadcast_facts) | Skill emergence via Louvain community detection + agent-driven promotion | Borderline node detection | Conflict resolution schema-ready (Phase 2) | Server-side reject of MCP tool-call XML leakage*
+*v6.1.0 | 18 tools (7 memory + 11 workspace) | Sphere graph + Event-sourced workspace | Memory: 6 meta_types, 6 edge_types, visibility, extraction, skill emergence | Workspace: entities + events + runs + projections, append-only history, provenance junction, cross-link via node_entity_link | Server-side reject of MCP tool-call XML leakage*
