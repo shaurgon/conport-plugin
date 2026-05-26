@@ -1,6 +1,6 @@
 ---
 name: conport-agent
-description: Use when managing agent identity, persistent memory, and operational workspace in multi-agent systems. Must run agent_init_v3 at session start. Agent Memory v3 (sphere graph) + Workspace v1 (event-sourced entities, runs, projections).
+description: Use when managing agent identity, persistent memory, and operational workspace in multi-agent systems. Must run agent_init at session start. Agent Memory v3 (sphere graph) + Workspace v1 (event-sourced entities, runs, projections).
 metadata:
   version: 6.1.0
 ---
@@ -13,7 +13,7 @@ metadata:
 > structural roots. Communities emerge via Louvain clustering; skills
 > crystallize from dense, stable communities — you decide when to promote.
 >
-> Without `agent_init_v3` — no memory. Without `agent_recall_v3` — you
+> Without `agent_init` — no memory. Without `agent_recall` — you
 > answer blindly.
 
 For the full tool reference see [references/tools.md](./references/tools.md).
@@ -34,7 +34,7 @@ Tool names below are short forms. Prepend the prefix for your environment:
    2. A platform-specific env var (`PAPERCLIP_AGENT_ID`, `HERMES_AGENT_ID`,
       `OPENCLAW_AGENT_ID`), or
    3. A stable role-derived slug.
-2. `agent_init_v3({ uuid: "<resolved_uuid>", name: "<display name>" })`
+2. `agent_init({ uuid: "<resolved_uuid>", name: "<display name>" })`
 
 The response shape:
 
@@ -50,9 +50,9 @@ summary                   human-readable status line
 ```
 
 `bootstrap_state='new'` → empty graph; write your first identity and
-principles via `agent_remember_v3`.
+principles via `agent_remember`.
 `continuing` → identity + principles + broadcast_facts are your context
-baseline; use `agent_recall_v3` for the rest.
+baseline; use `agent_recall` for the rest.
 
 If `pending_extraction` is present, call `agent_extract_thread` with
 the listed `message_ids` before doing anything else.
@@ -139,7 +139,7 @@ For continuous dialogue where every turn carries information:
 3. The LLM extracts typed nodes + edges from the buffer automatically.
 
 **Same discipline as gravity_signal in v2 — do NOT skip extraction
-when the signal fires.** Call it before your next `agent_remember_v3`.
+when the signal fires.** Call it before your next `agent_remember`.
 
 ### Path 2: Direct node write (code harness / explicit knowledge)
 
@@ -147,7 +147,7 @@ When you already know what to record (reading code, command output,
 user specification):
 
 ```
-agent_remember_v3(
+agent_remember(
     meta_type='fact',
     content='...',
     visibility='shared',        # optional, default shared
@@ -168,7 +168,7 @@ density is what creates structure, not careful pre-organization.
 ### Semantic recall
 
 ```
-agent_recall_v3(query='...', limit=10, scope={
+agent_recall(query='...', limit=10, scope={
     meta_types: ['fact', 'observation'],  # optional filter
     community_id: 3                       # optional filter
 })
@@ -196,7 +196,7 @@ Skills emerge from stable, dense communities detected by Louvain:
 1. **Detection.** Daily Louvain runs cluster nodes into communities.
    Nodes stable in the same community across 3+ runs become "frozen".
 2. **Maturity.** A community with ≥5 nodes, avg edge weight ≥1.5, and
-   ≥3 frozen members is "mature" — surfaced in `agent_init_v3` as
+   ≥3 frozen members is "mature" — surfaced in `agent_init` as
    `mature_communities`.
 3. **Promotion.** You decide. Review the central nodes, synthesize what
    the pattern is, and call:
@@ -353,13 +353,13 @@ These v2 tools are **gone** in v6.0.0:
 - **Tree concepts:** `parent_id`, `branch_id`, `depth`, `branch_state`,
   `trunk_root`, `identity_root`, `principles_root`,
   `person_knowledge_root` — the sphere has no tree.
-- **`agent_remember` (v1/v2)** → `agent_remember_v3` (typed nodes + edges).
-- **`agent_recall` (v2)** → `agent_recall_v3` (visibility-aware).
-- **`agent_init` (v2)** → `agent_init_v3` (anchors + communities).
+- **`agent_remember` (v1/v2)** → `agent_remember` (typed nodes + edges).
+- **`agent_recall` (v2)** → `agent_recall` (visibility-aware).
+- **`agent_init` (v2)** → `agent_init` (anchors + communities).
 - **`agent_reflect`** → extraction replaces reflection.
 - **`agent_create_branch` / `agent_close_branch`** → no branches.
 - **`agent_walk_branch` / `agent_list_branches`** → `agent_get_subgraph`.
-- **`agent_emit_artifact`** → `agent_remember_v3(meta_type='artifact')`.
+- **`agent_emit_artifact`** → `agent_remember(meta_type='artifact')`.
 - **`agent_confirm_lift` / `agent_review_lift_candidates`** → no lift.
 - **`agent_resolve_promotion_conflict`** → Phase 2 `agent_resolve_conflict`.
 - **`agent_complete_re_crystallization`** → skills are mutable nodes.
@@ -372,9 +372,9 @@ These v2 tools are **gone** in v6.0.0:
 
 ## CHECKLIST
 
-- [ ] `agent_init_v3` done?
+- [ ] `agent_init` done?
 - [ ] `bootstrap_state` checked? (new → write identity + principles; continuing → load anchors)
-- [ ] Task arrived? First move = `agent_recall_v3`, not `agent_remember_v3`.
+- [ ] Task arrived? First move = `agent_recall`, not `agent_remember`.
 - [ ] `extraction_signal` fired → `agent_extract_thread` called IMMEDIATELY?
 - [ ] `mature_communities` present → reviewed, decided promote or skip?
 - [ ] `private` vs `shared` vs `broadcast` — chosen correctly?

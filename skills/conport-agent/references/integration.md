@@ -37,7 +37,7 @@ Two paths:
 1. **Chat buffer:** `agent_chat_turn(role, text)` → when
    `extraction_signal` fires → `agent_extract_thread(message_ids)`.
    The LLM extracts typed nodes + edges automatically.
-2. **Direct write:** `agent_remember_v3(meta_type, content, edges?)`.
+2. **Direct write:** `agent_remember(meta_type, content, edges?)`.
    Use when you already know what to record.
 
 Write atomic nodes. Edge density creates structure, not pre-organization.
@@ -46,7 +46,7 @@ Write atomic nodes. Edge density creates structure, not pre-organization.
 
 Backend is bookkeeping. When it detects mature communities (skill
 candidates) or borderline nodes (ambiguous membership), it surfaces
-hints in `agent_init_v3`. **You** decide what to promote, merge, or
+hints in `agent_init`. **You** decide what to promote, merge, or
 ignore.
 ```
 
@@ -61,7 +61,7 @@ of a session MUST initialise the agent memory.
 ## 1. ConPort Agent (MANDATORY)
 
 **First action** after identifying yourself:
-`agent_init_v3({ uuid: "<AGENT_UUID>", name: "<YOUR_DISPLAY_NAME>" })`
+`agent_init({ uuid: "<AGENT_UUID>", name: "<YOUR_DISPLAY_NAME>" })`
 
 Resolve `<AGENT_UUID>` via (in order):
 1. `CONPORT_AGENT_UUID` env var
@@ -71,7 +71,7 @@ Resolve `<AGENT_UUID>` via (in order):
 
 Use the init response payload:
 - If `bootstrap_state='new'` — write identity + principles via
-  `agent_remember_v3(meta_type='identity'|'principle', content=...)`.
+  `agent_remember(meta_type='identity'|'principle', content=...)`.
 - If `bootstrap_state='continuing'` — identity + principles +
   broadcast_facts are your context baseline.
 - If `pending_extraction` is present — call `agent_extract_thread`
@@ -80,8 +80,8 @@ Use the init response payload:
   to promote via `agent_promote_skill`.
 
 Then, as needed:
-- `agent_recall_v3(query, scope?)` — fetch relevant context.
-- `agent_remember_v3(meta_type, content, edges?)` — persist new facts.
+- `agent_recall(query, scope?)` — fetch relevant context.
+- `agent_remember(meta_type, content, edges?)` — persist new facts.
 - `agent_chat_turn(role, text)` — record conversational turns.
 
 ---
@@ -91,6 +91,6 @@ Then, as needed:
 | Every | Action |
 |---|---|
 | Turn (chat harness) | `agent_chat_turn` per message; `agent_extract_thread` when `extraction_signal` fires. |
-| As facts arrive (code harness) | `agent_remember_v3` with relevant `meta_type` and edges. |
+| As facts arrive (code harness) | `agent_remember` with relevant `meta_type` and edges. |
 | Session start | Review `mature_communities` and `borderline_nodes` from init. |
 ```

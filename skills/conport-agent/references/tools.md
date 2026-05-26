@@ -12,21 +12,21 @@
 
 | Tool | Args | Description |
 |------|------|-------------|
-| `agent_init_v3` | `uuid?`, `name?`, `type?` | Bootstrap or load. Returns identity (10), principles (10), broadcast_facts (10), mature_communities, borderline_nodes, pending_extraction, summary. |
+| `agent_init` | `uuid?`, `name?`, `type?` | Bootstrap or load. Returns identity (10), principles (10), broadcast_facts (10), mature_communities, borderline_nodes, pending_extraction, summary. |
 
 ### Memory write
 
 | Tool | Args | Description |
 |------|------|-------------|
 | `agent_chat_turn` | `agent_uuid`, `role`, `text` | Record a chat message. Returns `extraction_signal` (true when buffer >= 10) + `pending_message_ids`. |
-| `agent_remember_v3` | `agent_uuid`, `meta_type`, `content`, `visibility?`, `edges?` | Direct node write. Trigger forces identity/principle to private. |
+| `agent_remember` | `agent_uuid`, `meta_type`, `content`, `visibility?`, `edges?` | Direct node write. Trigger forces identity/principle to private. |
 | `agent_extract_thread` | `agent_uuid`, `message_ids` | LLM extraction: converts buffered messages into typed nodes + edges. |
 
 ### Memory read
 
 | Tool | Args | Description |
 |------|------|-------------|
-| `agent_recall_v3` | `agent_uuid`, `query`, `limit?`, `scope?` | Vector search with visibility filter. |
+| `agent_recall` | `agent_uuid`, `query`, `limit?`, `scope?` | Vector search with visibility filter. |
 | `agent_get_subgraph` | `agent_uuid`, `root_node_id`, `depth?`, `edge_types?` | BFS from a node outward. |
 
 ### Skill emergence
