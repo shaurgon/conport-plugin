@@ -125,6 +125,25 @@ any synthesis. You are the LLM — you have the context, you decide.
 
 ---
 
+## ANTI-PATTERNS
+
+**Don't store structured snapshots as text memory nodes.**
+Bad: `agent_remember(meta_type='fact', content='Екатеринбург: score 4.74, news 0.30, rank 1')` — loses structure, can't query by score, creates supersede chains on daily updates.
+Good: `agent_entity_upsert('city', 'Екатеринбург')` + `agent_event_record('daily_rating', payload={score: 4.74, ...})` + `agent_projection_record(projection_type='overall_score', value={...})`.
+
+**Don't use memory for workflow state.**
+Bad: `agent_remember(meta_type='observation', content='Dream run started, topic: X')` — no params, no status, no outputs, no provenance.
+Good: `agent_run_start('dream_explore', params={topic: 'X'})` → events → projection → `agent_run_finish(...)`.
+
+**Migration from memory to workspace:** if you already have text nodes that should be structured entities, create workspace entities from them and link back:
+```
+entity_id = agent_entity_upsert('city', 'Екатеринбург', attrs={...})
+agent_link_node_to_entity(node_id=<old_memory_node>, entity_id=entity_id, link_type='derived_from')
+```
+The memory node stays as cognitive context; the workspace entity becomes the operational record.
+
+---
+
 ## WRITING MEMORY
 
 Two paths, choose by context:
