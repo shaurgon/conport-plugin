@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and operational workspace in multi-agent systems. Must run agent_init at session start. Agent Memory v3 (sphere graph) + Workspace v1 (event-sourced entities, runs, projections).
 metadata:
-  version: 6.1.0
+  version: 7.0.0
 ---
 
 # ConPort Agent — Sphere Graph Memory (v3)
@@ -404,4 +404,4 @@ These v2 tools are **gone** in v6.0.0:
 
 ---
 
-*v6.1.0 | 18 tools (7 memory + 11 workspace) | Sphere graph + Event-sourced workspace | Memory: 6 meta_types, 6 edge_types, visibility, extraction, skill emergence | Workspace: entities + events + runs + projections, append-only history, provenance junction, cross-link via node_entity_link | Server-side reject of MCP tool-call XML leakage*
+*v7.0.0 | 18 tools (7 memory + 11 workspace) | Sphere graph + Event-sourced workspace | Memory: agent_init, agent_remember, agent_recall, agent_chat_turn, agent_extract_thread, agent_get_subgraph, agent_promote_skill | Workspace: entities + events + runs + projections, append-only history, provenance junction, cross-link via node_entity_link | Anti-patterns: no structured snapshots in memory, no workflow state in memory | Server-side reject of MCP tool-call XML leakage*
