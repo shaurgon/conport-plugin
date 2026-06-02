@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and operational workspace in multi-agent systems. Must run agent_init at session start. Agent Memory v3 (sphere graph) + Workspace v1 (event-sourced entities, runs, projections).
 metadata:
-  version: 7.1.0
+  version: 7.2.0
 ---
 
 # ConPort Agent — Sphere Graph Memory (v3)
@@ -288,13 +288,41 @@ For that — Workspace.
 Rule of thumb: **structured fields + history matters in order → workspace**.
 Free text + embedding for recall → memory.
 
-### Workspace primitives (11 tools)
+### Collections (entity_type IS the collection)
+
+A collection is just an `entity_type` (`city`, `series`) — its members are the
+entities of that type. The schema lives in a registry row
+`agent_entity_upsert('_collection', '<type>', {description, field_hints, status_vocab})`
+and is inherited by members (soft). `agent_init` returns `collections` (each
+type → member count + schema).
+
+Discipline — skip it and you get fragmentation (`serial` + `watchlist` +
+`interests` for one domain, the same item filed under two types):
+
+1. **Check `agent_init.collections` before writing.** Reuse an existing
+   collection's key + `field_hints`. Do NOT invent a new `entity_type` for a
+   domain that already has one.
+2. **First appearance of a domain:** register it once via
+   `agent_entity_upsert('_collection', key, {...})`. One canonical singular key
+   (`series`, not `serial`/`shows`/`watchlist`).
+3. **An item is one entity** (`entity_type=key`, `name=item`, attrs per
+   `field_hints`). A list / wishlist is **not** an entity — it's the members
+   filtered by a `status` attr (`agent_entity_list(key, attrs_filter={'status': ...})`).
+   Do NOT append items as events on a container entity — that leaves no
+   queryable current state.
+4. **State transitions** = update the member's `status` attr (upsert merges) +
+   optional `agent_event_record` for history.
+5. **Mistake?** `agent_entity_delete(entity_type, name)` — don't leave junk and
+   create a duplicate.
+
+### Workspace primitives (12 tools)
 
 **Entity** — typed domain object with JSONB attrs, natural key (entity_type + name):
 
 - `agent_entity_upsert(entity_type, name, attrs?)` — create or merge attrs
 - `agent_entity_get(entity_type, name)` — lookup by natural key
 - `agent_entity_list(entity_type, attrs_filter?, limit?)` — list with JSONB containment filter
+- `agent_entity_delete(entity_type, name)` — delete entity + cascade its events / projections / links
 
 **Event** — append-only, immutable once written:
 
@@ -410,4 +438,4 @@ These v2 tools are **gone** in v6.0.0:
 
 ---
 
-*v7.1.0 | 18 tools (7 memory + 11 workspace) | Sphere graph + Event-sourced workspace | Memory: agent_init, agent_remember, agent_recall, agent_chat_turn, agent_extract_thread, agent_get_subgraph, agent_promote_skill | Multi-strategy recall (vector + FTS + graph adjacency RRF) + temporal since/until scope | Workspace: entities + events + runs + projections, append-only history, provenance junction, cross-link via node_entity_link | Anti-patterns: no structured snapshots in memory, no workflow state in memory | Server-side reject of MCP tool-call XML leakage*
+*v7.2.0 | 19 tools (7 memory + 12 workspace) | Sphere graph + Event-sourced workspace | Memory: agent_init, agent_remember, agent_recall, agent_chat_turn, agent_extract_thread, agent_get_subgraph, agent_promote_skill | Multi-strategy recall (vector + FTS + graph adjacency RRF) + temporal since/until scope | Workspace: entities + events + runs + projections + delete, collections (entity_type = collection, _collection registry schema surfaced in agent_init), append-only history, provenance junction, cross-link via node_entity_link | Anti-patterns: no structured snapshots in memory, no workflow state in memory, no list-as-entity | Server-side reject of MCP tool-call XML leakage*
