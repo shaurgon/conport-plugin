@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and operational workspace in multi-agent systems. Must run agent_init at session start. Agent Memory v3 (sphere graph) + Workspace v1 (event-sourced entities, runs, projections).
 metadata:
-  version: 7.0.0
+  version: 7.1.0
 ---
 
 # ConPort Agent — Sphere Graph Memory (v3)
@@ -184,17 +184,23 @@ density is what creates structure, not careful pre-organization.
 
 ## READING MEMORY
 
-### Semantic recall
+### Recall (multi-strategy)
 
 ```
 agent_recall(query='...', limit=10, scope={
-    meta_types: ['fact', 'observation'],  # optional filter
-    community_id: 3                       # optional filter
+    meta_types: ['fact', 'observation'],   # optional filter
+    visibility: ['shared', 'broadcast'],   # optional filter
+    community_id: 3,                       # optional filter
+    since: '2026-06-01T00:00:00Z',         # optional: created_at >= since (ISO 8601)
+    until: '2026-06-30T23:59:59Z',         # optional: created_at <= until
 })
 ```
 
-Returns ranked nodes respecting visibility. Use before answering any
-question about prior context.
+Fuses three strategies via RRF — vector (semantic), keyword/FTS (exact
+terms), and graph adjacency (nodes linked to other hits get boosted) —
+all respecting visibility. Use before answering any question about prior
+context. `since`/`until` give precise time-range recall ("what changed
+this week"), not the coarse decay tiers of the old v2.
 
 ### Subgraph exploration
 
@@ -404,4 +410,4 @@ These v2 tools are **gone** in v6.0.0:
 
 ---
 
-*v7.0.0 | 18 tools (7 memory + 11 workspace) | Sphere graph + Event-sourced workspace | Memory: agent_init, agent_remember, agent_recall, agent_chat_turn, agent_extract_thread, agent_get_subgraph, agent_promote_skill | Workspace: entities + events + runs + projections, append-only history, provenance junction, cross-link via node_entity_link | Anti-patterns: no structured snapshots in memory, no workflow state in memory | Server-side reject of MCP tool-call XML leakage*
+*v7.1.0 | 18 tools (7 memory + 11 workspace) | Sphere graph + Event-sourced workspace | Memory: agent_init, agent_remember, agent_recall, agent_chat_turn, agent_extract_thread, agent_get_subgraph, agent_promote_skill | Multi-strategy recall (vector + FTS + graph adjacency RRF) + temporal since/until scope | Workspace: entities + events + runs + projections, append-only history, provenance junction, cross-link via node_entity_link | Anti-patterns: no structured snapshots in memory, no workflow state in memory | Server-side reject of MCP tool-call XML leakage*
