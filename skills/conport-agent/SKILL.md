@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 8.0.0
+  version: 8.1.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -40,6 +40,7 @@ bootstrap_state    'new' or 'continuing'
 identity           your identity statements (private)
 principles         your rules / safety rails (private)
 broadcast_facts    collective facts everyone shares
+skills             [{name, description}] — your authored loops (body fetched on demand via get_skill)
 collections        [{key, members, field_hints, status_vocab}] — your structured domains
 mature_communities skill-promotion candidates (dense, stable clusters)
 pending_extraction {buffer_size, message_ids} when un-extracted messages ≥ 10
@@ -76,7 +77,7 @@ ConPort's job — it links by meaning, you don't.
 
 **Free thought / observation / principle → `remember(content)`.**
 ```
-remember("Юра предпочитает тёплый климат и плохо переносит сырость")
+remember("the user prefers a warm, dry climate")
 ```
 
 **A thing you'll filter / compare / update over time, and there'll be more
@@ -86,11 +87,11 @@ like it** (cities you score, series you rate, research topics) → a **kind**:
 2. Before writing items, `get_kind("series")` — use the real fields + a valid status, don't invent them.
 3. Write the item's current state:
 ```
-remember(kind="series", name="Severance", fields={rating: 2, status: "dropped", verdict: "хрень"})
+remember(kind="series", name="Severance", fields={rating: 2, status: "dropped", verdict: "weak"})
 ```
 4. Something happened over time → `event`:
 ```
-event(kind="series", name="Severance", note="пересмотрел финал, всё равно 2")
+event(kind="series", name="Severance", note="rewatched the finale, still a 2")
 ```
 
 Rules that keep domains clean (skip them and you fragment — `serial` +
@@ -105,11 +106,22 @@ Rules that keep domains clean (skip them and you fragment — `serial` +
   Don't pile items as events on a container.
 - **A synthesis/verdict lives in the item's fields** (current state), not a
   separate object. History of how it changed → `event`.
+- **An item that belongs to another** (a source to a topic, an order to a
+  client) declares a **ref in its kind** — `create_kind("source", …, refs={topic:"topic"})`.
+  The ref field is validated on write: name a real `topic` or it's rejected
+  (`unknown_ref`). Not a link verb (there is none) — you declare the shape once,
+  items fill it. The referenced item stays its own findable record, not an
+  `event` buried in this one.
 - **Mistake?** `entity_delete(kind, name)` — fix it, don't leave a duplicate.
 
 `status` is validated against the kind's `statuses`; unknown fields are
 accepted (the schema grows). `recall` finds items by content; `event`s are an
 item's timeline (read with `event_query`, not `recall`).
+
+**Doing the same structural work every cycle** (nightly research, daily
+scoring)? Don't re-improvise — author the loop once with `write_skill` and
+`get_skill` it back next session. See `references/authoring-loops.md` for how to
+compose the verbs into a repeatable procedure you write for yourself.
 
 ---
 
@@ -152,12 +164,25 @@ some internals (communities, the connection graph) — use when you need them.
   (Legacy name — it addresses the item by its kind + name.)
 - `event_query(entity_id, event_type?, since?, until?)` — read an item's
   timeline. Pass the `item_id` from a `recall` result (events aren't in `recall`).
+- `get_referrers(kind, name)` — the items that reference this one by their
+  declared `ref` (a topic's `source`s). Exact provenance — what a synthesis
+  rests on — not fuzzy `recall`.
 
-**Skill emergence:**
+**Skills — your authored loops:**
+- `write_skill(name, description, body)` — when you keep doing the same
+  structural work, write the procedure down once instead of re-improvising. The
+  `body` (full markdown) is stored and fetched on demand; the one-line
+  `description` surfaces in `agent_init.skills` + `recall`. See
+  `references/authoring-loops.md`.
+- `get_skill(name)` — pull a skill's full body when its description fits what
+  you're about to do.
+
+**Skill emergence (different thing — emergent, not authored):**
 - `promote_skill(community_id, content)` — when `agent_init` surfaces a
-  `mature_community` worth crystallizing, write it up as a reusable skill
-  (broadcast). Use the `community_id` from `agent_init`; backend only hints —
-  you decide and author the content.
+  `mature_community` worth crystallizing, write it up as a broadcast skill node.
+  Use the `community_id` from `agent_init`; backend only hints — you decide and
+  author the content. (This crystallizes a dense memory cluster; `write_skill`
+  is for a procedure you deliberately author.)
 
 **Runs (skill-execution tracking):**
 - `run_start(skill_name, params?)` → `run_finish(run_id, status, outputs?)` —
@@ -190,4 +215,4 @@ did not land.
 
 ---
 
-*v8.0.0 | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace, hidden) | recall spans cognition + structured items, typed; connections built by ConPort; structured state in item fields, history in events | doc-101*
+*v8.1.0 | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*

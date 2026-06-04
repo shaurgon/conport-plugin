@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Idempotent via inline HTML-comment anchors written back into the source files.
 metadata:
-  version: 0.2.0
+  version: 0.2.1
 ---
 
 # superpowers-conport — Bridge
@@ -71,7 +71,7 @@ Verify the response echo: returned id is a positive integer, `summary` is presen
 
 If `<plan_path>` does not exist on disk: skip to step 5 with no question.
 
-Otherwise: `AskUserQuestion`: «Импортировать epic + tasks из `<plan_path>`?» (yes / no). On `no`, skip to step 5.
+Otherwise: `AskUserQuestion`: "Import epic + tasks from `<plan_path>`?" (yes / no). On `no`, skip to step 5.
 
 ### 4. Import plan as epic + tasks
 

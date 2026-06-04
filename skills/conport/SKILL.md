@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 14.11.1
+  version: 14.11.2
 ---
 
 # ConPort — Project Management System
@@ -37,7 +37,7 @@ If it's not set, fall back in this priority order:
 mcp__conport__init({
   name: "<detected_name>",
   skill_id: "conport",
-  skill_version: "14.11.1",  // value of metadata.version in this SKILL.md frontmatter
+  skill_version: "14.11.2",  // value of metadata.version in this SKILL.md frontmatter
   client_type: "claude-code"  // or claude-ai / cursor / openclaw / mcporter / paperclip
 })
 ```
@@ -50,7 +50,7 @@ If auto-detection of the project name did not work, ask the user.
 
 1. **Print summary:** `[CONPORT] {summary from response}`
 2. **Execute instructions** from the response (read files, apply rules)
-3. **Report backlog:** `N задач в TODO, M в работе. Топ-5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
+3. **Report backlog:** `N tasks in TODO, M in progress. Top 5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
 4. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
 5. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
