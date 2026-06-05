@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 8.1.0
+  version: 8.2.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -36,22 +36,71 @@ Tool names below are short forms. Prepend the prefix for your environment:
 Response shape:
 
 ```
-bootstrap_state    'new' or 'continuing'
-identity           your identity statements (private)
-principles         your rules / safety rails (private)
-broadcast_facts    collective facts everyone shares
-skills             [{name, description}] — your authored loops (body fetched on demand via get_skill)
-collections        [{key, members, field_hints, status_vocab}] — your structured domains
-mature_communities skill-promotion candidates (dense, stable clusters)
-pending_extraction {buffer_size, message_ids} when un-extracted messages ≥ 10
-summary            human-readable status line
+bootstrap_state      'new' or 'continuing'
+identity             your identity statements (private)
+principles           your rules / safety rails (private)
+broadcast_facts      collective always-load knowledge — facts AND crystallized skills
+recent_self_changes  YOUR own identity/principle/skill writes from the last 7 days
+skills               [{name, description}] — your authored loops (body fetched on demand via get_skill)
+collections          [{key, members, field_hints, status_vocab}] — your structured domains
+mature_communities   skill-promotion candidates (dense, stable clusters)
+pending_extraction   {buffer_size, message_ids} when un-extracted messages ≥ 10
+summary              human-readable status line
 ```
+
+`recent_self_changes` is your short-term memory of **what you changed about
+yourself**. Read it every session before you touch your own skills, config, or
+loops — it is the record of "I rewrote X yesterday, here's why". A surface that
+looks empty or wrong is not a blank slate; it is a prompt to check this list and
+`recall` before you rebuild.
 
 `new` → empty; write your first identity + principles via `remember`.
 `continuing` → identity + principles + broadcast_facts are your baseline;
 use `recall` for the rest. If `pending_extraction` is present, call
 `extract_thread` with its `message_ids` before anything else. Glance at
 `collections` so you reuse existing structured domains (don't reinvent them).
+
+---
+
+## RECALL BEFORE YOU ACT
+
+Your memory is **read-first**, not a write-only journal. You write diligently;
+the failure mode is acting without reading. Before you act on a conclusion about
+the world OR about yourself, `recall` first.
+
+**The hard rule — never rebuild from a blank-looking surface.** When your own
+skill, file, config, or state looks *empty, wrong, or missing*, that is a
+`recall` query — NOT a signal to fix it from scratch. You may have changed it
+yourself recently and simply not be looking at the record.
+
+```
+# WRONG — destroys your own recent work
+"my main skill is empty → I'll rebuild it"
+
+# RIGHT — recover the record first
+recall("research loop skill", scope={meta_types:["skill"]})   # what did I author?
+# + read recent_self_changes from agent_init
+# only AFTER that, if it's genuinely gone, rebuild
+```
+
+This applies hardest on **diagnose turns** — "what happened", "разберись",
+"why this error", "fix this". The first move is `recall` of the relevant area
++ your `recent_self_changes`, THEN inspect the live state. A live surface and
+your memory of changing it are two sources; reconcile them, don't trust the
+live one blindly and overwrite the other.
+
+**Record what you change about yourself.** When you edit your own skill, cron,
+loop, or config, immediately `remember` it so future-you can recall it:
+
+```
+remember("2026-06-04 rewrote research-loop: switched topic/source split, "
+         "cron now nightly — reason: old approach buried sources under topics",
+         meta_type="skill", visibility="broadcast")
+```
+
+A self-change you don't record is a change you will later mistake for a bug.
+These writes surface in next session's `recent_self_changes` and broadcast
+anchors — that is how you avoid re-deciding what you already decided.
 
 ---
 
@@ -205,7 +254,11 @@ did not land.
 - [ ] `agent_init` done? `bootstrap_state` checked?
 - [ ] `pending_extraction` present → `extract_thread` first?
 - [ ] Glanced at `collections` — reusing existing domains, not reinventing?
+- [ ] Read `recent_self_changes` before touching your own skills/config?
 - [ ] Task arrived → `recall` BEFORE answering?
+- [ ] Diagnose turn ("what happened" / "fix this") → `recall` + `recent_self_changes` BEFORE inspecting/rebuilding?
+- [ ] A surface looked empty/wrong → recalled your own changes before rebuilding (never rebuild blind)?
+- [ ] Changed your own skill/cron/config → `remember`ed it as a self-change?
 - [ ] Structured domain → `create_kind` once + `get_kind` before writing items?
 - [ ] Item state → `remember(kind,…)`; what-happened → `event`; never list-as-item?
 - [ ] Free thought → `remember(content)` with the right visibility?
@@ -215,4 +268,4 @@ did not land.
 
 ---
 
-*v8.1.0 | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
+*v8.2.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
