@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 8.2.0
+  version: 15.0.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -59,6 +59,15 @@ looks empty or wrong is not a blank slate; it is a prompt to check this list and
 use `recall` for the rest. If `pending_extraction` is present, call
 `extract_thread` with its `message_ids` before anything else. Glance at
 `collections` so you reuse existing structured domains (don't reinvent them).
+
+**Updates: act on the signal, never hand-compare versions.** Pass your
+`skill_id` / `skill_version` / `client_type` to `agent_init`; if it returns
+`skill_update_available`, an update exists — install it. If it's absent, you're
+current. Your memory provider is ONE installable unit (e.g. `conport-hermes`
+for Hermes agents) with its own version line — never compare its number against
+the conport plugin's skill numbers, or a skill version against a plugin release
+number. They're independent. Eyeballing "my 8.x looks higher than the 12.x
+release, so I'm ahead" is the exact mistake this signal prevents (decision-808).
 
 ---
 
@@ -268,4 +277,4 @@ did not land.
 
 ---
 
-*v8.2.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
+*v15.0.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
