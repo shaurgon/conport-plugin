@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.5.0
+  version: 15.6.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -235,8 +235,9 @@ some internals (communities, the connection graph) — use when you need them.
 
 **Bootstrap / cleanup / timeline:**
 - `agent_init` — session start (above).
-- `entity_delete(kind, name)` — delete an item (+ its events) to fix a mistake.
-  (Legacy name — it addresses the item by its kind + name.)
+- `entity_delete(kind, name)` — soft-delete an item to fix a mistake. Its
+  events/timeline survive, and re-remembering the same (kind, name)
+  resurrects it. (Legacy name — it addresses the item by its kind + name.)
 - `event_query(entity_id, event_type?, since?, until?)` — read an item's
   timeline. Pass the `item_id` from a `recall` result (events aren't in `recall`).
 - `get_referrers(kind, name)` — the items that reference this one by their
@@ -251,6 +252,11 @@ some internals (communities, the connection graph) — use when you need them.
   stats, init; irreversible from the agent surface (the row is archived
   server-side). Prefer `supersedes`-consolidation when a replacement exists;
   forget is for pure noise. Only your own nodes; for items use `entity_delete`.
+- `node_mute(node_id)` / `node_unmute(node_id)` — per-viewer mute: hide a
+  node from YOUR reads only (usually someone else's shared/broadcast noise).
+  Reversible, shared corpus untouched. Contrast with `node_forget`:
+  forget = irreversible, creator-only, hides from everyone (your own noise);
+  mute = reversible, any visible node (someone else's noise in your recall).
 
 **Skills — your authored loops:**
 - `write_skill(name, description, body)` — when you keep doing the same
@@ -303,4 +309,4 @@ did not land.
 
 ---
 
-*v15.5.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in); relevant_until validity horizon (expired memories demoted in rank, never deleted); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
+*v15.6.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in); relevant_until validity horizon (expired memories demoted in rank, never deleted); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
