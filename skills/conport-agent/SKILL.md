@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.1.0
+  version: 15.4.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -129,6 +129,17 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 You never say "node", "entity", "projection", "link". Connecting things is
 ConPort's job — it links by meaning, you don't.
 
+**Recall returns the current version of a memory.** Superseded nodes are
+excluded by default — when you consolidate (a new node + `supersedes` edges to
+the old ones), the replaced nodes stop surfacing. Pass
+`scope.include_superseded=true` to audit history.
+
+**`relevant_until` — optional validity horizon (both remember forms).**
+`remember(..., relevant_until="2026-06-19T00:00:00Z")` marks how long the
+memory stays operationally relevant; past it the memory sinks in recall rank —
+it is never deleted. Operationally-scoped notes ("deploy frozen this week")
+get days; syntheses and durable knowledge — leave unset (indefinite).
+
 ---
 
 ## THE STRUCTURE DECISION (your only real choice)
@@ -229,6 +240,11 @@ some internals (communities, the connection graph) — use when you need them.
   with per-type distributions + workspace item count. This is the only correct
   answer to "how big is my memory" — the project surface's `graph_stats`
   measures the owner-wide GraphRAG graph, which `recall` does not search.
+- `node_forget(node_id)` — forget a cognition node by id (get the id from a
+  `recall` result). Hides it from every read surface — recall, subgraph,
+  stats, init; irreversible from the agent surface (the row is archived
+  server-side). Prefer `supersedes`-consolidation when a replacement exists;
+  forget is for pure noise. Only your own nodes; for items use `entity_delete`.
 
 **Skills — your authored loops:**
 - `write_skill(name, description, body)` — when you keep doing the same
@@ -281,4 +297,4 @@ did not land.
 
 ---
 
-*v15.1.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
+*v15.4.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; superseded nodes excluded by default (scope.include_superseded opts in); relevant_until validity horizon (expired memories demoted in rank, never deleted); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
