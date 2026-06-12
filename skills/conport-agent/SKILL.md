@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.6.0
+  version: 15.7.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -132,13 +132,20 @@ ConPort's job — it links by meaning, you don't.
 **Recall returns the current version of a memory.** Superseded nodes are
 excluded by default — when you consolidate (a new node + `supersedes` edges to
 the old ones), the replaced nodes stop surfacing. Pass
-`scope.include_superseded=true` to audit history.
+`scope.include_superseded=true` to audit history. The same exclusion applies
+to the `agent_init` bootstrap anchors (a stale principle doesn't load after
+consolidation); on the observational surfaces (`get_subgraph`, the owner
+dashboard) superseded nodes stay visible but carry a `superseded: true`
+marker, and `graph_stats` reports a `superseded_count` — your check that a
+consolidation actually took.
 
 **`relevant_until` — optional validity horizon (both remember forms).**
 `remember(..., relevant_until="2026-06-19T00:00:00Z")` marks how long the
 memory stays operationally relevant; past it the memory sinks in recall rank —
 it is never deleted. Operationally-scoped notes ("deploy frozen this week")
-get days; syntheses and durable knowledge — leave unset (indefinite).
+get days; syntheses and durable knowledge — leave unset (indefinite). The
+special value `"clear"` resets a previously set horizon back to indefinite
+(structured items; on free nodes it simply means no horizon).
 
 **`intent` — say what you're trying to do (optional).** Pass it when the
 query alone is ambiguous about granularity or content-type — it lifts
@@ -244,9 +251,11 @@ some internals (communities, the connection graph) — use when you need them.
   declared `ref` (a topic's `source`s). Exact provenance — what a synthesis
   rests on — not fuzzy `recall`.
 - `graph_stats()` — size and shape of YOUR recall corpus: visible nodes/edges
-  with per-type distributions + workspace item count. This is the only correct
-  answer to "how big is my memory" — the project surface's `graph_stats`
-  measures the owner-wide GraphRAG graph, which `recall` does not search.
+  with per-type distributions, a `superseded_count` (visible nodes already
+  replaced via `supersedes` — did your consolidation take?), + workspace item
+  count. This is the only correct answer to "how big is my memory" — the
+  project surface's `graph_stats` measures the owner-wide GraphRAG graph,
+  which `recall` does not search.
 - `node_forget(node_id)` — forget a cognition node by id (get the id from a
   `recall` result). Hides it from every read surface — recall, subgraph,
   stats, init; irreversible from the agent surface (the row is archived
@@ -309,4 +318,4 @@ did not land.
 
 ---
 
-*v15.6.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in); relevant_until validity horizon (expired memories demoted in rank, never deleted); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
+*v15.7.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
