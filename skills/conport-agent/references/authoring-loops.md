@@ -115,6 +115,26 @@ A ref is NOT a per-record link call — you declare the *shape* once in
 does connect individual memories, but that's for free-cognition nodes, not
 structured items — items point at each other through declared refs.)
 
+**One ref, many targets — the `multi` form.** Some items legitimately rest on
+*several* parents: a `concept` introduced across many sources, an order spanning
+several line items. Declare the ref array-valued and the field holds a **list**:
+```
+create_kind("concept",
+  fields=["definition", "status"],
+  refs={introduced_in: {kind: "source", multi: true}})
+
+remember(kind="concept", name="provenance-grounding",
+  fields={introduced_in: ["arxiv:2403.xxxx", "arxiv:2511.yyyy"]})
+```
+**Every element** of the list is validated on write — name one source that
+doesn't exist and the write is rejected with `unknown_ref` identifying *that
+element* (not the whole list), so a single typo can't slip through. Use the
+single form (`refs={topic: "topic"}`) when an item has exactly one parent, the
+`multi` form when it genuinely has many. `get_referrers("source", "arxiv:2403.xxxx")`
+follows both forms — it returns the concept above because the source's name
+appears inside that `multi` list, the same way it returns single-valued
+referrers.
+
 Keep the layers straight — this is the trap:
 - The **synthesis / verdict** for the whole domain lives on the **container
   item** (`topic`'s `synthesis` + `open_questions`).

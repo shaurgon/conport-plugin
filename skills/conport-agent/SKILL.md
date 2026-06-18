@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.8.0
+  version: 15.9.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -136,12 +136,54 @@ are *competing views*", "this consolidation *supersedes* those":
 - on the memory as you write it: `remember(content, edges=[{target_node_id, edge_type}])`
 - between two memories that already exist: `link(from_node_id, to_node_id, edge_type)`
 
-`edge_type` ∈ `semantic` · `derived_from` · `temporal` · `skill_of` ·
-`competing_view` · `supersedes`. (`semantic` is what auto-linking uses — you
-rarely assert it by hand.) `target_node_id` / `from_node_id` / `to_node_id` are
-the ids ConPort returns from `remember` and `recall`. A malformed edge comes
-back as a structured `edge_errors` entry (wrong keys, unknown `edge_type`,
-missing target) — not a silent drop; fix it and re-state.
+`target_node_id` / `from_node_id` / `to_node_id` are the ids ConPort returns
+from `remember` and `recall`. A malformed edge comes back as a structured
+`edge_errors` entry (wrong keys, unknown `edge_type`, missing target, bad
+`properties`) — not a silent drop; fix it and re-state.
+
+**The edge-type vocabulary is a fixed, curated set of 12 — two tiers.** It is
+not open-ended: there is no "declare your own edge type" verb. Pick the closest
+one; an unrecognized type comes back as an `invalid_edge_type` error listing the
+allowed values.
+
+- **Structural (6)** — how your cognition *relates*, the graph mechanics:
+  `semantic` · `derived_from` · `temporal` · `skill_of` · `competing_view` ·
+  `supersedes`. (`semantic` is what auto-linking uses — you rarely assert it by
+  hand.)
+- **Domain (6)** — what the *content* asserts, research-KG semantics: `unifies`
+  (a survey unifies several works) · `introduces` (a paper introduces a method) ·
+  `cites` · `uses_method` · `reports_finding` · `refines`.
+
+The split is *structural = how memories connect* vs *domain = a claim the
+content makes*. Reach for a domain predicate when the edge is a statement about
+the subject matter (this paper *introduces* that method); reach for a structural
+one when it's about your own memory graph (this synthesis *supersedes* those
+notes).
+
+**Grounding an edge with `properties` (optional).** Both `remember(edges=[…])`
+and `link` accept a `properties` object on each edge:
+
+```
+remember(content, edges=[{target_node_id, edge_type,
+  properties={confidence: 0.8, source_item: "node-417",
+              evidence_section: "§3.2", note: "weak — single study"}}])
+```
+
+Recognized keys: `confidence` (a number in 0..1), `source_item` (a grounding
+ref — which memory/source backs the claim), `evidence_section`, `note`. Unknown
+keys are allowed (the schema is extensible). A bad payload — e.g. `confidence`
+out of range, or a non-string `note` — is **rejected as a structured
+`invalid_properties` error** (surfaced in `edge_errors` for the `remember` path,
+returned directly by `link`), never silently dropped: fix it and re-state.
+
+**Why ground edges.** When you're building a *large* graph — many edges asserted
+across a research corpus — an ungrounded `derived_from` or `cites` is a claim you
+can't audit later: future-you can't tell a hunch from a sourced fact. Setting
+`confidence` lets weak inferences sink and strong ones stand; `source_item`
+pins each assertion to the memory it rests on, so the graph stays defensible
+instead of decaying into unverifiable folklore. For one-off edges it's
+overkill; for a systematically-built knowledge graph it's the difference
+between a corpus you trust and one you re-derive from scratch.
 
 **Recall returns the current version of a memory.** Superseded nodes are
 excluded by default — when you consolidate (a new node + `supersedes` edges to
@@ -209,6 +251,15 @@ Rules that keep domains clean (skip them and you fragment — `serial` +
   fill it; it's how *structured items* point at each other (the `link` verb is
   for free-cognition memories, not items). The referenced item stays its own
   findable record, not an `event` buried in this one.
+- **A ref can point at MANY items** — declare it array-valued with
+  `multi: true`: `create_kind("concept", …, refs={introduced_in: {kind: "source", multi: true}})`.
+  The field then holds a **list** of names, and on write **every element** is
+  validated against the target kind — an unknown element is named back in the
+  `unknown_ref` error (so you know exactly which one missed), not the whole
+  list. Use the single form (`refs={topic: "topic"}`) when an item belongs to
+  exactly one parent; the multi form when it legitimately rests on several
+  (a concept `introduced_in` many sources, an order spanning several line
+  items). `get_kind` echoes refs back normalized to the object form.
 - **Mistake?** `entity_delete(kind, name)` — fix it, don't leave a duplicate.
 
 `status` is validated against the kind's `statuses`; unknown fields are
@@ -255,6 +306,31 @@ some internals (communities, the connection graph) — use when you need them.
   response returns `extraction_signal: true` (buffer ≥ 10), call
   `extract_thread(message_ids)` to distill the buffer into memories. Don't skip it.
 
+**Extracting a graph from a source you read:**
+- `extract_into(item_id, nodes, edges)` — **you** read a source artifact (a
+  paper, a doc — already stored as a node, that's `item_id`) and pull out the
+  entities yourself, then call this ONCE to persist them. ConPort batch-creates
+  the `nodes` plus the inter-node `edges` you supply, and **auto-stamps a
+  `derived_from` edge from each new node back to `item_id`** — so you never
+  hand-wire provenance per node. The agent-supplied `edges` reference the new
+  nodes by their **index** in `nodes`: `{from_index, to_index, edge_type,
+  properties?}` connects two new nodes, `{from_index, target_node_id, …}`
+  connects a new node to a pre-existing one.
+
+  ConPort does **no thinking** here — it runs no LLM, it just stores the graph
+  *you* extracted (you have the content; re-extracting it server-side would
+  duplicate your work). This is the deliberate contrast with `extract_thread`,
+  which *does* run an LLM — but only over a buffered CHAT thread, where the
+  backend has the messages and you don't want to re-read them. Rule of thumb:
+  you read the source → `extract_into`; the backend buffered the chat →
+  `extract_thread`.
+
+  A malformed/empty-content **node** aborts the whole batch (all-or-nothing,
+  nothing persists). A malformed **edge** is tolerated per-edge and collected
+  into `edge_errors` — the nodes and their `derived_from` stamps still land.
+  Returns `{item_id, node_ids, nodes_created, edges_created,
+  derived_from_created, edge_errors?}`.
+
 **Bootstrap / cleanup / timeline:**
 - `agent_init` — session start (above).
 - `entity_delete(kind, name)` — soft-delete an item to fix a mistake. Its
@@ -264,7 +340,8 @@ some internals (communities, the connection graph) — use when you need them.
   timeline. Pass the `item_id` from a `recall` result (events aren't in `recall`).
 - `get_referrers(kind, name)` — the items that reference this one by their
   declared `ref` (a topic's `source`s). Exact provenance — what a synthesis
-  rests on — not fuzzy `recall`.
+  rests on — not fuzzy `recall`. Follows **both** ref forms: an item that names
+  this one as a single-valued ref OR anywhere inside a `multi` list is returned.
 - `graph_stats()` — size and shape of YOUR recall corpus: visible nodes/edges
   with per-type distributions, a `superseded_count` (visible nodes already
   replaced via `supersedes` — did your consolidation take?), + workspace item
@@ -333,4 +410,4 @@ did not land.
 
 ---
 
-*v15.8.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write; authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors | doc-101*
+*v15.9.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source item, auto derived_from provenance) | doc-101*

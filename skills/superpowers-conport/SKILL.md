@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Idempotent via inline HTML-comment anchors written back into the source files.
 metadata:
-  version: 15.8.0
+  version: 15.9.0
 ---
 
 # superpowers-conport — Bridge
