@@ -110,8 +110,10 @@ so you can't forget it or fill it with a near-miss spelling. `get_kind("source")
 shows its refs; the topic's sources are joined back by **exact name**, not
 guessed by similarity.
 
-This is NOT a per-record link verb (there is none). You declare the *shape* once
-in `create_kind`; each item just fills the validated ref field.
+A ref is NOT a per-record link call — you declare the *shape* once in
+`create_kind` and each item just fills the validated ref field. (The `link` verb
+does connect individual memories, but that's for free-cognition nodes, not
+structured items — items point at each other through declared refs.)
 
 Keep the layers straight — this is the trap:
 - The **synthesis / verdict** for the whole domain lives on the **container

@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.7.0
+  version: 15.8.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -113,7 +113,7 @@ anchors — that is how you avoid re-deciding what you already decided.
 
 ---
 
-## THE FIVE VERBS
+## THE CORE VERBS
 
 This is your everyday surface. Express intent; storage is ConPort's job.
 
@@ -125,9 +125,23 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 | `create_kind(name, fields, statuses)` | Declare a structured domain, once (like a table). |
 | `get_kind(name)` | Read a domain's form before writing items. |
 | `event(kind, name, note, fields?)` | Log a change/what-happened on an item (its timeline). |
+| `link(from_node_id, to_node_id, edge_type)` | Assert a connection between two memories you already have. |
 
-You never say "node", "entity", "projection", "link". Connecting things is
-ConPort's job — it links by meaning, you don't.
+**Connecting memories.** ConPort auto-links every new memory to its nearest
+existing ones by meaning — you get a connected graph for free and rarely think
+about it. Assert a connection yourself only when it's one ConPort wouldn't
+infer from similarity — "this insight is *derived from* that one", "these two
+are *competing views*", "this consolidation *supersedes* those":
+
+- on the memory as you write it: `remember(content, edges=[{target_node_id, edge_type}])`
+- between two memories that already exist: `link(from_node_id, to_node_id, edge_type)`
+
+`edge_type` ∈ `semantic` · `derived_from` · `temporal` · `skill_of` ·
+`competing_view` · `supersedes`. (`semantic` is what auto-linking uses — you
+rarely assert it by hand.) `target_node_id` / `from_node_id` / `to_node_id` are
+the ids ConPort returns from `remember` and `recall`. A malformed edge comes
+back as a structured `edge_errors` entry (wrong keys, unknown `edge_type`,
+missing target) — not a silent drop; fix it and re-state.
 
 **Recall returns the current version of a memory.** Superseded nodes are
 excluded by default — when you consolidate (a new node + `supersedes` edges to
@@ -191,9 +205,10 @@ Rules that keep domains clean (skip them and you fragment — `serial` +
 - **An item that belongs to another** (a source to a topic, an order to a
   client) declares a **ref in its kind** — `create_kind("source", …, refs={topic:"topic"})`.
   The ref field is validated on write: name a real `topic` or it's rejected
-  (`unknown_ref`). Not a link verb (there is none) — you declare the shape once,
-  items fill it. The referenced item stays its own findable record, not an
-  `event` buried in this one.
+  (`unknown_ref`). A ref is declarative — you declare the shape once and items
+  fill it; it's how *structured items* point at each other (the `link` verb is
+  for free-cognition memories, not items). The referenced item stays its own
+  findable record, not an `event` buried in this one.
 - **Mistake?** `entity_delete(kind, name)` — fix it, don't leave a duplicate.
 
 `status` is validated against the kind's `statuses`; unknown fields are
@@ -232,7 +247,7 @@ remember("...", visibility="broadcast")   # default 'shared'
 
 ## AUX OPERATIONS
 
-Beyond the five verbs, a few named operations for specific needs. These touch
+Beyond the core verbs, a few named operations for specific needs. These touch
 some internals (communities, the connection graph) — use when you need them.
 
 **Conversation intake (chat harness):**
@@ -318,4 +333,4 @@ did not land.
 
 ---
 
-*v15.7.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 5 verbs (create_kind, get_kind, remember, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write; authored loops as skills (body on demand); connections built by ConPort | doc-101*
+*v15.8.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write; authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors | doc-101*
