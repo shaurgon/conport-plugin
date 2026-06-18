@@ -147,6 +147,30 @@ Keep the layers straight — this is the trap:
 So a research loop is two kinds — `topic` (synthesis) and `source` (evidence) —
 joined by a declared, validated `topic` ref.
 
+### Extracting a cognition graph from a `source` item
+
+A `source` item is a **workspace** record (structured, addressed by its
+`(kind, name)` handle) — it stays the source-of-truth for that piece of
+evidence. When you read one and want to pull free-cognition nodes out of it (the
+claims, methods, findings, as a connected graph you can later `recall` and
+traverse), hand them to `extract_into` with the **workspace-item source** form:
+
+```
+extract_into(
+  item_kind="source", item_name="arxiv:2403.xxxx",   # the workspace item …
+  nodes=[{content: "claim X", meta_type: "fact"}, …], # … you extracted these
+  edges=[{from_index: 0, to_index: 1, edge_type: "cites"}, …])
+```
+
+ConPort batch-creates the nodes and stamps a `derived_from` **link** (node→item)
+from each new node back to the `source` item — a cross-domain link, NOT a graph
+edge, so the item remains canonical and the cognition nodes point back at it.
+(Pass `source_entity_id` instead of the handle if you already hold the raw
+entity id.) The alternative `extract_into(item_id=…)` form takes a **cognition
+node** as source and stamps a node→node `derived_from` edge — use that when
+you're distilling further from a node you already remembered, not from a
+structured `source` item. Full contract in `../SKILL.md`.
+
 ---
 
 ## Anti-patterns

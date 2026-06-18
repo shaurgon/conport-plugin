@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.9.0
+  version: 15.10.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -307,15 +307,36 @@ some internals (communities, the connection graph) — use when you need them.
   `extract_thread(message_ids)` to distill the buffer into memories. Don't skip it.
 
 **Extracting a graph from a source you read:**
-- `extract_into(item_id, nodes, edges)` — **you** read a source artifact (a
-  paper, a doc — already stored as a node, that's `item_id`) and pull out the
+- `extract_into(nodes, edges, <source>)` — **you** read a source, pull out the
   entities yourself, then call this ONCE to persist them. ConPort batch-creates
-  the `nodes` plus the inter-node `edges` you supply, and **auto-stamps a
-  `derived_from` edge from each new node back to `item_id`** — so you never
-  hand-wire provenance per node. The agent-supplied `edges` reference the new
-  nodes by their **index** in `nodes`: `{from_index, to_index, edge_type,
-  properties?}` connects two new nodes, `{from_index, target_node_id, …}`
-  connects a new node to a pre-existing one.
+  the `nodes` plus the inter-node `edges` you supply and **auto-stamps a
+  `derived_from` provenance link from each new node back to the source** — so
+  you never hand-wire provenance per node. The agent-supplied `edges` reference
+  the new nodes by their **index** in `nodes`: `{from_index, to_index,
+  edge_type, properties?}` connects two new nodes, `{from_index,
+  target_node_id, …}` connects a new node to a pre-existing one.
+
+  **Pick EXACTLY ONE source** — the verb takes two kinds and you give one:
+
+  - **A cognition node** — `item_id`, an existing node of yours (a paper / doc
+    you already remembered). Provenance is a `derived_from` **edge** (node→node)
+    from each new node back to `item_id`. Returns `item_id` +
+    `derived_from_created`.
+  - **A workspace item** — a structured item of yours, addressed by its
+    `(item_kind, item_name)` handle (e.g. kind `"research_source"`, the
+    source-of-truth record) **or** by its raw `source_entity_id`. An edge can't
+    point at a workspace item, so provenance is a `derived_from` **link**
+    (node→item, a cross-domain link, NOT a graph edge) per new node — the item
+    stays the source-of-truth and the extracted nodes point back at it. Returns
+    `entity_id` + `entity_links_created`.
+
+  Use the **node** source when you're distilling further from a cognition node
+  you already hold; use the **workspace-item** source when you're extracting a
+  cognition graph straight out of a structured research item (the `source`
+  record from your research loop — see `references/authoring-loops.md`). The
+  conceptual difference is the provenance shape: node→node is an in-graph
+  `derived_from` edge; node→item is a `derived_from` link that crosses from the
+  cognition graph into the workspace, leaving the item canonical.
 
   ConPort does **no thinking** here — it runs no LLM, it just stores the graph
   *you* extracted (you have the content; re-extracting it server-side would
@@ -325,11 +346,16 @@ some internals (communities, the connection graph) — use when you need them.
   you read the source → `extract_into`; the backend buffered the chat →
   `extract_thread`.
 
-  A malformed/empty-content **node** aborts the whole batch (all-or-nothing,
-  nothing persists). A malformed **edge** is tolerated per-edge and collected
-  into `edge_errors` — the nodes and their `derived_from` stamps still land.
-  Returns `{item_id, node_ids, nodes_created, edges_created,
-  derived_from_created, edge_errors?}`.
+  Exactly one source is required: zero sources, both kinds at once, or a
+  half-given handle (`item_kind` without `item_name` or vice versa) →
+  `invalid_source`. A foreign or missing source (node or item) → `item_not_found`,
+  owner-scoped with no cross-tenant oracle. A malformed/empty-content **node**
+  aborts the whole batch (all-or-nothing, nothing persists). A malformed
+  **edge** is tolerated per-edge and collected into `edge_errors` — the nodes
+  and their provenance stamps still land. Returns `{node_ids, nodes_created,
+  edges_created, edge_errors?}` plus, for the node source, `item_id` +
+  `derived_from_created`; for the workspace-item source, `entity_id` +
+  `entity_links_created`.
 
 **Bootstrap / cleanup / timeline:**
 - `agent_init` — session start (above).
@@ -410,4 +436,4 @@ did not land.
 
 ---
 
-*v15.9.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source item, auto derived_from provenance) | doc-101*
+*v15.10.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source, auto derived_from provenance; source is either a cognition node — node→node derived_from edge — or a workspace item via (item_kind,item_name)/source_entity_id — node→item derived_from link)*
