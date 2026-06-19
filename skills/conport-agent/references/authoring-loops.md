@@ -52,6 +52,13 @@ recall(scope={kind: "<domain>"})        # pull the relevant items
 Write these as plain numbered instructions to future-you. Vague steps are how
 you drift.
 
+`recall(scope={kind})` is a **fuzzy/ranked** slice — right when the loop picks a
+*few* items to work on by relevance. When a step needs **every** member of the
+kind (sweep the whole backlog, recompute all scores, audit the full set), use
+`entity_list("<domain>", attrs_filter?)` instead — exact, exhaustive,
+owner-scoped, ordered by name, paginated (limit ≤ 200), with an optional jsonb
+subset `attrs_filter` (e.g. `{status: "expanding"}`).
+
 ### 3. Make your prioritization explicit
 This is the part that is **yours and scenario-specific** — it does NOT belong in
 the generic five-verb rules, it belongs *here, in your loop*. State it in words:

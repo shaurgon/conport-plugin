@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.10.0
+  version: 15.11.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -240,8 +240,11 @@ Rules that keep domains clean (skip them and you fragment — `serial` +
   `remember(kind=…)` into an **undeclared** kind fails with `unknown_kind` —
   `create_kind` first.
 - **An item is one record.** A list/wishlist is NOT an item — it's the members
-  filtered by a `status` field (`recall(..., scope={kind:"series"})` then filter).
-  Don't pile items as events on a container.
+  filtered by a `status` field. To **enumerate** them exhaustively use
+  `entity_list("series", attrs_filter={status:"wishlist"})` (exact, every
+  match); `recall(..., scope={kind:"series"})` is a fuzzy/ranked slice, fine for
+  "find the relevant ones" but not for the complete set. Don't pile items as
+  events on a container.
 - **A synthesis/verdict lives in the item's fields** (current state), not a
   separate object. History of how it changed → `event`.
 - **An item that belongs to another** (a source to a topic, an order to a
@@ -364,6 +367,21 @@ some internals (communities, the connection graph) — use when you need them.
   resurrects it. (Legacy name — it addresses the item by its kind + name.)
 - `event_query(entity_id, event_type?, since?, until?)` — read an item's
   timeline. Pass the `item_id` from a `recall` result (events aren't in `recall`).
+- `entity_list(kind, attrs_filter?, limit?)` — **enumerate the actual members
+  of a kind.** Exact + exhaustive, owner-scoped, soft-delete aware, ordered by
+  name, paginated (`limit` default 50, max 200). Optional `attrs_filter` is a
+  jsonb **subset match** on the item's fields — `{status: "wishlist"}` returns
+  every item whose `attrs` contains that pair. Returns `{entities, total}`.
+  This is the right verb for "give me ALL items of kind X" — reach for it
+  instead of the three near-misses:
+  - `get_kind(name)` gives the **form + a member COUNT only**, never the items;
+  - `recall(query, scope={kind})` is **fuzzy/ranked** — a relevance-sorted top
+    slice, not the complete set;
+  - `get_referrers(kind, name)` gives **inverse refs** (who points at this
+    item), not the kind's own members.
+
+  So: form → `get_kind`; best matches → `recall`; who-references-me →
+  `get_referrers`; **the whole list → `entity_list`**.
 - `get_referrers(kind, name)` — the items that reference this one by their
   declared `ref` (a topic's `source`s). Exact provenance — what a synthesis
   rests on — not fuzzy `recall`. Follows **both** ref forms: an item that names
@@ -436,4 +454,4 @@ did not land.
 
 ---
 
-*v15.10.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source, auto derived_from provenance; source is either a cognition node — node→node derived_from edge — or a workspace item via (item_kind,item_name)/source_entity_id — node→item derived_from link)*
+*v15.11.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source, auto derived_from provenance; source is either a cognition node — node→node derived_from edge — or a workspace item via (item_kind,item_name)/source_entity_id — node→item derived_from link)*
