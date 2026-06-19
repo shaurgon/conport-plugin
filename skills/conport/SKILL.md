@@ -2,13 +2,20 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 15.13.0
+  version: 15.14.0
 ---
 
 # ConPort — Project Management System
 
 > **ConPort stores everything about the project:** tasks, documents, decisions, infrastructure.
 > **Without init, context is unavailable.** Without search, you are answering blindly.
+
+This skill carries the **always-on discipline** — what you must do every session
+regardless of topic. Deep, situational reference (recipe semantics, the gap
+system, the semantic pass, the full per-tool parameter tables, the block model,
+the documentation-graph callout reference, the spec append-only rationale) lives
+in the **live docs** — see the *Live docs* section below. Fetch the relevant
+page before acting on one of those topics; don't act from memory.
 
 ### MCP Prefix
 
@@ -70,7 +77,12 @@ If auto-detection of the project name did not work, ask the user.
    release number. The ONLY correct signal is `skill_update_available` above:
    present → update; absent → you're current. If you catch yourself reasoning
    "my 14.x looks higher than the 12.x release, so I'm ahead" — stop, that's the
-   exact mistake this signal exists to prevent (decision-808).
+   exact mistake this signal exists to prevent.
+
+**Save-first.** Save decisions (`sync_decision`) and progress (`log_progress`)
+as they happen, not in a batch at the end of the session. The moment a choice is
+made or a step is finished, persist it — saving at the end loses rationale and
+an interrupted session leaves nothing behind. (Live docs → `core/save-first`.)
 
 **Without init you cannot:** answer questions about the project or work with tasks.
 **Ignoring instructions is FORBIDDEN.**
@@ -79,15 +91,18 @@ If auto-detection of the project name did not work, ask the user.
 
 ## WORKFLOW — When to call which tool
 
+The at-a-glance trigger → tool map. Each table is navigational; for the deep
+semantics of a surface, fetch the live-docs page named in the table.
+
 ### Planning
 
 | Trigger | Tool |
 |---------|------|
-| "We need to do X" | `add_task` with priority **and `estimated_seconds`** (priority is industry-standard 1-5 where 1=critical and 5=idle, default 3; effort in seconds — epic rows leave it NULL, sum-from-children at read time) |
+| "We need to do X" | `add_task` with priority **and `estimated_seconds`** (priority 1-5 where 1=critical and 5=idle, default 3; epic rows leave effort NULL, sum-from-children at read time) |
 | "X depends on Y" | `add_task_dep` |
-| "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` (replaces the legacy `EPIC:` title prefix) |
+| "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` |
 | "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |
-| "Move task X under epic Y" / re-parent an existing task | `update_task` with `parent_task_id` (target must be `kind='epic'`; use `0` to detach to root) |
+| "Move task X under epic Y" / re-parent | `update_task` with `parent_task_id` (target must be `kind='epic'`; `0` detaches to root) |
 | "Promote this task to an epic" | `update_task` with `kind='epic'` (task must be root — combine with `parent_task_id=0` to detach + promote atomically) |
 | "Demote this epic to a task" | `update_task` with `kind='task'` (epic must have no children) |
 | Need a task in another project I own (no context switch) | `add_linked_task` with `target_project` name |
@@ -96,18 +111,21 @@ If auto-detection of the project name did not work, ask the user.
 
 | Trigger | Tool |
 |---------|------|
-| Starting work | `update_task` → IN_PROGRESS |
+| Starting work | `update_task` → IN_PROGRESS (**before the first write on a task**) |
 | Done / Finished | `update_task` → DONE **with `resolution=...`** (see below) |
 | Cancelled | `update_task` → CANCELLED **with `resolution=...`** (why dropped) |
 | Blocked | `update_task` → BLOCKED |
 
+**IN_PROGRESS gate.** Before your first ConPort write against a task, move it to
+IN_PROGRESS. This keeps `current_focus` accurate and the backlog honest.
+
 **Closing tasks — always pass `resolution`:**
 On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
-(what was done / why cancelled). The server will:
+(what was done / why cancelled). The server:
 
-1. Append a `## Resolution` section to the task's description (preserves the
+1. Appends a `## Resolution` section to the task's description (preserves the
    original spec verbatim).
-2. Auto-create a linked `progress_entry` so the close shows up in
+2. Auto-creates a linked `progress_entry` so the close shows up in
    `recent_activity`, `list_progress`, and search.
 
 **Do NOT call `log_progress` separately for task closes** — that would
@@ -129,24 +147,7 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 |---------|------|
 | Question about the project | `search` BEFORE answering |
 | "What was decided about Y?" | `search` by topic |
-| "Which projects do I own?" / routine bootstrapping without known project_id | `list_projects` |
-
-### Context assembly (recipe-pattern)
-
-Structural context packages for a single node — task or spec — assembled by deterministic graph traversals. Complements `init` (whole-project, session start) and `search` (fuzzy on-ramp from free text). Use when you already know the anchor and want the neighbourhood in one call.
-
-| Trigger | Tool |
-|---------|------|
-| "Open task #N and brief me" / agent opens a task | `assemble_context` with `recipe='task_briefing'`, `start_id='task-N'` |
-| "What's the implementation status of spec doc-N?" | `assemble_context` with `recipe='spec_implementation_status'`, `start_id='doc-N'` |
-| User pasted a wikilink like `[[task-271]]` | `assemble_context` with `start_id='[[task-271]]'` (wikilink accepted verbatim) |
-| "What recipes are available?" | `list_context_recipes` |
-| "What's the current architecture of subsystem X?" | `render_current_architecture` with `scope=["X", ...]` — L1 synthesis (decisions + patterns + specs) with supersession-walk and provenance |
-| "Is this architecture doc safe to archive?" | `audit_doc_l1_coverage(doc_id)` — per-block coverage report; promote capture-gaps via `sync_decision` / `log_pattern` before archiving |
-
-**`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-271'`, `'doc-76'`). Type vocabulary: `task`, `doc`, `decision`, `pattern`, `progress`. The wikilink form `'[[task-271]]'` is also accepted so a recipe response can be copy-pasted into the next call without translation. Plain integers still work as legacy fallback (resolved against the recipe's expected type), but the prefix form gives a clean 400 on type mismatch with an inverse-recipe suggestion — preferred when the type matters. Per-project ids autoincrement per table, so the same numeric id often exists across multiple namespaces; the prefix removes the guesswork.
-
-`task_briefing` returns parent chain, motivating doc (walks up to parents if direct link missing), siblings, relevant decisions/patterns ranked by tag overlap, recent progress. `spec_implementation_status` returns implementation matrix grouped by epic, decisions taken since the spec was written, drift signals on outgoing references, recent progress on implementing tasks. Both support `format='markdown'` (default) or `format='json'`.
+| "Which projects do I own?" / bootstrapping without a known project_id | `list_projects` |
 
 ### Sync
 
@@ -169,109 +170,62 @@ Structural context packages for a single node — task or spec — assembled by 
 | Trigger | Tool |
 |---------|------|
 | Spec / API docs | `add_document` |
-| Document body / metadata update | `update_document(content=<full markdown>, ...)` |
-| List a doc's blocks (pick ulids before surgical edit) | `list_blocks(document_id)` |
-| Read one block | `get_block(document_id, block_ulid)` |
-| Edit one block (surgical) | `update_block(document_id, block_ulid, markdown)` |
-| Insert a block | `insert_block(document_id, markdown, after?\|before?)` |
-| Delete a block | `delete_block(document_id, block_ulid)` |
-| Read a doc (with rendered Wave 5 stubs) | `get_document` (pass `raw=true` for unmodified markdown) |
+| Wholesale body / metadata update | `update_document(content=<full markdown>, ...)` |
+| List a doc's blocks (pick ulids before a surgical edit) | `list_blocks(document_id)` |
+| Read / edit / insert / delete one block | `get_block` / `update_block` / `insert_block` / `delete_block` |
+| Read a doc (with rendered Wave 5 stubs) | `get_document` (`raw=true` for unmodified markdown) |
 | "Who references this doc/block?" | `get_block_backlinks` (omit `block_ulid` for whole doc) |
 | "What's similar to this block but not yet linked?" | `get_semantically_related_blocks` |
-| List item-graph + Wave 5 section edges for a doc | `get_linked` with `include_section_links=true` |
+| Overlapping content / linking two docs | author one callout — `[!supersedes]` / `[!resolves]` / `[!extends]` / `[!relates-to]` |
 
-**Block-level editing is the default for any narrow change** — including specs. Use `update_block` / `insert_block` / `delete_block` for surgical edits; only one block re-embeds per call, structure is preserved, and the spec append-only invariant below doesn't engage. `update_document(content=...)` is the **wholesale-rewrite** channel: use it only when you really mean to replace most of the body at once.
+**Block-level editing is the default for any narrow change** — including specs.
+Use `update_block` / `insert_block` / `delete_block` for surgical edits; only one
+block re-embeds and the spec append-only invariant doesn't engage.
+`update_document(content=...)` is the **wholesale-rewrite** channel.
 
-**Spec append-only invariant (epic-296).** The invariant guards the **wholesale-rewrite path**. When `update_document` is called on a `doc_type='spec'` body it requires `change_kind`:
+**Spec append-only invariant.** `update_document` on a `doc_type='spec'` body
+requires `change_kind`: `amend` (clarification/typo — allowed, logged with a
+mandatory `reason`) or `substantive` (a meaningful claim change — **rejected**;
+author a new spec and link the old one with `link_items(relationship='supersedes')`).
+Don't chain block edits to rewrite a spec's claims either.
 
-- `change_kind='amend'` — clarification / typo / formatting fix. Allowed; logged into `spec_amendments` with a mandatory `reason`.
-- `change_kind='substantive'` — meaningful claim change. **Rejected.** Author a new spec via `add_document` and link the old one with `link_items(relationship='supersedes')`.
+**Don't create a doc when an edit will do.** Never `add_document` whose purpose
+is to *describe / amend / react to* an existing doc — that accumulates synthesis
+drift. Edit the original, or author an addendum with an explicit callout
+(`> [!extends] [[doc-N]]` / `> [!supersedes] [[doc-N]]`); default to
+`> [!relates-to]` when unsure.
 
-Block tools are not subject to `change_kind` (they're surgical by construction) — but the same rule applies in spirit: don't use a chain of block edits to rewrite a spec's claims. Substantive claim changes → new spec with `supersedes`. Accumulating `spec_amendments` rows on a single spec is almost always a signal the author was bouncing between block tools and `update_document` to repair structure, not a real spec evolution.
+→ Deep detail: live docs `projects/block-model`, `projects/spec-append-only`,
+`core/documentation-callouts`; full agent reference in
+`references/documentation_graph.md`.
 
-`doc_role='derived_view'` documents (synthesised from L1 by recipes like `current_architecture`) reject any body edit — regenerate via the recipe runner, don't hand-edit.
-
-#### Anti-patterns: don't create a doc when an edit will do
-
-These mistakes accumulate **synthesis drift** in the knowledge base —
-readers end up with multiple half-stale documents on the same topic and
-no signal about which one to trust.
-
-**1. Meta-documents (a doc commenting on another doc).**
-Never create a new `add_document` whose purpose is to *describe*, *amend*,
-or *react to* an existing doc. Instead:
-
-- Update the original via `update_document(content=...)` OR a surgical `update_block` / `insert_block` on the relevant block, OR
-- Create an addendum doc with an explicit Wave 5 callout that links it to
-  the source:
-
-  ```markdown
-  > [!extends] [[doc-12]]
-  > Adds detail on the JWT validation pipeline.
-  ```
-
-  Supported callout types: `[!supersedes]`, `[!resolves]`, `[!extends]`,
-  `[!relates-to]`.
-
-**2. Clarifications / addenda / FAQ as a standalone doc with no edge.**
-Same shape as the meta-doc anti-pattern: the reader has no way to find
-the addendum from the original, and the original keeps showing the stale
-answer. Choose:
-
-- `update_document(content=...)` of the original (best when the original is yours and small), OR
-- a new doc with `> [!extends] [[doc-N]]` for additive material, or
-  `> [!supersedes] [[doc-N]]` if you're replacing the original's claim.
-
-When in doubt, default to `> [!relates-to]` — Wave 5 drift detection will
-surface real supersessions later.
-
-#### Documentation Graph: callout decision
-
-Before `add_document` with longer-form content, `search` first. If you find
-overlapping material, pick one callout:
-
-| If… | Use | Place callout in |
-|---|---|---|
-| New replaces old wholesale | `[!supersedes]` | **newer** doc |
-| New answers an open question stated elsewhere | `[!resolves]` | **answering** doc |
-| New adds detail; both stay canonical for their layer | `[!extends]` | **extension** |
-| Cross-cutting concern; both authoritative | `[!relates-to]` | **either** (doc-level, one edge per pair) |
-
-Default to `[!relates-to]` when unsure. Pin critical anchors with `^id`
-(`## Auth Flow ^auth-flow`) — protects wikilinks across heading renames.
-Full agent reference in `references/documentation_graph.md` (decision
-flow, examples per callout, anchor mechanics, gap-resolution paths).
-
-### Gaps (Knowledge Base Health)
+### Context assembly, gaps, semantic pass
 
 | Trigger | Tool |
 |---------|------|
-| Init response shows gaps | Review `gaps.fresh` in init response |
-| "Show all gaps" | `gap_list` with optional category/state filters |
-| Seen a gap, will fix later | `gap_ack` (acknowledged, still visible) |
-| "This is not a real gap" | `gap_dismiss` with mandatory reason |
-| "Dismiss a whole cluster of gaps" | `gap_dismiss_bulk` with shared reason + filter (category/gap_type/subject_type) |
-| Re-open dismissed gap | `gap_undismiss` |
-| "How healthy is the KB?" | `gap_stats` |
+| "Open task #N and brief me" | `assemble_context` with `recipe='task_briefing'`, `start_id='task-N'` |
+| "Implementation status of spec doc-N?" | `assemble_context` with `recipe='spec_implementation_status'`, `start_id='doc-N'` |
+| "What recipes are available?" | `list_context_recipes` |
+| "Current architecture of subsystem X?" | `render_current_architecture` with `scope=[...]` |
+| "Is this architecture doc safe to archive?" | `audit_doc_l1_coverage(doc_id)` |
+| Init response shows gaps / "show all gaps" | review `gaps.fresh`; `gap_list`, `gap_ack`, `gap_dismiss` (reason), `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
+| "Clean up the graph" | `semantic_cleanup` (one-click) |
+| Manual semantic flow | `semantic_pass_run(dry_run=true)` → `semantic_proposals_list` → approve/reject/defer → `semantic_proposals_apply`; `semantic_pass_stats` |
 
-### Semantic Pass (LLM-driven graph analysis)
+**`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-271'`,
+`'doc-76'`); type vocabulary `task` / `doc` / `decision` / `pattern` /
+`progress`. The wikilink form `'[[task-271]]'` is also accepted verbatim. Plain
+integers work as a legacy fallback but the prefix form gives a clean 400 on type
+mismatch.
 
-| Trigger | Tool |
-|---------|------|
-| "Clean up the graph" | `semantic_cleanup` — one-click: run pass → reject noise → apply safe mutations → show remainder |
-| "Run semantic analysis" | `semantic_pass_run` (dry_run=true first) |
-| "Show proposals" | `semantic_proposals_list` |
-| Approve a proposal | `semantic_proposal_approve` |
-| Reject a proposal | `semantic_proposal_reject` with reason |
-| Defer for later | `semantic_proposal_defer` |
-| Apply approved proposals | `semantic_proposals_apply` |
-| "Pass stats" | `semantic_pass_stats` |
+→ Deep detail: live docs `projects/context-recipes`, `projects/gaps`,
+`projects/semantic-pass`.
 
 ---
 
 ## TASK HIERARCHY (2 levels, schema-enforced)
 
-The task tree is **two levels** and the database enforces it (decision-683, migration 030):
+The task tree is **two levels** and the database enforces it:
 
 - `kind='task'` — leaf node. May have `parent_task_id` pointing to an epic. Cannot have children.
 - `kind='epic'` — root container. Always `parent_task_id=NULL`. Other tasks attach under it.
@@ -361,51 +315,31 @@ MCP tools return JSON with a `summary` field. Use it to inform the user.
 | `update_task` | `✅ {summary}` |
 | Task DONE/CANCELLED | `✅ {summary}` (progress entry was auto-logged from `resolution`) + suggest updating active_context |
 
-### Slim create/update responses
-
-MCP create / update tools (`sync_decision`, `add_task`, `update_task`,
-`log_progress`, `update_progress`, `log_pattern`, `add_document`,
-`update_document`, `update_active_context`, `update_product_context`) do
-**not** echo the full entity body back. They return a slim payload to save
-agent context:
-
-| Field | Always present | Notes |
-|---|---|---|
-| `id` | yes | The created / updated row id |
-| `tags` | when entity has tags | Echoed even as `[]` — verification channel for POST-WRITE VERIFICATION |
-| `summary` | when computed | Short server-side confirmation string |
-| `version` | for `add_document`, `update_document`, context updates | Auto-bumped revision number |
-| `status`, `parent_epic_ready_to_close` | `update_task` only | Closing-batch signals |
-| `kind` | `add_task` / `update_task` | Echoed for POST-WRITE verification on promote/demote |
-| `_hint*` | when present | Server-side emergence signals (pattern candidates, etc.) |
-
-Need the full entity body? Use the matching read tool — `get_task`,
-`get_document`, `list_decisions`, etc. The REST API still returns full
-bodies; only MCP write responses are slimmed.
+MCP create / update tools return a **slim** payload (not the full entity body) to
+save agent context — `id`, `tags` (echoed even as `[]`), `summary`, and
+context-specific fields (`version`, `status`, `kind`, …). Need the full body? Use
+the matching read tool (`get_task`, `get_document`, `list_decisions`, …). The
+slim `tags` / `kind` echo is your POST-WRITE verification channel.
+(Live docs → `core/post-write-verification`.)
 
 ---
 
-## POST-WRITE VERIFICATION (Claude.ai XML quirk)
+## POST-WRITE VERIFICATION
 
-Claude.ai's MCP client occasionally drops optional parameters silently when
-the surrounding XML is malformed (most often a missing `antml:` prefix on a
-closing tag). The next parameter gets folded into the previous string field
-and the tool returns 200 OK with the truncated payload — the write happened,
-just not the way you intended. Real incident: a `sync_decision` call lost its
-`tags` array because the tags ended up inside `rationale` text; the decision
-landed without tags and broke tag-based graph navigation.
+Some MCP clients silently drop an optional parameter when the surrounding
+tool-call XML is malformed — the dropped value folds into the previous string
+field and the call returns 200 OK with a truncated payload. A real incident lost
+a `sync_decision`'s `tags` array (they ended up inside `rationale`); the decision
+landed untagged and broke graph navigation.
 
-**Server-side reject (since 14.11.1).** The ConPort server now rejects any
-write whose string field contains literal MCP tool-call fragments
-(`<parameter …>`, `<invoke …>`, `</invoke>`, `<function_calls>`, `antml:*`).
-The response is a structured error with `error: "mcp_payload_contaminated"`
-listing the contaminated fields. Recovery: re-issue the call with the field
-cleaned up. The bad write does not land. This catches the worst class of
-XML-leak corruption automatically; the verification table below still applies
-to the subtler quirks (silently dropped fields, truncated descriptions).
+The server now **rejects** any write whose string field contains literal
+tool-call fragments (`<parameter …>`, `<invoke …>`, `</invoke>`,
+`<function_calls>`, `antml:*`) with a structured `mcp_payload_contaminated`
+error — the bad write does not land; re-issue with the field cleaned. That guard
+catches the worst class; the echo check below still catches the subtler cases.
 
-After **every** create/update call that took optional fields, verify the
-response echo against intent:
+After **every** create/update call that took optional fields, verify the response
+echo against intent:
 
 | You passed | Check on the response |
 |---|---|
@@ -413,13 +347,12 @@ response echo against intent:
 | `description=...` | `description` length ≈ what you sent (not visibly truncated) |
 | `priority=N` | `priority` equals `N` |
 | `parent_task_id`, `tag_kinds`, links | Field is present and equal to intent |
-| `kind='epic'` / `kind='task'` on `add_task` / `update_task` | Response `kind` matches; on promote/demote the slim echo includes the new value |
+| `kind='epic'` / `kind='task'` | Response `kind` matches the promote/demote you asked for |
 
-**On mismatch.** Re-issue the call with the field re-stated explicitly (often a
-single retry fixes XML-parse glitches). If the second attempt still loses the
-field, flag the mismatch to the user verbatim ("graph integrity: tags lost on
-decision N, please re-run") rather than silently moving on — the damage is
-mute graph drift, easy to miss.
+**On mismatch.** Re-issue the call with the field re-stated (often one retry
+fixes the XML glitch). If a second attempt still loses it, flag the mismatch to
+the user verbatim ("graph integrity: tags lost on decision N, please re-run")
+rather than silently moving on — the damage is mute graph drift, easy to miss.
 
 Applies to: `sync_decision`, `add_task`, `update_task`, `log_progress`,
 `log_pattern`, `add_document`, `update_document`, `update_active_context`,
@@ -449,6 +382,7 @@ On an `Invalid arguments for tool` error:
 
 - [ ] Has `init` been run?
 - [ ] Question about the project → has `search` been done?
+- [ ] Starting work on a task → moved to IN_PROGRESS before the first write?
 - [ ] New work → task created/updated?
 - [ ] Work finished → task = DONE **with `resolution`**?
 - [ ] Closing a task → did NOT call `log_progress` separately (it's auto-logged)?
@@ -456,10 +390,36 @@ On an `Invalid arguments for tool` error:
 - [ ] Important information → document created?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #321`)?
-
-**Full API:** `references/command_list.md`
-**Fresh-project onboarding:** `references/bootstrap.md`
+- [ ] Deep topic (recipes / gaps / semantic pass / block model / tool params) → fetched the live-docs page before acting?
 
 ---
 
-*v15.13.0 | 83 MCP tools | Auto-detection | GraphRAG enabled | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model with per-block embeddings | Stable document_id with auto-bumped version | Document archival via status param | Priority-rollup backlog | Auto-synced current_focus | Task close with auto-logged resolution | Documentation anti-patterns guard | Documentation graph backlinks + semantically-related | Documentation graph authoring contract | Bulk gap dismissal | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Block-level document tools (list_blocks / get_block / update_block / insert_block / delete_block) | Post-write payload verification | Slim MCP write responses | Task reparenting via update_task | Canonical cross-reference grammar | Spec append-only enforcement (change_kind + spec_amendments audit) | Block-level callout edges in document_links | current_architecture recipe + L1 capture-gap audit | Task hierarchy schema invariant (kind='task'|'epic', 2-level enforced) | Per-task time tracking (estimated_seconds + started_at + completed_at + project rollups) | Server-side reject of MCP tool-call XML leakage*
+## Live docs
+
+The deep, situational reference lives at **https://conport.app** and is the
+single source of truth. **Before acting on a deep topic, fetch the relevant
+page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
+`conport docs <topic>` CLI.)
+
+| Topic | Page |
+|---|---|
+| Save-first discipline | `core/save-first` |
+| Knowledge-graph model (item links + GraphRAG) | `core/graph-model` |
+| Cross-reference grammar | `core/cross-references` |
+| Documentation-graph callouts (full reference) | `core/documentation-callouts` |
+| Post-write verification / slim responses | `core/post-write-verification` |
+| `assemble_context` recipes / `render_current_architecture` | `projects/context-recipes` |
+| Knowledge-base gaps | `projects/gaps` |
+| Semantic pass | `projects/semantic-pass` |
+| Spec append-only invariant | `projects/spec-append-only` |
+| Block-level document model | `projects/block-model` |
+| Task hierarchy | `projects/task-hierarchy` |
+| Full per-tool parameter reference | `projects/tool-reference` |
+
+**Local references** (shipped with the skill): `references/command_list.md`
+(full MCP tool API), `references/documentation_graph.md` (long-form callout
+reference), `references/bootstrap.md` (fresh-project onboarding).
+
+---
+
+*v15.14.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app | 83 MCP tools | Auto-detection | GraphRAG | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Post-write payload verification | Slim MCP write responses | Task reparenting + 2-level hierarchy schema invariant | Canonical cross-reference grammar | Spec append-only enforcement | Documentation graph callouts + backlinks | current_architecture recipe + L1 capture-gap audit | Per-task time tracking | Server-side reject of MCP tool-call XML leakage*

@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.13.0
+  version: 15.14.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -12,8 +12,14 @@ metadata:
 > where it lives, how it connects, and how to retrieve it. You never pick
 > storage primitives.
 >
-> Without `agent_init` — no context. Without `agent_recall` — you answer
-> blindly.
+> Without `agent_init` — no context. Without `recall` — you answer blindly.
+
+This skill carries the **always-on discipline** — bootstrap, recall-before-act,
+the core verbs, the structure decision, visibility, and the never-store rule.
+Deep, situational reference (the full intent-API semantics, the edge-type
+vocabulary and edge grounding, typed refs, and the aux operations) lives in the
+**live docs** — see the *Live docs* section. Fetch the relevant page before
+acting on one of those topics; don't act from memory.
 
 ### MCP Prefix
 
@@ -66,7 +72,7 @@ current. Your memory provider is ONE installable unit (e.g. `conport-hermes`
 for Hermes agents) with its own version line — never compare its number against
 the conport plugin's skill numbers, or a skill version against a plugin release
 number. They're independent. Eyeballing "my 8.x looks higher than the 12.x
-release, so I'm ahead" is the exact mistake this signal prevents (decision-808).
+release, so I'm ahead" is the exact mistake this signal prevents.
 
 ---
 
@@ -127,86 +133,21 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 | `link(from_node_id, to_node_id, edge_type)` | Assert a connection between two memories you already have. |
 
 **Connecting memories.** ConPort auto-links every new memory to its nearest
-existing ones by meaning — you get a connected graph for free and rarely think
-about it. Assert a connection yourself only when it's one ConPort wouldn't
-infer from similarity — "this insight is *derived from* that one", "these two
-are *competing views*", "this consolidation *supersedes* those":
+existing ones by meaning — you get a connected graph for free. Assert a
+connection yourself only when it's one ConPort wouldn't infer from similarity
+("derived from", "competing view", "supersedes"): on write via
+`remember(content, edges=[{target_node_id, edge_type}])`, or between two existing
+memories via `link(from_node_id, to_node_id, edge_type)`. The edge-type
+vocabulary is a **fixed, curated set of 12** (6 structural + 6 domain) — pick the
+closest; an unrecognized type returns `invalid_edge_type`. Malformed edges come
+back as structured `edge_errors`, never a silent drop. → Deep detail (the full
+vocabulary, edge `properties` grounding, why ground edges, typed refs between
+items): live docs `agents/edges-and-refs`.
 
-- on the memory as you write it: `remember(content, edges=[{target_node_id, edge_type}])`
-- between two memories that already exist: `link(from_node_id, to_node_id, edge_type)`
-
-`target_node_id` / `from_node_id` / `to_node_id` are the ids ConPort returns
-from `remember` and `recall`. A malformed edge comes back as a structured
-`edge_errors` entry (wrong keys, unknown `edge_type`, missing target, bad
-`properties`) — not a silent drop; fix it and re-state.
-
-**The edge-type vocabulary is a fixed, curated set of 12 — two tiers.** It is
-not open-ended: there is no "declare your own edge type" verb. Pick the closest
-one; an unrecognized type comes back as an `invalid_edge_type` error listing the
-allowed values.
-
-- **Structural (6)** — how your cognition *relates*, the graph mechanics:
-  `semantic` · `derived_from` · `temporal` · `skill_of` · `competing_view` ·
-  `supersedes`. (`semantic` is what auto-linking uses — you rarely assert it by
-  hand.)
-- **Domain (6)** — what the *content* asserts, research-KG semantics: `unifies`
-  (a survey unifies several works) · `introduces` (a paper introduces a method) ·
-  `cites` · `uses_method` · `reports_finding` · `refines`.
-
-The split is *structural = how memories connect* vs *domain = a claim the
-content makes*. Reach for a domain predicate when the edge is a statement about
-the subject matter (this paper *introduces* that method); reach for a structural
-one when it's about your own memory graph (this synthesis *supersedes* those
-notes).
-
-**Grounding an edge with `properties` (optional).** Both `remember(edges=[…])`
-and `link` accept a `properties` object on each edge:
-
-```
-remember(content, edges=[{target_node_id, edge_type,
-  properties={confidence: 0.8, source_item: "node-417",
-              evidence_section: "§3.2", note: "weak — single study"}}])
-```
-
-Recognized keys: `confidence` (a number in 0..1), `source_item` (a grounding
-ref — which memory/source backs the claim), `evidence_section`, `note`. Unknown
-keys are allowed (the schema is extensible). A bad payload — e.g. `confidence`
-out of range, or a non-string `note` — is **rejected as a structured
-`invalid_properties` error** (surfaced in `edge_errors` for the `remember` path,
-returned directly by `link`), never silently dropped: fix it and re-state.
-
-**Why ground edges.** When you're building a *large* graph — many edges asserted
-across a research corpus — an ungrounded `derived_from` or `cites` is a claim you
-can't audit later: future-you can't tell a hunch from a sourced fact. Setting
-`confidence` lets weak inferences sink and strong ones stand; `source_item`
-pins each assertion to the memory it rests on, so the graph stays defensible
-instead of decaying into unverifiable folklore. For one-off edges it's
-overkill; for a systematically-built knowledge graph it's the difference
-between a corpus you trust and one you re-derive from scratch.
-
-**Recall returns the current version of a memory.** Superseded nodes are
-excluded by default — when you consolidate (a new node + `supersedes` edges to
-the old ones), the replaced nodes stop surfacing. Pass
-`scope.include_superseded=true` to audit history. The same exclusion applies
-to the `agent_init` bootstrap anchors (a stale principle doesn't load after
-consolidation); on the observational surfaces (`get_subgraph`, the owner
-dashboard) superseded nodes stay visible but carry a `superseded: true`
-marker, and `graph_stats` reports a `superseded_count` — your check that a
-consolidation actually took.
-
-**`relevant_until` — optional validity horizon (both remember forms).**
-`remember(..., relevant_until="2026-06-19T00:00:00Z")` marks how long the
-memory stays operationally relevant; past it the memory sinks in recall rank —
-it is never deleted. Operationally-scoped notes ("deploy frozen this week")
-get days; syntheses and durable knowledge — leave unset (indefinite). The
-special value `"clear"` resets a previously set horizon back to indefinite
-(structured items; on free nodes it simply means no horizon).
-
-**`intent` — say what you're trying to do (optional).** Pass it when the
-query alone is ambiguous about granularity or content-type — it lifts
-matching results into the lower slots without disturbing the top hit. E.g.
-`recall("MAGMA paper", intent="details of one specific paper, not the topic
-synthesis")`. Not a topic restatement; leave unset for simple lookups.
+**Recall returns the current version** — superseded nodes are excluded by default
+(pass `scope.include_superseded=true` to audit history). `intent` and
+`relevant_until` are optional refinements. → Deep detail: live docs
+`agents/recall-before-act`, `agents/intent-api`.
 
 ---
 
@@ -239,40 +180,24 @@ Rules that keep domains clean (skip them and you fragment — `serial` +
   `remember(kind=…)` into an **undeclared** kind fails with `unknown_kind` —
   `create_kind` first.
 - **An item is one record.** A list/wishlist is NOT an item — it's the members
-  filtered by a `status` field. To **enumerate** them exhaustively use
-  `entity_list("series", attrs_filter={status:"wishlist"})` (exact, every
-  match); `recall(..., scope={kind:"series"})` is a fuzzy/ranked slice, fine for
-  "find the relevant ones" but not for the complete set. Don't pile items as
-  events on a container.
+  filtered by a `status` field. Enumerate them exhaustively with
+  `entity_list("series", attrs_filter={status:"wishlist"})` (exact, every match);
+  `recall(..., scope={kind:"series"})` is a fuzzy/ranked slice, not the complete set.
 - **A synthesis/verdict lives in the item's fields** (current state), not a
   separate object. History of how it changed → `event`.
-- **An item that belongs to another** (a source to a topic, an order to a
-  client) declares a **ref in its kind** — `create_kind("source", …, refs={topic:"topic"})`.
-  The ref field is validated on write: name a real `topic` or it's rejected
-  (`unknown_ref`). A ref is declarative — you declare the shape once and items
-  fill it; it's how *structured items* point at each other (the `link` verb is
-  for free-cognition memories, not items). The referenced item stays its own
-  findable record, not an `event` buried in this one.
-- **A ref can point at MANY items** — declare it array-valued with
-  `multi: true`: `create_kind("concept", …, refs={introduced_in: {kind: "source", multi: true}})`.
-  The field then holds a **list** of names, and on write **every element** is
-  validated against the target kind — an unknown element is named back in the
-  `unknown_ref` error (so you know exactly which one missed), not the whole
-  list. Use the single form (`refs={topic: "topic"}`) when an item belongs to
-  exactly one parent; the multi form when it legitimately rests on several
-  (a concept `introduced_in` many sources, an order spanning several line
-  items). `get_kind` echoes refs back normalized to the object form.
+- **An item that belongs to another** (a source to a topic) declares a **ref in
+  its kind** — `create_kind("source", …, refs={topic:"topic"})`. The ref field is
+  validated on write (`unknown_ref` if the target doesn't exist). → Deep detail
+  (single vs `multi` refs, `get_referrers`): live docs `agents/edges-and-refs`.
 - **Mistake?** `entity_delete(kind, name)` — fix it, don't leave a duplicate.
 
-`status` is validated against the kind's `statuses`; unknown fields are
-accepted (the schema grows). `recall` finds items by content; `event`s are an
-item's timeline (read with `event_query`, not `recall`).
+`status` is validated against the kind's `statuses`; unknown fields are accepted
+(the schema grows). `recall` finds items by content; `event`s are an item's
+timeline (read with `event_query`, not `recall`).
 
 ---
 
 ## VISIBILITY (for free `remember`)
-
-Free memories carry a visibility:
 
 | Visibility | Who sees it | Use |
 |---|---|---|
@@ -295,118 +220,29 @@ remember("...", visibility="broadcast")   # default 'shared'
 
 ## AUX OPERATIONS
 
-Beyond the core verbs, a few named operations for specific needs. These touch
-some internals (communities, the connection graph) — use when you need them.
+Beyond the core verbs, named operations for specific needs. Reach for these when
+you need them; **fetch the live-docs `agents/aux-operations` page for the full
+semantics before acting** — the error shapes and provenance rules matter.
 
-**Conversation intake (chat harness):**
-- `chat_turn(role, text)` — record each message of a live dialogue. When the
-  response returns `extraction_signal: true` (buffer ≥ 10), call
-  `extract_thread(message_ids)` to distill the buffer into memories. Don't skip it.
-
-**Extracting a graph from a source you read:**
-- `extract_into(nodes, edges, <source>)` — **you** read a source, pull out the
-  entities yourself, then call this ONCE to persist them. ConPort batch-creates
-  the `nodes` plus the inter-node `edges` you supply and **auto-stamps a
-  `derived_from` provenance link from each new node back to the source** — so
-  you never hand-wire provenance per node. The agent-supplied `edges` reference
-  the new nodes by their **index** in `nodes`: `{from_index, to_index,
-  edge_type, properties?}` connects two new nodes, `{from_index,
-  target_node_id, …}` connects a new node to a pre-existing one.
-
-  **Pick EXACTLY ONE source** — the verb takes two kinds and you give one:
-
-  - **A cognition node** — `item_id`, an existing node of yours (a paper / doc
-    you already remembered). Provenance is a `derived_from` **edge** (node→node)
-    from each new node back to `item_id`. Returns `item_id` +
-    `derived_from_created`.
-  - **A workspace item** — a structured item of yours, addressed by its
-    `(item_kind, item_name)` handle (e.g. kind `"research_source"`, the
-    source-of-truth record) **or** by its raw `source_entity_id`. An edge can't
-    point at a workspace item, so provenance is a `derived_from` **link**
-    (node→item, a cross-domain link, NOT a graph edge) per new node — the item
-    stays the source-of-truth and the extracted nodes point back at it. Returns
-    `entity_id` + `entity_links_created`.
-
-  Use the **node** source when you're distilling further from a cognition node
-  you already hold; use the **workspace-item** source when you're extracting a
-  cognition graph straight out of a structured research item (the `source`
-  record from your research loop). The
-  conceptual difference is the provenance shape: node→node is an in-graph
-  `derived_from` edge; node→item is a `derived_from` link that crosses from the
-  cognition graph into the workspace, leaving the item canonical.
-
-  ConPort does **no thinking** here — it runs no LLM, it just stores the graph
-  *you* extracted (you have the content; re-extracting it server-side would
-  duplicate your work). This is the deliberate contrast with `extract_thread`,
-  which *does* run an LLM — but only over a buffered CHAT thread, where the
-  backend has the messages and you don't want to re-read them. Rule of thumb:
-  you read the source → `extract_into`; the backend buffered the chat →
-  `extract_thread`.
-
-  Exactly one source is required: zero sources, both kinds at once, or a
-  half-given handle (`item_kind` without `item_name` or vice versa) →
-  `invalid_source`. A foreign or missing source (node or item) → `item_not_found`,
-  owner-scoped with no cross-tenant oracle. A malformed/empty-content **node**
-  aborts the whole batch (all-or-nothing, nothing persists). A malformed
-  **edge** is tolerated per-edge and collected into `edge_errors` — the nodes
-  and their provenance stamps still land. Returns `{node_ids, nodes_created,
-  edges_created, edge_errors?}` plus, for the node source, `item_id` +
-  `derived_from_created`; for the workspace-item source, `entity_id` +
-  `entity_links_created`.
-
-**Bootstrap / cleanup / timeline:**
-- `agent_init` — session start (above).
-- `entity_delete(kind, name)` — soft-delete an item to fix a mistake. Its
-  events/timeline survive, and re-remembering the same (kind, name)
-  resurrects it. (Legacy name — it addresses the item by its kind + name.)
-- `event_query(entity_id, event_type?, since?, until?)` — read an item's
-  timeline. Pass the `item_id` from a `recall` result (events aren't in `recall`).
-- `entity_list(kind, attrs_filter?, limit?)` — **enumerate the actual members
-  of a kind.** Exact + exhaustive, owner-scoped, soft-delete aware, ordered by
-  name, paginated (`limit` default 50, max 200). Optional `attrs_filter` is a
-  jsonb **subset match** on the item's fields — `{status: "wishlist"}` returns
-  every item whose `attrs` contains that pair. Returns `{entities, total}`.
-  This is the right verb for "give me ALL items of kind X" — reach for it
-  instead of the three near-misses:
-  - `get_kind(name)` gives the **form + a member COUNT only**, never the items;
-  - `recall(query, scope={kind})` is **fuzzy/ranked** — a relevance-sorted top
-    slice, not the complete set;
-  - `get_referrers(kind, name)` gives **inverse refs** (who points at this
-    item), not the kind's own members.
-
-  So: form → `get_kind`; best matches → `recall`; who-references-me →
-  `get_referrers`; **the whole list → `entity_list`**.
-- `get_referrers(kind, name)` — the items that reference this one by their
-  declared `ref` (a topic's `source`s). Exact provenance — what a synthesis
-  rests on — not fuzzy `recall`. Follows **both** ref forms: an item that names
-  this one as a single-valued ref OR anywhere inside a `multi` list is returned.
-- `graph_stats()` — size and shape of YOUR recall corpus: visible nodes/edges
-  with per-type distributions, a `superseded_count` (visible nodes already
-  replaced via `supersedes` — did your consolidation take?), + workspace item
-  count. This is the only correct answer to "how big is my memory" — the
-  project surface's `graph_stats` measures the owner-wide GraphRAG graph,
-  which `recall` does not search.
-- `node_forget(node_id)` — forget a cognition node by id (get the id from a
-  `recall` result). Hides it from every read surface — recall, subgraph,
-  stats, init; irreversible from the agent surface (the row is archived
-  server-side). Prefer `supersedes`-consolidation when a replacement exists;
-  forget is for pure noise. Only your own nodes; for items use `entity_delete`.
-- `node_mute(node_id)` / `node_unmute(node_id)` — per-viewer mute: hide a
-  node from YOUR reads only (usually someone else's shared/broadcast noise).
-  Reversible, shared corpus untouched. Contrast with `node_forget`:
-  forget = irreversible, creator-only, hides from everyone (your own noise);
-  mute = reversible, any visible node (someone else's noise in your recall).
-
-**Skill emergence:**
-- `promote_skill(community_id, content)` — when `agent_init` surfaces a
-  `mature_community` worth crystallizing, write it up as a broadcast skill node.
-  Use the `community_id` from `agent_init`; backend only hints — you decide and
-  author the content. (This crystallizes a dense memory cluster into a broadcast
-  skill node.)
-
-**Runs (skill-execution tracking):**
-- `run_start(skill_name, params?)` → `run_finish(run_id, status, outputs?)` —
-  wrap a multi-step skill execution for a traceable record.
+- **`chat_turn(role, text)`** — record each message of a live dialogue. On
+  `extraction_signal: true` (buffer ≥ 10), call `extract_thread(message_ids)` to
+  distill the buffer (it runs an LLM over the buffered thread). Don't skip it.
+- **`extract_into(nodes, edges, <source>)`** — you read a source, extract the
+  graph yourself, persist it ONCE; ConPort auto-stamps `derived_from` provenance.
+  Pick EXACTLY ONE source (a cognition node or a workspace item). No LLM
+  server-side. (Contrast: `extract_thread` runs an LLM over a buffered chat.)
+- **`entity_list(kind, attrs_filter?, limit?)`** — enumerate the actual members
+  of a kind (exact, exhaustive, owner-scoped). The right verb for "give me ALL
+  items of kind X" — not `get_kind` (form + count only), not
+  `recall(scope={kind})` (fuzzy slice), not `get_referrers` (inverse refs).
+- **`event_query(entity_id, …)`** — read an item's timeline (events aren't in `recall`).
+- **`entity_delete(kind, name)`** — soft-delete an item; events survive, re-remember resurrects.
+- **`get_referrers(kind, name)`** — items that reference this one by their declared ref.
+- **`graph_stats()`** — size/shape of YOUR recall corpus (incl. `superseded_count`).
+- **`node_forget(node_id)`** — forget your own noise node (irreversible from the agent surface; prefer `supersedes`-consolidation when a replacement exists).
+- **`node_mute(node_id)` / `node_unmute(node_id)`** — per-viewer hide (reversible; someone else's shared/broadcast noise).
+- **`promote_skill(community_id, content)`** — crystallize a `mature_community` into a broadcast skill node.
+- **`run_start(skill_name, params?)` → `run_finish(run_id, status, outputs?)`** — wrap a multi-step skill execution.
 
 ---
 
@@ -436,7 +272,24 @@ did not land.
 - [ ] `extraction_signal` fired → `extract_thread` immediately?
 - [ ] `mature_communities` → reviewed, promote or skip?
 - [ ] No secrets stored?
+- [ ] Deep topic (edges/refs/grounding, aux ops, intent-API semantics) → fetched the live-docs page before acting?
 
 ---
 
-*v15.13.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source, auto derived_from provenance; source is either a cognition node — node→node derived_from edge — or a workspace item via (item_kind,item_name)/source_entity_id — node→item derived_from link)*
+## Live docs
+
+The deep, situational reference lives at **https://conport.app/agents** and is
+the single source of truth. **Before acting on a deep topic, fetch the relevant
+page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
+`conport-agent docs <topic>` CLI.)
+
+| Topic | Page |
+|---|---|
+| Intent API v4 (full bootstrap + verbs + structure semantics) | `agents/intent-api` |
+| Recall-before-act (deep) + visibility + `relevant_until` + `intent` | `agents/recall-before-act` |
+| Edges, the 12-type vocabulary, edge grounding, typed refs | `agents/edges-and-refs` |
+| Aux operations (chat intake, `extract_into`, enumeration, lifecycle, runs) | `agents/aux-operations` |
+
+---
+
+*v15.14.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) | Agent expresses intent; ConPort owns storage | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties; extract_into agent-extracted graph with auto derived_from provenance*
