@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.12.0
+  version: 15.13.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -41,7 +41,6 @@ identity             your identity statements (private)
 principles           your rules / safety rails (private)
 broadcast_facts      collective always-load knowledge — facts AND crystallized skills
 recent_self_changes  YOUR own identity/principle/skill writes from the last 7 days
-skills               [{name, description}] — your authored loops (body fetched on demand via get_skill)
 collections          [{key, members, field_hints, status_vocab}] — your structured domains
 mature_communities   skill-promotion candidates (dense, stable clusters)
 pending_extraction   {buffer_size, message_ids} when un-extracted messages ≥ 10
@@ -269,11 +268,6 @@ Rules that keep domains clean (skip them and you fragment — `serial` +
 accepted (the schema grows). `recall` finds items by content; `event`s are an
 item's timeline (read with `event_query`, not `recall`).
 
-**Doing the same structural work every cycle** (nightly research, daily
-scoring)? Don't re-improvise — author the loop once with `write_skill` and
-`get_skill` it back next session. See `references/authoring-loops.md` for how to
-compose the verbs into a repeatable procedure you write for yourself.
-
 ---
 
 ## VISIBILITY (for free `remember`)
@@ -336,7 +330,7 @@ some internals (communities, the connection graph) — use when you need them.
   Use the **node** source when you're distilling further from a cognition node
   you already hold; use the **workspace-item** source when you're extracting a
   cognition graph straight out of a structured research item (the `source`
-  record from your research loop — see `references/authoring-loops.md`). The
+  record from your research loop). The
   conceptual difference is the provenance shape: node→node is an in-graph
   `derived_from` edge; node→item is a `derived_from` link that crosses from the
   cognition graph into the workspace, leaving the item canonical.
@@ -403,21 +397,12 @@ some internals (communities, the connection graph) — use when you need them.
   forget = irreversible, creator-only, hides from everyone (your own noise);
   mute = reversible, any visible node (someone else's noise in your recall).
 
-**Skills — your authored loops:**
-- `write_skill(name, description, body)` — when you keep doing the same
-  structural work, write the procedure down once instead of re-improvising. The
-  `body` (full markdown) is stored and fetched on demand; the one-line
-  `description` surfaces in `agent_init.skills` + `recall`. See
-  `references/authoring-loops.md`.
-- `get_skill(name)` — pull a skill's full body when its description fits what
-  you're about to do.
-
-**Skill emergence (different thing — emergent, not authored):**
+**Skill emergence:**
 - `promote_skill(community_id, content)` — when `agent_init` surfaces a
   `mature_community` worth crystallizing, write it up as a broadcast skill node.
   Use the `community_id` from `agent_init`; backend only hints — you decide and
-  author the content. (This crystallizes a dense memory cluster; `write_skill`
-  is for a procedure you deliberately author.)
+  author the content. (This crystallizes a dense memory cluster into a broadcast
+  skill node.)
 
 **Runs (skill-execution tracking):**
 - `run_start(skill_name, params?)` → `run_finish(run_id, status, outputs?)` —
@@ -454,4 +439,4 @@ did not land.
 
 ---
 
-*v15.12.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + skills (write_skill, get_skill) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace + skill bodies, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); authored loops as skills (body on demand); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source, auto derived_from provenance; source is either a cognition node — node→node derived_from edge — or a workspace item via (item_kind,item_name)/source_entity_id — node→item derived_from link)*
+*v15.13.0 | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + refs (create_kind refs + get_referrers) + aux (init, chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, get_subgraph, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start, run_finish) | Agent expresses intent; ConPort owns storage (sphere graph + event-sourced workspace, hidden) | recall spans cognition + structured items, typed; recall intent channel (optional what-I'm-trying-to-do annotation lifts matching results into lower slots, top-1 untouched); superseded nodes excluded by default (scope.include_superseded opts in; also excluded from init anchors, flagged superseded on subgraph/dashboard, counted in graph_stats.superseded_count); relevant_until validity horizon (expired memories demoted in rank, never deleted; "clear" resets to indefinite); node_forget soft-lifecycle (forgotten nodes hidden from every read surface, row archived); node_mute per-viewer hide (reversible, shared corpus untouched); entity soft-delete (events survive, re-remember resurrects); typed refs between kinds validated on write (scalar or array form {kind, multi}); connections auto-built by ConPort by meaning + assertable via remember(edges)/link with structured edge_errors; edge properties (confidence/source_item/evidence_section/note); 12 edge types (6 structural + 6 domain: unifies/introduces/cites/uses_method/reports_finding/refines); extract_into (agent-extracted nodes + edges under a source, auto derived_from provenance; source is either a cognition node — node→node derived_from edge — or a workspace item via (item_kind,item_name)/source_entity_id — node→item derived_from link)*
