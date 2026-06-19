@@ -26,12 +26,9 @@ Pick your client:
 | Claude Code | [docs/install/claude-code.md](./docs/install/claude-code.md) |
 | Cursor | [docs/install/cursor.md](./docs/install/cursor.md) |
 | Claude.ai (web) | [docs/install/claude-ai.md](./docs/install/claude-ai.md) |
-| OpenClaw | [docs/install/openclaw.md](./docs/install/openclaw.md) |
-| mcporter (generic MCP host) | [docs/install/mcporter.md](./docs/install/mcporter.md) |
-| Paperclip | [docs/install/paperclip.md](./docs/install/paperclip.md) *(stub — verifying upstream)* |
 
-Onboarding an operator (e.g. an OpenClaw agent told to "add conport by
-instructions"): point them at [INSTRUCTIONS.md](./INSTRUCTIONS.md).
+Onboarding an operator told to "add conport by instructions": point them at
+[INSTRUCTIONS.md](./INSTRUCTIONS.md).
 
 Get an API key at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect) — format is `cport_live_...`.
 

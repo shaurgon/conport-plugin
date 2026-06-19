@@ -11,23 +11,8 @@ until the product earns its keep with individual users.
 
 ## Now (shipping / polishing)
 
-- **Works with everything.** One plugin for Claude Code, Cursor,
-  Claude.ai, OpenClaw, mcporter, Paperclip, and Hermes. Whatever you use
-  today, ConPort plugs into it.
-- **Agents that actually remember.** A new memory model where your
-  agent's knowledge grows into a structured tree instead of piling up
-  in a flat list. The things you say once become part of how it
-  thinks; patterns it notices repeated across tasks mature into
-  skills it can apply elsewhere on its own — no prompting needed.
-- **Native Hermes integration.** Drop-in memory for Hermes Agent.
-  One setup command and every agent you run picks up where the
-  previous left off — pulling what's relevant before each turn
-  without you asking.
-- **Agents stay organised.** New routing discipline keeps the
-  agent's tree clean instead of a junk drawer. Facts about you,
-  rules it follows, and working notes from specific tasks all land
-  in the right place — so when you ask later, recall finds what you
-  actually meant.
+- **Works with everything.** One plugin for Claude Code, Cursor, and
+  Claude.ai. Whatever you use today, ConPort plugs into it.
 - **Time tracking that tells the truth.** Every task carries its
   estimate, the actual time spent, and how accurate the estimate
   was. Project-level totals on the dashboard. Useful for the next
