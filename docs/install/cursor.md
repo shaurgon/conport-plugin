@@ -47,16 +47,11 @@ It *also* reads `.claude/skills/` and `~/.claude/skills/`, so if you already
 have the Claude Code plugin installed, Cursor inherits the same skills
 automatically.
 
-Otherwise, clone once and symlink the `conport` skill:
+Otherwise, install the `conport` skill into Cursor with one command:
 
 ```bash
-git clone --depth=1 https://github.com/shaurgon/conport-plugin ~/.conport-plugin
-mkdir -p ~/.cursor/skills
-ln -s ~/.conport-plugin/skills/conport ~/.cursor/skills/conport
+npx skills add shaurgon/conport-plugin --skill conport -a cursor
 ```
-
-> The plugin also ships `conport-agent` for multi-agent frameworks (Paperclip,
-> OpenClaw, Hermes). Inside Cursor you don't need it — skip it.
 
 ## Verify
 
@@ -80,10 +75,9 @@ need to be replaced by hand.
    [SKILL UPDATE] conport 13.0.0 → 13.10.0 (minor). Changelog: <url> · Install: <url>
    ```
 
-2. Pull the latest skill files from this repo (`skills/conport/SKILL.md` and,
-   if you have it, `skills/conport-agent/SKILL.md`).
-3. Replace your local copies (typically under your Cursor skills directory
-   or wherever you placed them on install).
+2. Pull the latest `skills/conport/SKILL.md` from this repo.
+3. Replace your local copy (typically under your Cursor skills directory
+   or wherever you placed it on install).
 4. Restart Cursor or reload the MCP panel.
 
 > The MCP server itself doesn't need updating from your side — that lives

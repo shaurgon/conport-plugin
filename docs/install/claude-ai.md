@@ -37,14 +37,9 @@ Upload it in Claude.ai:
 
 Claude.ai skills are per-user — every teammate uploads their own copy.
 
-> The second skill, `conport-agent`, is for multi-agent frameworks
-> (Paperclip, OpenClaw, …) and is not useful inside a Claude.ai chat,
-> so it's omitted here.
-
 ## Verify
 
-- **Skills**: **Settings → Features → Skills** lists both `conport` and
-  `conport-agent` as enabled.
+- **Skills**: **Settings → Features → Skills** lists `conport` as enabled.
 - **Connector** (once OAuth is live): the connectors panel shows `ConPort`
   green, and asking Claude to call `mcp__conport__init` in a new chat
   returns a JSON response with `project_id` and `summary`.
@@ -66,8 +61,7 @@ To apply the update:
 1. Open the [releases page](https://github.com/shaurgon/conport-plugin/releases)
    and read the changelog for the entries between your version and the
    latest.
-2. Download the latest `SKILL.md` for whichever skills you have installed
-   from `skills/conport/` and `skills/conport-agent/` in this repo.
+2. Download the latest `SKILL.md` from `skills/conport/` in this repo.
 3. **Settings → Features → Skills** — find each ConPort skill, click ⋯, and
    replace the file with the new one.
 4. Reload any open chat or start a new session; the notice should disappear

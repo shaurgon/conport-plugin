@@ -23,7 +23,6 @@ Claude Code then prompts for the `api_key` credential; paste the
 The plugin ships:
 
 - `skills/conport/` — project-context skill (init, search, tasks, decisions)
-- `skills/conport-agent/` — agent identity and persistent memory
 - MCP server `conport` pointing at `https://api.conport.app/mcp/` (Bearer auth)
 - Node.js hook scripts under `scripts/` (Claude Code specific)
 

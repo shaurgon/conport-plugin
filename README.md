@@ -6,10 +6,9 @@ and skills work across many clients.
 
 ## What it ships
 
-- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, GraphRAG, agent memory).
+- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, GraphRAG).
 - **Skills** (plain `SKILL.md`, portable)
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
-  - `conport-agent` — persistent agent identity & memory (`agent_init`, `agent_remember`, `agent_recall`, …)
   - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent.
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort
@@ -26,6 +25,7 @@ Pick your client:
 | Claude Code | [docs/install/claude-code.md](./docs/install/claude-code.md) |
 | Cursor | [docs/install/cursor.md](./docs/install/cursor.md) |
 | Claude.ai (web) | [docs/install/claude-ai.md](./docs/install/claude-ai.md) |
+| Other agents (`npx skills add`) | [docs/install/other-agents.md](./docs/install/other-agents.md) |
 
 Onboarding an operator told to "add conport by instructions": point them at
 [INSTRUCTIONS.md](./INSTRUCTIONS.md).
