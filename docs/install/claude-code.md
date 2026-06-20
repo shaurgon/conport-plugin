@@ -20,11 +20,13 @@ Inside a Claude Code session, run these slash commands:
 Claude Code then prompts for the `api_key` credential; paste the
 `cport_live_...` value from step 1.
 
-The plugin ships:
+The plugin loads in Claude Code:
 
-- `skills/conport/` — project-context skill (init, search, tasks, decisions)
+- 2 skills (`conport` + `superpowers-conport`) — project-context discipline
+  (init, search, tasks, decisions) plus the superpowers→ConPort spec/epic flow
 - MCP server `conport` pointing at `https://api.conport.app/mcp/` (Bearer auth)
-- Node.js hook scripts under `scripts/` (Claude Code specific)
+- 4 hooks (Node.js scripts under `scripts/`) — session start, command check,
+  prompt submit, session reflect
 
 ## 3. Reload
 

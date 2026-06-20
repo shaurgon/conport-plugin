@@ -1,7 +1,7 @@
 {
   "name": "conport",
   "displayName": "ConPort",
-  "version": "15.14.0",
+  "version": "15.15.1",
   "description": "ConPort — project context: tasks, decisions, docs, progress, and semantic search. Routes to live docs at conport.app.",
   "author": {
     "name": "shaurgon",

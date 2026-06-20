@@ -16,9 +16,23 @@ and skills work across many clients.
   - `UserPromptSubmit` — context restore + save reminder every 5 messages
   - `SessionEnd` — LLM-based reflection of unsaved decisions
 
-## Install
+## Install — one line, any agent
 
-Pick your client:
+Give your coding agent this single instruction and it installs and configures
+ConPort itself:
+
+> Install ConPort from github.com/shaurgon/conport-plugin and set it up for this project.
+
+The agent reads [INSTALL.md](./INSTALL.md) from this repo and follows it: it
+picks the right path for your harness (CLI or MCP), installs the discipline
+skill, and verifies the connection. You configure nothing by hand — you only
+supply your API key once when the agent asks.
+
+Get an API key at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect) — format is `cport_live_...`. Never paste it into chat; the agent reads it from the `CONPORT_API_KEY` environment variable.
+
+### Prefer to set it up by hand?
+
+Pick your client and follow the per-harness guide:
 
 | Client | Guide |
 |---|---|
@@ -26,11 +40,6 @@ Pick your client:
 | Cursor | [docs/install/cursor.md](./docs/install/cursor.md) |
 | Claude.ai (web) | [docs/install/claude-ai.md](./docs/install/claude-ai.md) |
 | Other agents (`npx skills add`) | [docs/install/other-agents.md](./docs/install/other-agents.md) |
-
-Onboarding an operator told to "add conport by instructions": point them at
-[INSTRUCTIONS.md](./INSTRUCTIONS.md).
-
-Get an API key at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect) — format is `cport_live_...`.
 
 ## Configuration (Claude Code)
 
@@ -50,14 +59,6 @@ Fallback when neither override is set: `basename(git remote)` → current dir na
   - `hook_state/conport_reminder.json` — save-reminder counter
   - `session_logs/<session_id>_restored.flag` — "context already restored" markers
   - `session-end.log` — reflection debug log
-
-## Migration from a manual Claude Code setup
-
-1. Install the plugin (see the Claude Code guide above).
-2. Remove the manual `conport` entry from `~/.claude.json` → `mcpServers`.
-3. Remove conport-related hook entries from `~/.claude/settings.json`.
-4. Delete `~/.claude/skills/conport` and `~/.claude/skills/conport-agent`.
-5. Delete `~/.claude/hooks/guardrails/` + `user_prompt_submit.py` + `session-reflect.py`.
 
 ## Community & roadmap
 
