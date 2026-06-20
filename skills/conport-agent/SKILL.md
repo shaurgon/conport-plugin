@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.15.1
+  version: 15.16.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -151,6 +151,35 @@ items): live docs `agents/edges-and-refs`.
 
 ---
 
+## CHOOSING A MODE
+
+**The deciding rule.** Can the links between entities be derived mechanically
+from the item's own fields? If yes → **projectional mode**: write a flat record,
+mark field roles, ignore the graph (the projector derives edges). If the links
+require your judgment and accrete over time across sessions → **graph mode**:
+assert edges explicitly with `link`.
+
+**Three anti-blob rules:**
+
+1. **Don't serialize structure into prose.** If a piece of knowledge has
+   distinct facets (a source, a conclusion, a link to a question), it is a
+   node with edges — not a string stuffed into a `body` field. Only genuinely
+   facet-less text belongs in `body`.
+
+2. **Timeline is not the graph.** A raw measurement or event belongs in the
+   item's timeline via `event`. A judgment distilled from measurements (a
+   score, a rating, a trend assessment) is an `attribute` set by you on the
+   item — not a separate node per measurement.
+
+3. **`conclusion` and `open_question` are first-class node kinds, not fields
+   of a topic.** If they were fields, the topic→question→topic recursion that
+   lets research accrete over time cannot form.
+
+→ Deep detail (field-role table, kind list, edge types, the research recursion,
+worked examples): live docs `agents/modes`.
+
+---
+
 ## THE STRUCTURE DECISION (your only real choice)
 
 **Free thought / observation / principle → `remember(content)`.**
@@ -289,7 +318,8 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 | Recall-before-act (deep) + visibility + `relevant_until` + `intent` | `agents/recall-before-act` |
 | Edges, the 12-type vocabulary, edge grounding, typed refs | `agents/edges-and-refs` |
 | Aux operations (chat intake, `extract_into`, enumeration, lifecycle, runs) | `agents/aux-operations` |
+| Workspace graph modes (field-role table, kind list, edge types, worked examples) | `agents/modes` |
 
 ---
 
-*v15.15.1 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) | Agent expresses intent; ConPort owns storage | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties; extract_into agent-extracted graph with auto derived_from provenance*
+*v15.16.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) | Agent expresses intent; ConPort owns storage | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties; extract_into agent-extracted graph with auto derived_from provenance | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
