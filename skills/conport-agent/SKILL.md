@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.16.0
+  version: 15.17.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -253,6 +253,12 @@ Beyond the core verbs, named operations for specific needs. Reach for these when
 you need them; **fetch the live-docs `agents/aux-operations` page for the full
 semantics before acting** — the error shapes and provenance rules matter.
 
+- **`agent_feedback(agent_uuid, title, body, category?, severity?)`** — file a
+  bug report or suggestion directly into the ConPort development backlog (project
+  conport-global). Use this when you hit a bug, API limitation, or friction in
+  the agent memory API, or have a concrete improvement idea — instead of asking
+  the human to relay it. Returns `{"ok": true, "task_id": <int>}`. This is NOT
+  for storing your own memory (`remember` is for that).
 - **`chat_turn(role, text)`** — record each message of a live dialogue. On
   `extraction_signal: true` (buffer ≥ 10), call `extract_thread(message_ids)` to
   distill the buffer (it runs an LLM over the buffered thread). Don't skip it.
@@ -322,4 +328,4 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 
 ---
 
-*v15.16.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) | Agent expresses intent; ConPort owns storage | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties; extract_into agent-extracted graph with auto derived_from provenance | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
+*v15.17.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback (file agent bug/friction reports to the ConPort dev backlog) | Agent expresses intent; ConPort owns storage | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties; extract_into agent-extracted graph with auto derived_from provenance | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
