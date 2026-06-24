@@ -2,7 +2,7 @@
 name: conport
 description: Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start.
 metadata:
-  version: 15.19.0
+  version: 15.20.0
 ---
 
 # ConPort — Project Management System
@@ -71,10 +71,9 @@ If auto-detection of the project name did not work, ask the user.
 
    **Never decide "is there an update" by hand-comparing version numbers.**
    The conport plugin (this skill, conport-agent, plugin.json, marketplace) is
-   versioned in lockstep — one number per release. `conport-hermes` is a
-   *separate* installable unit with its own number. Numbers from different units
-   are NOT comparable, and a skill version is NOT comparable to a plugin
-   release number. The ONLY correct signal is `skill_update_available` above:
+   versioned in lockstep — one number per release. A skill version is NOT
+   comparable to a plugin release number, and independent installable units
+   carry their own unrelated numbers. The ONLY correct signal is `skill_update_available` above:
    present → update; absent → you're current. If you catch yourself reasoning
    "my 14.x looks higher than the 12.x release, so I'm ahead" — stop, that's the
    exact mistake this signal exists to prevent.
@@ -422,4 +421,4 @@ reference), `references/bootstrap.md` (fresh-project onboarding).
 
 ---
 
-*v15.19.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app | 83 MCP tools | Auto-detection | GraphRAG | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Post-write payload verification | Slim MCP write responses | Task reparenting + 2-level hierarchy schema invariant | Canonical cross-reference grammar | Spec append-only enforcement | Documentation graph callouts + backlinks | current_architecture recipe + L1 capture-gap audit | Per-task time tracking | Server-side reject of MCP tool-call XML leakage*
+*v15.20.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app | 83 MCP tools | Auto-detection | GraphRAG | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Post-write payload verification | Slim MCP write responses | Task reparenting + 2-level hierarchy schema invariant | Canonical cross-reference grammar | Spec append-only enforcement | Documentation graph callouts + backlinks | current_architecture recipe + L1 capture-gap audit | Per-task time tracking | Server-side reject of MCP tool-call XML leakage*

@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.19.0
+  version: 15.20.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -68,10 +68,9 @@ you reuse existing structured domains (don't reinvent them).
 **Updates: act on the signal, never hand-compare versions.** Pass your
 `skill_id` / `skill_version` / `client_type` to `agent_init`; if it returns
 `skill_update_available`, an update exists — install it. If it's absent, you're
-current. Your memory provider is ONE installable unit (e.g. `conport-hermes`
-for Hermes agents) with its own version line — never compare its number against
-the conport plugin's skill numbers, or a skill version against a plugin release
-number. They're independent. Eyeballing "my 8.x looks higher than the 12.x
+current. Your memory provider plugin is one installable unit with its own
+version line — never compare its number against unrelated skill numbers, or a
+skill version against a plugin release number. They're independent. Eyeballing "my 8.x looks higher than the 12.x
 release, so I'm ahead" is the exact mistake this signal prevents.
 
 ---
@@ -124,7 +123,8 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 
 | Verb | What it does |
 |---|---|
-| `remember(content)` | Log an episode of what was said — the backend distills it into a fact. |
+| `remember(content)` | Knowledge (default `fact`/`observation`): log an episode of what was said — the backend distills it into claims. |
+| `remember(content, meta_type=identity\|principle\|skill)` | Self-model: a direct, anchored write of who you are — not an episode, not consolidated. |
 | `remember(kind, name, fields)` | Keep the current state of a structured item. |
 | `recall(query, intent?, scope?)` | Find anything relevant — free knowledge AND structured items, one ranked list. |
 | `create_kind(name, fields, statuses)` | Declare a structured domain, once (like a table). |
@@ -132,26 +132,38 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 | `event(kind, name, note, fields?)` | Log a change/what-happened on an item (its timeline). |
 | `link(from_node_id, to_node_id, edge_type)` | Assert a connection between two memories you already have. |
 
-**Log what's said — don't extract, don't dump.** Your job on the free path is to
-record what happened: `remember(content=...)` an observation, `chat_turn` a
-dialogue message. The backend consolidates those episodes into candidate facts
-on its own — asynchronously, after the fact. You do NOT build the graph, hand-extract
-claims, or paste pre-built walls of facts; that is the backend's work now.
+**`meta_type` routes the free path: knowledge vs self-model.**
 
-`remember(content=...)` therefore **logs an episode**, it does not write an
-immediate authoritative node — it returns an episode marker
-(`episode_logged`, `consolidation: scheduled`), not a node id. Set your
-expectations accordingly: the fact becomes a candidate claim once consolidation
-runs, not the instant you call. `meta_type` / `visibility` are still accepted but
-no longer steer storage (the backend types facts during consolidation). The
-structured-item path — `remember(kind, name, fields)` → a workspace item — is
-unchanged; everything in *The structure decision* below still applies to it.
+- **Knowledge** — `remember(content)` with the default `meta_type` (`fact` /
+  `observation`). Your job here is to record what happened: log the observation,
+  `chat_turn` the dialogue message. The backend consolidates those episodes into
+  candidate **claims** on its own — asynchronously, after the fact. You do NOT
+  build the graph, hand-extract claims, or paste pre-built walls of facts. The
+  call **logs an episode** — it returns an episode marker (`episode_logged`,
+  `consolidation: scheduled`), not a node id — so the fact becomes a candidate
+  claim once consolidation runs, not the instant you call. Your `visibility`
+  (default `shared`) is carried onto the resulting claims.
+
+- **Self-model** — `remember(content, meta_type=identity|principle|skill)`.
+  These are your declarations about *yourself*, not facts to distil. They bypass
+  the episode/consolidation pipeline and land **directly** as a node, preserving
+  `meta_type` / `visibility` / `edges` / `relevant_until`, and load as
+  `agent_init` bootstrap anchors. This is the path the *Record what you change
+  about yourself* example above uses (`meta_type="skill"`). It writes the node
+  immediately — recall it the same session.
+
+The structured-item path — `remember(kind, name, fields)` → a workspace item —
+is unchanged; everything in *The structure decision* below still applies to it.
 
 **Connecting memories.** ConPort auto-links every new memory to its nearest
-existing ones by meaning — you get a connected graph for free, and consolidation
-builds edges between distilled facts. Assert a connection yourself only between
-two structured/workspace memories where the relationship is one ConPort wouldn't
+existing ones by meaning — you get a connected graph for free. On the
+**knowledge** path you never hand-build edges: consolidation builds the
+predicate edges between distilled claims (an `edges=…` argument there is ignored
+gracefully). You assert a connection yourself only on the **self-model**
+(`identity`/`principle`/`skill`) direct-write path, or between two
+structured/workspace memories — when the relationship is one ConPort wouldn't
 infer from similarity ("derived from", "competing view", "supersedes"), via
+`remember(content, meta_type=…, edges=[…])` or
 `link(from_node_id, to_node_id, edge_type)`. The edge-type vocabulary is a
 **fixed, curated set of 12** (6 structural + 6 domain) — pick the closest; an
 unrecognized type returns `invalid_edge_type`. Malformed edges come back as
@@ -319,7 +331,8 @@ did not land.
 - [ ] Changed your own skill/cron/config → `remember`ed it as a self-change?
 - [ ] Structured domain → `create_kind` once + `get_kind` before writing items?
 - [ ] Item state → `remember(kind,…)`; what-happened → `event`; never list-as-item?
-- [ ] Free thought / what was said → `remember(content)` (logs an episode; backend distills it — not an instant fact)?
+- [ ] Knowledge (`fact`/`observation`) → `remember(content)` (logs an episode; backend distills it into claims — not an instant fact)?
+- [ ] Self-declaration → `remember(content, meta_type=identity\|principle\|skill)` (direct anchored write, preserves meta_type/visibility/edges — not consolidated)?
 - [ ] Logged episodes instead of hand-extracting or dumping pre-built claims (`extract_thread` / `extract_into` are retired no-ops)?
 - [ ] `mature_communities` → reviewed, promote or skip?
 - [ ] No secrets stored?
@@ -344,4 +357,4 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 
 ---
 
-*v15.19.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | log-don't-extract: remember(content)/chat_turn log episodes, backend consolidates them into facts asynchronously; extract_thread/extract_into retired no-ops | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
+*v15.20.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | remember routes by meta_type: knowledge (fact/observation) logs an episode → backend consolidates into claims asynchronously; self-model (identity/principle/skill) writes a direct anchored node (preserves meta_type/visibility/edges, loads as agent_init anchor); extract_thread/extract_into retired no-ops | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*

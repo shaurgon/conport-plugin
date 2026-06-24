@@ -21,21 +21,10 @@ export CONPORT_API_KEY=cport_live_...
 Generate one at [me.conport.app/dashboard/connect](https://me.conport.app/dashboard/connect).
 Never paste the key into a chat. Tenant isolation is enforced server-side.
 
-## Hermes
+## Generic agent runtime
 
-Hermes installs the agent line via its own plugin, **`conport-hermes`**, which
-ships from a separate mirror and carries the Hermes-specific system prompt and
-memory discipline. Install that plugin in the Hermes runtime; it wires up the
-skill and MCP transport for you:
-
-```bash
-hermes plugins install shaurgon/conport-hermes
-```
-
-Repo: https://github.com/shaurgon/conport-hermes
-
-If the plugin isn't available in your runtime, fall back to the skill + MCP
-combination:
+Install the `conport-agent` skill and point the agent's MCP transport at the
+Intent API:
 
 ```bash
 npx skills add shaurgon/conport-plugin --skill conport-agent
