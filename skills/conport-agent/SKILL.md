@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.18.0
+  version: 15.19.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -49,7 +49,7 @@ broadcast_facts      collective always-load knowledge — facts AND crystallized
 recent_self_changes  YOUR own identity/principle/skill writes from the last 7 days
 collections          [{key, members, field_hints, status_vocab}] — your structured domains
 mature_communities   skill-promotion candidates (dense, stable clusters)
-pending_extraction   {buffer_size, message_ids} when un-extracted messages ≥ 10
+pending_extraction   {buffer_size, message_ids} when un-consolidated messages ≥ 10 — informational; the backend distills the buffer on its own
 summary              human-readable status line
 ```
 
@@ -61,9 +61,9 @@ looks empty or wrong is not a blank slate; it is a prompt to check this list and
 
 `new` → empty; write your first identity + principles via `remember`.
 `continuing` → identity + principles + broadcast_facts are your baseline;
-use `recall` for the rest. If `pending_extraction` is present, call
-`extract_thread` with its `message_ids` before anything else. Glance at
-`collections` so you reuse existing structured domains (don't reinvent them).
+use `recall` for the rest. `pending_extraction` is informational — the backend
+consolidates the buffer itself; you don't act on it. Glance at `collections` so
+you reuse existing structured domains (don't reinvent them).
 
 **Updates: act on the signal, never hand-compare versions.** Pass your
 `skill_id` / `skill_version` / `client_type` to `agent_init`; if it returns
@@ -124,7 +124,7 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 
 | Verb | What it does |
 |---|---|
-| `remember(content)` | Keep a free thought / fact / observation. |
+| `remember(content)` | Log an episode of what was said — the backend distills it into a fact. |
 | `remember(kind, name, fields)` | Keep the current state of a structured item. |
 | `recall(query, intent?, scope?)` | Find anything relevant — free knowledge AND structured items, one ranked list. |
 | `create_kind(name, fields, statuses)` | Declare a structured domain, once (like a table). |
@@ -132,15 +132,30 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 | `event(kind, name, note, fields?)` | Log a change/what-happened on an item (its timeline). |
 | `link(from_node_id, to_node_id, edge_type)` | Assert a connection between two memories you already have. |
 
+**Log what's said — don't extract, don't dump.** Your job on the free path is to
+record what happened: `remember(content=...)` an observation, `chat_turn` a
+dialogue message. The backend consolidates those episodes into candidate facts
+on its own — asynchronously, after the fact. You do NOT build the graph, hand-extract
+claims, or paste pre-built walls of facts; that is the backend's work now.
+
+`remember(content=...)` therefore **logs an episode**, it does not write an
+immediate authoritative node — it returns an episode marker
+(`episode_logged`, `consolidation: scheduled`), not a node id. Set your
+expectations accordingly: the fact becomes a candidate claim once consolidation
+runs, not the instant you call. `meta_type` / `visibility` are still accepted but
+no longer steer storage (the backend types facts during consolidation). The
+structured-item path — `remember(kind, name, fields)` → a workspace item — is
+unchanged; everything in *The structure decision* below still applies to it.
+
 **Connecting memories.** ConPort auto-links every new memory to its nearest
-existing ones by meaning — you get a connected graph for free. Assert a
-connection yourself only when it's one ConPort wouldn't infer from similarity
-("derived from", "competing view", "supersedes"): on write via
-`remember(content, edges=[{target_node_id, edge_type}])`, or between two existing
-memories via `link(from_node_id, to_node_id, edge_type)`. The edge-type
-vocabulary is a **fixed, curated set of 12** (6 structural + 6 domain) — pick the
-closest; an unrecognized type returns `invalid_edge_type`. Malformed edges come
-back as structured `edge_errors`, never a silent drop. → Deep detail (the full
+existing ones by meaning — you get a connected graph for free, and consolidation
+builds edges between distilled facts. Assert a connection yourself only between
+two structured/workspace memories where the relationship is one ConPort wouldn't
+infer from similarity ("derived from", "competing view", "supersedes"), via
+`link(from_node_id, to_node_id, edge_type)`. The edge-type vocabulary is a
+**fixed, curated set of 12** (6 structural + 6 domain) — pick the closest; an
+unrecognized type returns `invalid_edge_type`. Malformed edges come back as
+structured `edge_errors`, never a silent drop. → Deep detail (the full
 vocabulary, edge `properties` grounding, why ground edges, typed refs between
 items): live docs `agents/edges-and-refs`.
 
@@ -260,13 +275,14 @@ semantics before acting** — the error shapes and provenance rules matter.
   "open"}`. This is NOT for storing your own memory (`remember` is for that).
 - **`agent_feedback_list(status?, limit?)`** — read the open feedback journal
   (status defaults to 'open').
-- **`chat_turn(role, text)`** — record each message of a live dialogue. On
-  `extraction_signal: true` (buffer ≥ 10), call `extract_thread(message_ids)` to
-  distill the buffer (it runs an LLM over the buffered thread). Don't skip it.
-- **`extract_into(nodes, edges, <source>)`** — you read a source, extract the
-  graph yourself, persist it ONCE; ConPort auto-stamps `derived_from` provenance.
-  Pick EXACTLY ONE source (a cognition node or a workspace item). No LLM
-  server-side. (Contrast: `extract_thread` runs an LLM over a buffered chat.)
+- **`chat_turn(role, text)`** — record each message of a live dialogue. The
+  backend consolidates the buffer into facts on its own; `extraction_signal:
+  true` (buffer ≥ 10) in the response is informational — you don't act on it.
+- **`extract_thread` / `extract_into`** — **DEPRECATED no-ops, do not call.**
+  Manual extraction is retired: the backend distills logged episodes
+  (`remember` / `chat_turn`) into facts with provenance and edges automatically.
+  These tools remain on the surface for compatibility but do nothing and return a
+  deprecation notice. Just log; never hand-extract.
 - **`entity_list(kind, attrs_filter?, limit?)`** — enumerate the actual members
   of a kind (exact, exhaustive, owner-scoped). The right verb for "give me ALL
   items of kind X" — not `get_kind` (form + count only), not
@@ -295,7 +311,6 @@ did not land.
 ## CHECKLIST
 
 - [ ] `agent_init` done? `bootstrap_state` checked?
-- [ ] `pending_extraction` present → `extract_thread` first?
 - [ ] Glanced at `collections` — reusing existing domains, not reinventing?
 - [ ] Read `recent_self_changes` before touching your own skills/config?
 - [ ] Task arrived → `recall` BEFORE answering?
@@ -304,8 +319,8 @@ did not land.
 - [ ] Changed your own skill/cron/config → `remember`ed it as a self-change?
 - [ ] Structured domain → `create_kind` once + `get_kind` before writing items?
 - [ ] Item state → `remember(kind,…)`; what-happened → `event`; never list-as-item?
-- [ ] Free thought → `remember(content)` with the right visibility?
-- [ ] `extraction_signal` fired → `extract_thread` immediately?
+- [ ] Free thought / what was said → `remember(content)` (logs an episode; backend distills it — not an instant fact)?
+- [ ] Logged episodes instead of hand-extracting or dumping pre-built claims (`extract_thread` / `extract_into` are retired no-ops)?
 - [ ] `mature_communities` → reviewed, promote or skip?
 - [ ] No secrets stored?
 - [ ] Deep topic (edges/refs/grounding, aux ops, intent-API semantics) → fetched the live-docs page before acting?
@@ -329,4 +344,4 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 
 ---
 
-*v15.18.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, extract_thread, extract_into, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties; extract_into agent-extracted graph with auto derived_from provenance | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
+*v15.19.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | log-don't-extract: remember(content)/chat_turn log episodes, backend consolidates them into facts asynchronously; extract_thread/extract_into retired no-ops | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
