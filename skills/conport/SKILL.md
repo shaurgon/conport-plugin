@@ -70,13 +70,13 @@ If auto-detection of the project name did not work, ask the user.
    - Do NOT re-emit the notice in subsequent turns — once per session.
 
    **Never decide "is there an update" by hand-comparing version numbers.**
-   The conport plugin (this skill, conport-agent, plugin.json, marketplace) is
-   versioned in lockstep — one number per release. A skill version is NOT
-   comparable to a plugin release number, and independent installable units
-   carry their own unrelated numbers. The ONLY correct signal is `skill_update_available` above:
-   present → update; absent → you're current. If you catch yourself reasoning
-   "my 14.x looks higher than the 12.x release, so I'm ahead" — stop, that's the
-   exact mistake this signal exists to prevent.
+   The conport plugin (this skill + superpowers-conport + plugin.json +
+   marketplace) versions independently from `conport-agent`, which is a
+   separate privately-distributed unit with its own version line. Numbers from
+   different units are NOT comparable. The ONLY correct signal is
+   `skill_update_available` above: present → update; absent → you're current.
+   If you catch yourself reasoning "my number looks higher than that other
+   unit's, so I'm ahead" — stop, that's the exact mistake this signal prevents.
 
 **Save-first.** Save decisions (`sync_decision`) and progress (`log_progress`)
 as they happen, not in a batch at the end of the session. The moment a choice is
@@ -418,7 +418,3 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 **Local references** (shipped with the skill): `references/command_list.md`
 (full MCP tool API), `references/documentation_graph.md` (long-form callout
 reference), `references/bootstrap.md` (fresh-project onboarding).
-
----
-
-*v15.22.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app | 83 MCP tools | Auto-detection | GraphRAG | Gap detection | Semantic pass | Cross-project linked tasks | Block-level document model | Recipe-pattern context assembly | Prefix-id convention | Skill version notification | Post-write payload verification | Slim MCP write responses | Task reparenting + 2-level hierarchy schema invariant | Canonical cross-reference grammar | Spec append-only enforcement | Documentation graph callouts + backlinks | current_architecture recipe + L1 capture-gap audit | Per-task time tracking | Server-side reject of MCP tool-call XML leakage*
