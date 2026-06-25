@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.20.0
+  version: 15.21.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -126,7 +126,7 @@ This is your everyday surface. Express intent; storage is ConPort's job.
 | `remember(content)` | Knowledge (default `fact`/`observation`): log an episode of what was said — the backend distills it into claims. |
 | `remember(content, meta_type=identity\|principle\|skill)` | Self-model: a direct, anchored write of who you are — not an episode, not consolidated. |
 | `remember(kind, name, fields)` | Keep the current state of a structured item. |
-| `recall(query, intent?, scope?)` | Find anything relevant — free knowledge AND structured items, one ranked list. |
+| `recall(query, intent?, scope?, include_candidate?, budget?)` | Find anything relevant — returns a graph-augmented **packet**: facts grouped by entity with status/provenance/conflicts, plus `flat_results` for compat. |
 | `create_kind(name, fields, statuses)` | Declare a structured domain, once (like a table). |
 | `get_kind(name)` | Read a domain's form before writing items. |
 | `event(kind, name, note, fields?)` | Log a change/what-happened on an item (its timeline). |
@@ -171,10 +171,20 @@ structured `edge_errors`, never a silent drop. → Deep detail (the full
 vocabulary, edge `properties` grounding, why ground edges, typed refs between
 items): live docs `agents/edges-and-refs`.
 
-**Recall returns the current version** — superseded nodes are excluded by default
-(pass `scope.include_superseded=true` to audit history). `intent` and
-`relevant_until` are optional refinements. → Deep detail: live docs
-`agents/recall-before-act`, `agents/intent-api`.
+**Recall returns a packet, not a flat list.** `recall(query)` seeds by relevance,
+walks one adaptive graph hop, and assembles a deterministic, token-bounded
+**packet**: facts grouped by the entity they describe, each fact carrying
+`status`, `confidence`, `tentative`, `provenance` (source-episode snippets) and
+`conflicts`. Read it by entity, then by status: `active` = trusted,
+`tentative` (a `candidate` claim) = provisional — treat with caution, `conflicts`
+= competing claims with both sides kept — reconcile, `provenance` = the episodes
+the fact was drawn from. A `flat_results` list rides along for callers that
+haven't adopted the packet. `include_candidate` (default `true`; set `false` to
+drop tentative claims) and `budget` (default `1500` token budget) tune it.
+Superseded nodes are excluded by default (pass `scope.include_superseded=true` to
+audit history); `intent` and `relevant_until` are optional refinements. → Deep
+detail: live docs `agents/recall-packet`, `agents/recall-before-act`,
+`agents/intent-api`.
 
 ---
 
@@ -350,6 +360,7 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 | Topic | Page |
 |---|---|
 | Intent API v4 (full bootstrap + verbs + structure semantics) | `agents/intent-api` |
+| The recall packet (shape + how to read status/tentative/conflicts/provenance) | `agents/recall-packet` |
 | Recall-before-act (deep) + visibility + `relevant_until` + `intent` | `agents/recall-before-act` |
 | Edges, the 12-type vocabulary, edge grounding, typed refs | `agents/edges-and-refs` |
 | Aux operations (chat intake, `extract_into`, enumeration, lifecycle, runs) | `agents/aux-operations` |
@@ -357,4 +368,4 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 
 ---
 
-*v15.20.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | remember routes by meta_type: knowledge (fact/observation) logs an episode → backend consolidates into claims asynchronously; self-model (identity/principle/skill) writes a direct anchored node (preserves meta_type/visibility/edges, loads as agent_init anchor); extract_thread/extract_into retired no-ops | recall spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
+*v15.21.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | remember routes by meta_type: knowledge (fact/observation) logs an episode → backend consolidates into claims asynchronously; self-model (identity/principle/skill) writes a direct anchored node (preserves meta_type/visibility/edges, loads as agent_init anchor); extract_thread/extract_into retired no-ops | recall returns a graph-augmented packet — facts grouped by entity with status/confidence/tentative/provenance/conflicts (1-hop graph traversal, relevance-primary ranking, token-budgeted), flat_results for compat; spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
