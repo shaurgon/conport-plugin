@@ -2,7 +2,7 @@
 name: conport-agent
 description: Use when managing agent identity, persistent memory, and structured domains in multi-agent systems. Must run agent_init at session start. Agent Intent-API v4 — you express intent (remember / recall / create_kind / event), ConPort handles storage.
 metadata:
-  version: 15.21.0
+  version: 15.22.0
 ---
 
 # ConPort Agent — Intent API (v4)
@@ -179,8 +179,13 @@ walks one adaptive graph hop, and assembles a deterministic, token-bounded
 `tentative` (a `candidate` claim) = provisional — treat with caution, `conflicts`
 = competing claims with both sides kept — reconcile, `provenance` = the episodes
 the fact was drawn from. A `flat_results` list rides along for callers that
-haven't adopted the packet. `include_candidate` (default `true`; set `false` to
-drop tentative claims) and `budget` (default `1500` token budget) tune it.
+haven't adopted the packet. Facts reached through the entity graph surface
+**structurally** — each carries its real `predicate`, `status`
+(`active`/`candidate`/`conflicting`) and `confidence`, so you reason over the
+subject–predicate–object triple instead of re-parsing prose. `include_candidate`
+(default `true`; set `false` to drop tentative claims) and `budget` (default
+`1500` token budget) tune it. `scope={predicate:"prefers"}` narrows the packet to
+a single relationship type (e.g. every `prefers` claim about an entity).
 Superseded nodes are excluded by default (pass `scope.include_superseded=true` to
 audit history); `intent` and `relevant_until` are optional refinements. → Deep
 detail: live docs `agents/recall-packet`, `agents/recall-before-act`,
@@ -368,4 +373,4 @@ page.** Index: **https://conport.app/agents/llms.txt**. (No web fetch? Use the
 
 ---
 
-*v15.21.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | remember routes by meta_type: knowledge (fact/observation) logs an episode → backend consolidates into claims asynchronously; self-model (identity/principle/skill) writes a direct anchored node (preserves meta_type/visibility/edges, loads as agent_init anchor); extract_thread/extract_into retired no-ops | recall returns a graph-augmented packet — facts grouped by entity with status/confidence/tentative/provenance/conflicts (1-hop graph traversal, relevance-primary ranking, token-budgeted), flat_results for compat; spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
+*v15.22.0 | Thinned skill — always-on discipline here, deep reference routed to live docs at conport.app/agents | recall-before-act gate (never rebuild a blank-looking surface) + self-change recording + recent_self_changes anchor | Intent API (v4): 6 verbs (create_kind, get_kind, remember, link, event, recall) + typed refs + aux ops (chat_turn, entity_list, entity_delete, event_query, graph_stats, node_forget, node_mute, node_unmute, promote_skill, run_start/finish) + feedback/feedback_list (file + read agent bug/friction reports in a local journal the maintainer triages) | Agent expresses intent; ConPort owns storage | remember routes by meta_type: knowledge (fact/observation) logs an episode → backend consolidates into claims asynchronously; self-model (identity/principle/skill) writes a direct anchored node (preserves meta_type/visibility/edges, loads as agent_init anchor); extract_thread/extract_into retired no-ops | recall returns a graph-augmented packet — facts grouped by entity with status/confidence/tentative/provenance/conflicts (1-hop graph traversal, relevance-primary ranking, token-budgeted), flat_results for compat; spans cognition + structured items, superseded excluded by default; relevant_until validity horizon; 12 edge types (6 structural + 6 domain) with optional grounding properties | workspace↔graph two modes (field_roles projection + explicit entity-edge graph mode + workspace-graph/topic-state/project-record reads)*
