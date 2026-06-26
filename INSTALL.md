@@ -97,8 +97,8 @@ This works immediately, **no harness restart needed**.
    ```
 
    A normal project install does **not** need `conport-agent` — skip it unless
-   the user explicitly runs a multi-agent framework. See
-   [docs/install/agents.md](./docs/install/agents.md).
+   the user explicitly runs a multi-agent framework. The agent-memory line is a
+   separate, privately distributed unit.
 
 ### Path B — you are an MCP host (Claude Code, Cursor, Claude.ai)
 
@@ -177,4 +177,3 @@ in (Step 1). Do not paper over it by hard-coding the key anywhere.
 | Cursor | [docs/install/cursor.md](./docs/install/cursor.md) |
 | Claude.ai (web) | [docs/install/claude-ai.md](./docs/install/claude-ai.md) |
 | Other CLI agents (Codex / Copilot / Gemini) | [docs/install/other-agents.md](./docs/install/other-agents.md) |
-| Agent-memory line (Hermes / Pi) | [docs/install/agents.md](./docs/install/agents.md) |
