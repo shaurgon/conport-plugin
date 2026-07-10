@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.22.1
+  version: 15.23.0
 ---
 
 # ConPort — Project Management System
@@ -59,7 +59,8 @@ If auto-detection of the project name did not work, ask the user.
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N tasks in TODO, M in progress. Top 5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
 4. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
-5. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
+5. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
+6. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
    ```
    [SKILL UPDATE] {skill_id} {current} → {latest} ({severity}). Changelog: {changelog_url} · Install: {install_guide}
@@ -197,6 +198,20 @@ drift. Edit the original, or author an addendum with an explicit callout
 → Deep detail: live docs `projects/block-model`, `projects/spec-append-only`,
 `core/documentation-callouts`; full agent reference in
 `references/documentation_graph.md`.
+
+### Routines (periodic backlog cycles)
+
+| Trigger | Tool |
+|---------|------|
+| Starting a periodic cycle run | `get_agenda` (single-call briefing), `routine_run_start` |
+| "Set up / tune the cycle policy" | `get_routine_config` / `set_routine_config` (cadence, run limits, autonomy 0-2) |
+| Finishing a run | `routine_run_finish` with `outcome` (auto-logs progress — no separate `log_progress`) |
+| "Show recent runs" | `list_routine_runs` |
+| Calibrating before estimating tasks | `get_estimation_stats` (median ratio, p50/p90 actuals) |
+| Picking unblocked work deep in the backlog | `list_tasks` with `ready=true`, `order="priority"`, `offset` |
+| Deferring a task to a date | `update_task` with `snooze_until` (empty string clears) |
+
+→ Full runbook: the **conport-routine** skill; live docs `projects/routines`.
 
 ### Context assembly, gaps, semantic pass
 
