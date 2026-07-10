@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 15.23.0
+  version: 15.23.1
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -94,6 +94,11 @@ task decide explicitly:
 
 **Nothing is dropped silently.** Every stale task gets one of the three verdicts
 and a mention in the digest.
+
+**`woken_tasks`** need no separate handling — a woken task is simply back in
+the general ready pool and competes on priority like any other. Mention the
+wake-ups in the digest. One exception: when the snooze was set as "re-check X
+by this date", the re-check itself **is** the task's work.
 
 ### Phase 3: Housekeeping (autonomy_level >= 1)
 

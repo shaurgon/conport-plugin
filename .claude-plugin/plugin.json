@@ -1,6 +1,6 @@
 {
   "name": "conport",
-  "version": "15.23.0",
+  "version": "15.23.1",
   "description": "ConPort — project context for Claude Code (MCP + skills + hooks).",
   "skills": ["./skills/conport", "./skills/conport-routine", "./skills/superpowers-conport"],
   "author": {
