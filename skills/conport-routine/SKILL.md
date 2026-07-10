@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 15.23.1
+  version: 15.24.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -34,13 +34,13 @@ structure on top.
 | Tool | Purpose |
 |------|---------|
 | `get_agenda(project_id, ready_limit=10, delta_hours=24)` | One-call agenda: `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed), `housekeeping` (`stale_in_progress`, `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
-| `get_routine_config(project_id)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2). `is_default=true` means no config row exists — run on the returned defaults. |
-| `set_routine_config(project_id, ...)` | Accept/change the policy. `enabled=false` switches the cycle off entirely. |
+| `get_routine_config(project_id)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
+| `set_routine_config(project_id, ...)` | Accept/change the policy, `selection` included. `enabled=false` switches the cycle off entirely. |
 | `routine_run_start(project_id)` | Opens the run journal entry → `{id, started_at, already_open}`. |
 | `routine_run_finish(project_id, run_id, outcome, summary, task_ids)` | Closes the run. `outcome`: `completed` \| `empty` \| `aborted`. Auto-creates the progress entry. |
 | `list_routine_runs(project_id, limit=10)` | Recent runs, newest first — the run journal. An open (running or crashed) run has `finished_at: null` and no outcome. |
 | `get_estimation_stats(project_id, limit=50)` | Plan/actual calibration stats — call before estimating: `sample_size`, `median_ratio`, p50/p90 actual seconds, `by_priority` breakdown, `recent` samples. |
-| `list_tasks(..., ready=true, order="priority", offset=N)` | Deep priority-ordered slice of ready tasks when `ready_top` isn't enough. |
+| `list_tasks(..., ready=true, order="priority", offset=N)` | Deep priority-ordered slice of ready tasks when `ready_top` isn't enough. Accepts a `routine_eligible` filter (true — only marked tasks). |
 | `update_task` → IN_PROGRESS | Sets a lease on the task (auto-returns to TODO if the lease expires). Close with `resolution=...` as usual. |
 | `update_task(snooze_until=...)` | Defer a task until a date; empty string clears the snooze. |
 
@@ -121,6 +121,23 @@ Skip this phase entirely at levels 0–1.
   `priority <= priority_threshold`. If the pool is thinner than
   `max_tasks_per_run`, you may extend it with
   `list_tasks(ready=true, order="priority", offset=N)` — same threshold filter.
+- **Selection mode.** With `selection='tagged'` in the config, only tasks
+  explicitly marked `routine_eligible=true` may be executed. `ready_top` is
+  already filtered by the server in this mode; when extending the pool, add
+  `routine_eligible=true` to the `list_tasks` call. The priority threshold
+  applies in **both** modes. Two semantics to keep straight:
+  - Eligibility gates **presence, not ranking**: a marked epic's
+    `effective_priority` and `subtask_count` still roll up from ALL of its
+    active children, including unmarked ones.
+  - Mark the exact row the agent may pick up: an unmarked epic is excluded
+    even if its children are marked (and children of an active epic are
+    hidden behind it anyway) — when the whole epic is agent-executable,
+    mark the epic itself.
+- Marking is a triage act, not a run act: mark tasks for autonomous execution
+  when creating or triaging them (`update_task` with `routine_eligible=true`).
+  Never down-prioritize a task or park it behind a permanent snooze just to
+  keep it away from the agent — importance and agent-executability are
+  separate dimensions.
 - Take at most **`max_tasks_per_run`** tasks, **one at a time** (no parallel
   claims):
   1. `update_task` → IN_PROGRESS (the gate; also takes the lease).

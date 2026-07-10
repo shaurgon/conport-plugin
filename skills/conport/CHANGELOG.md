@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.24.0
+Routine task selection: opt-in `routine_eligible` flag on tasks (`add_task`/`update_task`, filter in `list_tasks`) and a `selection` mode in the routine config — `threshold` (default, current behavior) or `tagged` (the cycle picks only marked tasks; the priority threshold still applies as the risk limiter). In tagged mode `get_agenda` ready_top contains only marked rows; init's backlog stays project-wide. Mark the exact row the agent may pick up — the epic itself for whole-epic execution. Dashboard: routine badge, detail-panel toggle and a routine-only filter.
+
 ## 15.23.1
 conport-routine: woken tasks got an explicit runbook place in the Reconcile phase — they re-enter the general ready pool, get a digest mention, with the re-check-by-date exception spelled out.
 

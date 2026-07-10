@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.23.1
+  version: 15.24.0
 ---
 
 # ConPort — Project Management System
@@ -204,7 +204,8 @@ drift. Edit the original, or author an addendum with an explicit callout
 | Trigger | Tool |
 |---------|------|
 | Starting a periodic cycle run | `get_agenda` (single-call briefing), `routine_run_start` |
-| "Set up / tune the cycle policy" | `get_routine_config` / `set_routine_config` (cadence, run limits, autonomy 0-2) |
+| "Set up / tune the cycle policy" | `get_routine_config` / `set_routine_config` (cadence, run limits, autonomy 0-2, selection `threshold`\|`tagged`) |
+| Mark a task as agent-executable | `update_task` with `routine_eligible=true` (opt-in pool for `selection='tagged'` cycles) |
 | Finishing a run | `routine_run_finish` with `outcome` (auto-logs progress — no separate `log_progress`) |
 | "Show recent runs" | `list_routine_runs` |
 | Calibrating before estimating tasks | `get_estimation_stats` (median ratio, p50/p90 actuals) |
