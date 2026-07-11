@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.24.1
+semantic_cleanup now returns immediately and runs in the background — poll semantic_pass_stats for completion, then semantic_proposals_list for the remainder. Concurrent calls while a pass is open return already_running with the run id.
+
 ## 15.24.0
 Routine task selection: opt-in `routine_eligible` flag on tasks (`add_task`/`update_task`, filter in `list_tasks`) and a `selection` mode in the routine config — `threshold` (default, current behavior) or `tagged` (the cycle picks only marked tasks; the priority threshold still applies as the risk limiter). In tagged mode `get_agenda` ready_top contains only marked rows; init's backlog stays project-wide. Mark the exact row the agent may pick up — the epic itself for whole-epic execution. Dashboard: routine badge, detail-panel toggle and a routine-only filter.
 

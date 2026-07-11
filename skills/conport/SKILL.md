@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.24.0
+  version: 15.24.1
 ---
 
 # ConPort — Project Management System
@@ -224,7 +224,7 @@ drift. Edit the original, or author an addendum with an explicit callout
 | "Current architecture of subsystem X?" | `render_current_architecture` with `scope=[...]` |
 | "Is this architecture doc safe to archive?" | `audit_doc_l1_coverage(doc_id)` |
 | Init response shows gaps / "show all gaps" | review `gaps.fresh`; `gap_list`, `gap_ack`, `gap_dismiss` (reason), `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
-| "Clean up the graph" | `semantic_cleanup` (one-click) |
+| "Clean up the graph" | `semantic_cleanup` (one-click; runs in background — poll `semantic_pass_stats`) |
 | Manual semantic flow | `semantic_pass_run(dry_run=true)` → `semantic_proposals_list` → approve/reject/defer → `semantic_proposals_apply`; `semantic_pass_stats` |
 
 **`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-271'`,
