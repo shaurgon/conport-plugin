@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.25.0
+Decision auto-extraction from progress is now reviewable: candidates extracted from log_progress land in the semantic proposals queue (semantic_proposals_list → approve/reject/defer) instead of committing directly; a dedup hit against an existing decision proposes a relates_to link instead of silently skipping. Extraction requires decision markers (an explicit choice AND a stated reason) and preserves the source language — chronicle statements are no longer extracted. Decisions carry server-assigned provenance: source (manual | progress_extraction) with a filter in list_decisions, existing auto-extracted decisions backfilled from their derived_from links; the dashboard shows an auto badge.
+
 ## 15.24.1
 semantic_cleanup now returns immediately and runs in the background — poll semantic_pass_stats for completion, then semantic_proposals_list for the remainder. Concurrent calls while a pass is open return already_running with the run id.
 

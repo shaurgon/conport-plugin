@@ -163,6 +163,7 @@ mcp__conport__list_decisions({
 | limit | integer | no | Max results (default: 20) |
 | offset | integer | no | Pagination offset (default: 0) |
 | tags | array | no | Filter by tags |
+| source | string | no | Filter by provenance: `manual` (hand-written) \| `progress_extraction` (auto-extracted from progress; candidates are staged as semantic proposals and only become decisions after approval) |
 
 ### delete_decision
 
