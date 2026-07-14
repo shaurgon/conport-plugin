@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.26.0
+SessionEnd reflection no longer blocks Claude Code exit ("Hook cancelled"): session-reflect.js now writes the payload to a file and hands the network call to a detached session-reflect-post.js child, so the hook returns instantly regardless of API availability. Server side, /hooks/reflect-session replies 202 immediately and runs the LLM reflection in the background, and accepts a project name as well as a numeric id — sessions in projects without CONPORT_PROJECT_ID no longer lose their reflection to a 422.
+
 ## 15.25.0
 Decision auto-extraction from progress is now reviewable: candidates extracted from log_progress land in the semantic proposals queue (semantic_proposals_list → approve/reject/defer) instead of committing directly; a dedup hit against an existing decision proposes a relates_to link instead of silently skipping. Extraction requires decision markers (an explicit choice AND a stated reason) and preserves the source language — chronicle statements are no longer extracted. Decisions carry server-assigned provenance: source (manual | progress_extraction) with a filter in list_decisions, existing auto-extracted decisions backfilled from their derived_from links; the dashboard shows an auto badge.
 

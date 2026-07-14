@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-// SessionEnd: parse JSONL transcript, POST reflection to ConPort.
+// SessionEnd: parse JSONL transcript, hand the payload to a detached
+// child (session-reflect-post.js) that POSTs it to ConPort. The hook
+// itself must exit instantly — Claude Code cancels slow SessionEnd hooks.
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const {
-  CONPORT_URL, dataDir, detectProjectIdentifier, authHeader, request, readStdin,
+  dataDir, detectProjectIdentifier, readStdin,
 } = require('./_common.js');
 
 const MIN_PROMPTS_FOR_REFLECTION = 5;
@@ -136,24 +139,20 @@ async function main() {
 
   const payload = buildPayload(sessionId, project, parsed);
   try {
-    const res = await request('POST', `${CONPORT_URL}/api/v1/hooks/reflect-session`, {
-      headers: { 'Content-Type': 'application/json', ...authHeader() },
-      body: JSON.stringify(payload),
-      timeoutMs: 30000,
-    });
-    if (res.status >= 200 && res.status < 300) {
-      let decisions = 0, progress = 0;
-      try {
-        const data = JSON.parse(res.body);
-        decisions = data.decisions_created || 0;
-        progress = data.progress_created || 0;
-      } catch (_) {}
-      log(`Reflection OK: decisions=${decisions} progress=${progress}`);
-    } else {
-      log(`Reflection HTTP ${res.status}: ${res.body.slice(0, 200)}`);
-    }
+    const safeSession = (sessionId || 'nosession').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const payloadFile = path.join(
+      dataDir(), `reflect-${safeSession}-${Date.now()}.json`
+    );
+    fs.writeFileSync(payloadFile, JSON.stringify(payload));
+    const child = spawn(
+      process.execPath,
+      [path.join(__dirname, 'session-reflect-post.js'), payloadFile],
+      { detached: true, stdio: 'ignore', env: process.env }
+    );
+    child.unref();
+    log(`Reflection queued: ${path.basename(payloadFile)} (pid ${child.pid})`);
   } catch (e) {
-    log(`Reflection failed: ${e.message}`);
+    log(`Reflection queue failed: ${e.message}`);
   }
   process.exit(0);
 }
