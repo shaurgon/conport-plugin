@@ -139,7 +139,8 @@ Skip this phase entirely at levels 0–1.
   keep it away from the agent — importance and agent-executability are
   separate dimensions.
 - Take at most **`max_tasks_per_run`** tasks, **one at a time** (no parallel
-  claims):
+  claims). The limit counts **pool items you take**, not tasks you close — a
+  taken item that ends in decomposition (below) still counts as one:
   1. `update_task` → IN_PROGRESS (the gate; also takes the lease).
   2. Do the work.
   3. Verify the result (run the matching validation before claiming done).
@@ -149,6 +150,15 @@ Skip this phase entirely at levels 0–1.
 - A task that turns out bigger than one run: stop, record where you got to in
   the task, return it to TODO (or BLOCKED), and count it in the digest as
   attempted-not-finished.
+- A picked task that turns out to be a **body of work, not a leaf** — working it
+  reveals it should be an epic: the iteration's work on that item **is the
+  decomposition**. Promote it (`update_task` with `kind='epic'`), create its
+  subtasks + dependencies, and **stop there**. Decomposition *completes* the run's
+  work on that pool item — do not then also execute one of the new subtasks in
+  the same run. Executing those subtasks belongs to *later* iterations: each run
+  picks up one, competing on priority like any other ready task. (This keeps
+  "one item per run" honest — a single item that fans out into an epic is still
+  one taken item, not a licence to drain the whole new subtree.)
 
 ### Phase 5: Digest
 

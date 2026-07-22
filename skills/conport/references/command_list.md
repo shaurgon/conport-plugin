@@ -351,6 +351,26 @@ mcp__conport__get_task({
 | project_id | integer | yes | Project ID |
 | task_id | integer | yes | Per-project task ID |
 
+### get_decision
+
+Full body of one decision by id — summary, rationale, implementation_details,
+tags, source, and the currency/lifecycle annotation (`currency`, `age_days`,
+`deprecated_at`, `deprecation_reason`, `superseded_by`). Use before
+`update_decision` to read the current tags (which `update_decision` replaces
+wholesale).
+
+```
+mcp__conport__get_decision({
+  project_id: 11,
+  decision_id: 5
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| decision_id | integer | yes | Per-project decision ID |
+
 ### add_task_dep
 
 Add a dependency between two tasks
@@ -989,7 +1009,7 @@ mcp__conport__item_history({
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task` |
 | Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_block_backlinks`, `get_semantically_related_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
-| Decisions | `sync_decision`, `list_decisions`, `delete_decision` |
+| Decisions | `sync_decision`, `list_decisions`, `get_decision`, `update_decision`, `deprecate_decision`, `reactivate_decision`, `delete_decision` |
 | Progress | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
 | Patterns | `log_pattern`, `list_patterns` |
 | Search | `search` |

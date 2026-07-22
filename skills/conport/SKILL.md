@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.27.0
+  version: 15.28.0
 ---
 
 # ConPort — Project Management System
@@ -155,6 +155,7 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 |---------|------|
 | Technology choice | `sync_decision` |
 | Trade-off with rationale | `sync_decision` |
+| Read one decision's full body (id → tags + currency) before amending | `get_decision` |
 | Amend / re-tag an existing decision | `update_decision` |
 | Decision no longer holds, NO replacement | `deprecate_decision` (reason required) |
 | Un-retire a decision | `reactivate_decision` |

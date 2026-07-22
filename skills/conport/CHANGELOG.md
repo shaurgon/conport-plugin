@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.28.0
+New MCP tool `get_decision(project_id, decision_id)` — point-read of a single decision's full body (summary, rationale, implementation_details, tags, source) with the currency/lifecycle annotation. Read it before `update_decision`, which replaces the whole tags array, so you no longer have to amend tags blind. Also: the conport-routine Execute phase now spells out that a picked task promoted to an epic mid-run ends the run's work on that item with decomposition — the new subtasks belong to later iterations, one per pass; `max_tasks_per_run` counts pool items taken, not tasks closed.
+
 ## 15.27.0
 Decisions now carry currency. Read surfaces (`get_decision`, `list_decisions`, `search`) annotate each decision with `currency` (`current` / `superseded` / `deprecated`) and `age_days`; before citing a decision as authoritative, check `currency` and follow `superseded_by` / `deprecation_reason`. Two new MCP tools: `deprecate_decision` (retire a decision that no longer holds and has no replacement — reason required) and `reactivate_decision` (un-retire it).
 
