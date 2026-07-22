@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.27.0
+Decisions now carry currency. Read surfaces (`get_decision`, `list_decisions`, `search`) annotate each decision with `currency` (`current` / `superseded` / `deprecated`) and `age_days`; before citing a decision as authoritative, check `currency` and follow `superseded_by` / `deprecation_reason`. Two new MCP tools: `deprecate_decision` (retire a decision that no longer holds and has no replacement — reason required) and `reactivate_decision` (un-retire it).
+
 ## 15.26.0
 SessionEnd reflection no longer blocks Claude Code exit ("Hook cancelled"): session-reflect.js now writes the payload to a file and hands the network call to a detached session-reflect-post.js child, so the hook returns instantly regardless of API availability. Server side, /hooks/reflect-session replies 202 immediately and runs the LLM reflection in the background, and accepts a project name as well as a numeric id — sessions in projects without CONPORT_PROJECT_ID no longer lose their reflection to a 422.
 
