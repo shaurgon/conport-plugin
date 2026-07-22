@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.26.0
+  version: 15.27.0
 ---
 
 # ConPort — Project Management System
@@ -156,6 +156,8 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 | Technology choice | `sync_decision` |
 | Trade-off with rationale | `sync_decision` |
 | Amend / re-tag an existing decision | `update_decision` |
+| Decision no longer holds, NO replacement | `deprecate_decision` (reason required) |
+| Un-retire a decision | `reactivate_decision` |
 | Decision candidates auto-extracted from `log_progress` | never committed directly — they wait in the proposals queue: `semantic_proposals_list` → approve/reject/defer; `list_decisions` filters provenance via `source` (`manual` \| `progress_extraction`) |
 
 ### Progress
@@ -337,6 +339,14 @@ context-specific fields (`version`, `status`, `kind`, …). Need the full body? 
 the matching read tool (`get_task`, `get_document`, `list_decisions`, …). The
 slim `tags` / `kind` echo is your POST-WRITE verification channel.
 (Live docs → `core/post-write-verification`.)
+
+**Decision currency.** Read surfaces (`get_decision`, `list_decisions`,
+`search`) annotate each decision with `currency` (`current` / `superseded` /
+`deprecated`) and `age_days`. Before citing a decision as authoritative, check
+`currency`: if `superseded`, follow `superseded_by` to the current decision; if
+`deprecated`, treat it as retired (see `deprecation_reason`) and do not present
+it as current. A high `age_days` on a `current` decision is a prompt to verify
+it still holds, not proof that it's stale.
 
 ---
 
