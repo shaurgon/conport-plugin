@@ -33,7 +33,13 @@ function detectProjectIdentifier() {
 }
 
 function authHeader() {
-  const key = (process.env.CONPORT_API_KEY || '').trim();
+  // Harness exposes the plugin's user_config.api_key as $CLAUDE_PLUGIN_OPTION_API_KEY.
+  // CONPORT_API_KEY stays as a manual/legacy override.
+  const key = (
+    process.env.CONPORT_API_KEY ||
+    process.env.CLAUDE_PLUGIN_OPTION_API_KEY ||
+    ''
+  ).trim();
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 

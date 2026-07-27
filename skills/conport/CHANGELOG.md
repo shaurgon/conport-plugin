@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.28.1
+Fixed the SessionStart and SessionEnd hooks failing under Claude Code's newer hook validation ("references ${user_config.*} in a shell-form command"). The hooks no longer inline the API key into the shell command; the scripts read it from the harness-provided `$CLAUDE_PLUGIN_OPTION_API_KEY` (with `CONPORT_API_KEY` kept as a manual override), so session bootstrap and end-of-session reflection run again.
+
 ## 15.28.0
 New MCP tool `get_decision(project_id, decision_id)` — point-read of a single decision's full body (summary, rationale, implementation_details, tags, source) with the currency/lifecycle annotation. Read it before `update_decision`, which replaces the whole tags array, so you no longer have to amend tags blind. Also: the conport-routine Execute phase now spells out that a picked task promoted to an epic mid-run ends the run's work on that item with decomposition — the new subtasks belong to later iterations, one per pass; `max_tasks_per_run` counts pool items taken, not tasks closed.
 

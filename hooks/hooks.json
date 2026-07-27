@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CONPORT_API_KEY=\"${user_config.api_key}\" node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-start.js"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CONPORT_API_KEY=\"${user_config.api_key}\" node ${CLAUDE_PLUGIN_ROOT}/scripts/session-reflect.js"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-reflect.js"
           }
         ]
       }
