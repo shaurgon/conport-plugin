@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.28.1
+  version: 15.29.0
 ---
 
 # ConPort — Project Management System
@@ -44,7 +44,7 @@ If it's not set, fall back in this priority order:
 mcp__conport__init({
   name: "<detected_name>",
   skill_id: "conport",
-  skill_version: "14.11.2",  // value of metadata.version in this SKILL.md frontmatter
+  skill_version: "<metadata.version from this SKILL.md frontmatter>",  // substitute the real value; never send this placeholder
   client_type: "claude-code"  // or claude-ai / cursor / codex
 })
 ```

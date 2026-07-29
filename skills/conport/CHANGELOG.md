@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.29.0
+`superpowers-conport` gained a `finish` mode: a read-only audit that prints a release verdict from the state of the plan's epic and the SDD ledger. Import now writes a terminal `ConPort finish` task and a `### ConPort execution contract` block into the plan, so an executed plan with an open epic no longer reads as finished work. Splitting a plan into tasks now masks fenced code blocks, so a plan that quotes task headings inside examples no longer produces phantom tasks.
+
 ## 15.28.1
 Fixed the SessionStart and SessionEnd hooks failing under Claude Code's newer hook validation ("references ${user_config.*} in a shell-form command"). The hooks no longer inline the API key into the shell command; the scripts read it from the harness-provided `$CLAUDE_PLUGIN_OPTION_API_KEY` (with `CONPORT_API_KEY` kept as a manual override), so session bootstrap and end-of-session reflection run again.
 
