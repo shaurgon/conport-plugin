@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.29.0
+  version: 15.30.0
 ---
 
 # ConPort — Project Management System
@@ -58,9 +58,10 @@ If auto-detection of the project name did not work, ask the user.
 1. **Print summary:** `[CONPORT] {summary from response}`
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N tasks in TODO, M in progress. Top 5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
-4. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
-5. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
-6. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
+4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
+5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
+6. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
+7. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
    ```
    [SKILL UPDATE] {skill_id} {current} → {latest} ({severity}). Changelog: {changelog_url} · Install: {install_guide}
@@ -103,6 +104,10 @@ semantics of a surface, fetch the live-docs page named in the table.
 | "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` |
 | "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |
 | "Move task X under epic Y" / re-parent | `update_task` with `parent_task_id` (target must be `kind='epic'`; `0` detaches to root) |
+| "Roadmap" / "milestones" / "what ships in the release" | `list_milestones` (roadmap view, `include_closed=true` for history) |
+| "Plan a milestone / a release" | `add_milestone` with `title` (+ `sequence` to insert at a position, `is_release=true` for a release point) |
+| "Rename / move / close a milestone" | `update_milestone` (`sequence` moves it, `status`+`resolution` closes it) |
+| "This epic belongs to milestone M" | `update_task` with `milestone_id` (epics only; `0` detaches from its milestone) |
 | "Promote this task to an epic" | `update_task` with `kind='epic'` (task must be root — combine with `parent_task_id=0` to detach + promote atomically) |
 | "Demote this epic to a task" | `update_task` with `kind='task'` (epic must have no children) |
 | Need a task in another project I own (no context switch) | `add_linked_task` with `target_project` name |
@@ -115,9 +120,15 @@ semantics of a surface, fetch the live-docs page named in the table.
 | Done / Finished | `update_task` → DONE **with `resolution=...`** (see below) |
 | Cancelled | `update_task` → CANCELLED **with `resolution=...`** (why dropped) |
 | Blocked | `update_task` → BLOCKED |
+| Milestone finished | `update_milestone` → DONE **with `resolution=...`** (all its epics must be closed first) |
+| Milestone dropped | `update_milestone` → CANCELLED **with `resolution=...`** (why it left the roadmap) |
 
 **IN_PROGRESS gate.** Before your first ConPort write against a task, move it to
 IN_PROGRESS. This keeps `current_focus` accurate and the backlog honest.
+
+**An epic closes only with its children closed** — the server refuses
+`update_task(status='DONE')` on an epic that still has open children with
+`epic_not_ready`, listing them. A snoozed child counts as open.
 
 **Closing tasks — always pass `resolution`:**
 On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
@@ -131,6 +142,35 @@ On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
 **Do NOT call `log_progress` separately for task closes** — that would
 duplicate the entry. `log_progress` is for progress events that don't belong
 to a single closing task (e.g. mid-implementation notes, infra changes).
+
+**Roadmap discipline.** A milestone is an ordered group of epics; the **current**
+milestone is the open one with the smallest `sequence`, and `init` / `get_agenda`
+return it in the `roadmap` section.
+
+- **Work the current milestone.** In an interactive session, picking up work
+  that belongs to a **later** milestone needs an **explicit decision by the
+  owner** — say which milestone the work sits in and ask before starting; never
+  silently pull work forward because it looked convenient. Work attached to no
+  milestone (`milestone_id: null`) is not off-limits, but say so when you take
+  it, so the owner can attach its epic to the roadmap or leave it aside
+  deliberately. (An autonomous routine run has no owner to ask: the
+  **conport-routine** skill overrides this rule with its own — unattached rows
+  are fair game, later-milestone rows are not.)
+- **Closing a milestone always carries `resolution`** — what was delivered
+  (DONE) or why it was dropped (CANCELLED). The server logs a progress entry
+  from it.
+- **A release milestone (`is_release=true`) closes only after the release
+  actually happened.** "Every epic is DONE" is not a release; the resolution
+  names the shipped version/artifact. If the release hasn't shipped, leave the
+  milestone open and say so.
+- **`milestone_not_ready` is a prescription, not an error to route around.**
+  `update_milestone(status='DONE')` is refused while any epic of the milestone
+  is open; `context.open_epics` lists exactly what to close first (an empty
+  milestone is refused too — attach the epic that carries the work). Do the
+  prescribed closes, then retry. Never CANCEL a milestone just to get past the
+  refusal.
+
+→ Deep detail: live docs `projects/roadmap`.
 
 ### Patterns
 
@@ -333,6 +373,32 @@ MCP tools return JSON with a `summary` field. Use it to inform the user.
 | `search` | `[ConPort: N results found for "query"] ...` |
 | `update_task` | `✅ {summary}` |
 | Task DONE/CANCELLED | `✅ {summary}` (progress entry was auto-logged from `resolution`) + suggest updating active_context |
+| `add_milestone` / `update_milestone` | `✅ {summary}` (carries id, title, `seq N`, `[release]`, epics-closed rollup) |
+
+**Roadmap sections.** `init` and `get_agenda` return `roadmap` and `epic_tails`
+**only when the project has them** — a missing section means "nothing to show",
+print nothing. When present:
+
+```
+[ROADMAP] milestone-{current.milestone_id} «{current.title}»{ [release]}{ · ready to close} · {open_milestones_total} milestones open
+· task-{task_id} {title} — {open_children}/{total_children} subtasks open
+Next: milestone-{next.milestone_id} «{next.title}»
+```
+
+One `·` line per entry of `current.epics` (only the **open** epics of the
+current milestone are listed — a closed one is already delivered); add
+` [release]` only when `current.is_release` is true and ` · ready to close`
+only when `current.ready_to_close` is true; drop the `Next:` line entirely when
+`next` is `null`.
+
+```
+[TAILS] task-{epic_id} {title} — {suggested_action}
+```
+
+One line per entry of `epic_tails`, in the order returned (closest to closing
+first; `closable=true` means nothing is left but the close itself).
+`suggested_action` is prescribed by the server — print it and follow it, don't
+substitute your own plan.
 
 MCP create / update tools return a **slim** payload (not the full entity body) to
 save agent context — `id`, `tags` (echoed even as `[]`), `summary`, and
@@ -375,13 +441,16 @@ echo against intent:
 | `priority=N` | `priority` equals `N` |
 | `parent_task_id`, `tag_kinds`, links | Field is present and equal to intent |
 | `kind='epic'` / `kind='task'` | Response `kind` matches the promote/demote you asked for |
+| `milestone_id=N` / `milestone_id=0` on a task | Response `milestone_id` is `N` (or `null` after a detach) |
+| `sequence` / `is_release` on a milestone | Response `sequence` / `is_release` match intent — milestone writes echo `sequence`, `is_release`, `status` (not `title`), so those are the verification channel |
 
 **On mismatch.** Re-issue the call with the field re-stated (often one retry
 fixes the XML glitch). If a second attempt still loses it, flag the mismatch to
 the user verbatim ("graph integrity: tags lost on decision N, please re-run")
 rather than silently moving on — the damage is mute graph drift, easy to miss.
 
-Applies to: `sync_decision`, `add_task`, `update_task`, `log_progress`,
+Applies to: `sync_decision`, `add_task`, `update_task`, `add_milestone`,
+`update_milestone`, `log_progress`,
 `log_pattern`, `add_document`, `update_document`, `update_active_context`,
 `update_product_context`, block ops (`update_block`, `insert_block`,
 `delete_block`).
@@ -413,6 +482,8 @@ On an `Invalid arguments for tool` error:
 - [ ] New work → task created/updated?
 - [ ] Work finished → task = DONE **with `resolution`**?
 - [ ] Closing a task → did NOT call `log_progress` separately (it's auto-logged)?
+- [ ] Interactive session, work from a later milestone → owner explicitly agreed to it?
+- [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
@@ -441,6 +512,7 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Spec append-only invariant | `projects/spec-append-only` |
 | Block-level document model | `projects/block-model` |
 | Task hierarchy | `projects/task-hierarchy` |
+| Roadmap milestones | `projects/roadmap` |
 | Full per-tool parameter reference | `projects/tool-reference` |
 
 **Local references** (shipped with the skill): `references/command_list.md`

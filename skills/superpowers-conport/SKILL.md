@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 15.29.0
+  version: 15.30.0
 ---
 
 # superpowers-conport — Bridge

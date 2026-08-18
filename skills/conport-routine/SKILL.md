@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 15.29.0
+  version: 15.30.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -33,7 +33,9 @@ structure on top.
 
 | Tool | Purpose |
 |------|---------|
-| `get_agenda(project_id, ready_limit=10, delta_hours=24)` | One-call agenda: `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed), `housekeeping` (`stale_in_progress`, `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
+| `get_agenda(project_id, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
+| `list_milestones(project_id, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
+| `update_milestone(project_id, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
 | `get_routine_config(project_id)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
 | `set_routine_config(project_id, ...)` | Accept/change the policy, `selection` included. `enabled=false` switches the cycle off entirely. |
 | `routine_run_start(project_id)` | Opens the run journal entry → `{id, started_at, already_open}`. |
@@ -117,10 +119,46 @@ Skip this phase entirely at level 0.
 
 Skip this phase entirely at levels 0–1.
 
+**Finish tails before starting anything new.** Work `epic_tails` from the
+agenda first, in the order returned, and only then move on to `ready_top` — an
+epic one task away from closing is worth more than a fresh start, and the
+roadmap only advances when epics actually close.
+
+- For each tail, do what its `suggested_action` prescribes: `closable=true` →
+  `update_task` → DONE with `resolution` on the epic itself; otherwise finish
+  its `open_tasks` (each through the normal IN_PROGRESS → verify → DONE cycle),
+  then close the epic.
+- Tails count against `max_tasks_per_run` like any other taken item. When the
+  limit runs out inside a tail, stop there and name the remaining tails in the
+  digest — don't start `ready_top` work on top of it.
+- Closing the last epic of a milestone makes it `ready_to_close`
+  (`roadmap.current.ready_to_close`). Close a non-release milestone with
+  `update_milestone(status='DONE', resolution=...)`. A **release** milestone
+  (`is_release=true`) is not the run's to close — a release closes after the
+  release actually shipped, which is the owner's call; report it in the digest
+  instead.
+
+Then the ready pool:
+
 - Candidate pool: `ready_top` from the agenda, filtered to
   `priority <= priority_threshold`. If the pool is thinner than
   `max_tasks_per_run`, you may extend it with
   `list_tasks(ready=true, order="priority", offset=N)` — same threshold filter.
+- **Stay on the current milestone — but don't starve on it.** The server
+  already floats its rows to the top of `ready_top`, and every row carries
+  `milestone_id`. Two cases, decided by that field alone:
+  - `milestone_id` of a **later** milestone → leave the row and name it in the
+    digest. Pulling work forward off the roadmap is the owner's decision, not
+    the run's.
+  - `milestone_id: null` (attached to no milestone) → **legitimate work for the
+    run.** Most projects keep a large unattached pool; skipping it would leave
+    the cycle idle in the name of a roadmap the row isn't on. Take it on
+    priority like any other ready row and name its epic in the digest, so the
+    owner can attach it to the roadmap if it belongs there.
+
+  This overrides the conport skill's "ask the owner" phrasing for
+  unattached work — a run has no owner to ask, and the roadmap governs the
+  order of milestones, not the right to touch anything outside them.
 - **Selection mode.** With `selection='tagged'` in the config, only tasks
   explicitly marked `routine_eligible=true` may be executed. `ready_top` is
   already filtered by the server in this mode; when extending the pool, add
@@ -166,7 +204,11 @@ Skip this phase entirely at levels 0–1.
    - `outcome='completed'` when anything was done (including reconcile-only or
      housekeeping-only runs); `outcome='empty'` per the empty-day protocol below.
    - `summary` — what was done, what's blocked and why, verdicts for stale
-     tasks. Short and factual.
+     tasks. Short and factual. Open it with the **current milestone** from the
+     agenda's `roadmap` (`milestone-{id} «{title}»`, plus `ready to close` or
+     the tails still standing between it and the close) so every digest says
+     where the roadmap stands. No `roadmap` section → say the project has no
+     open milestone.
    - `task_ids` — every task the run touched.
 2. **Do NOT call `log_progress` separately** — `routine_run_finish` creates the
    progress entry itself; a manual call would duplicate it.
@@ -177,8 +219,8 @@ Skip this phase entirely at levels 0–1.
 
 ## EMPTY-DAY PROTOCOL (hard rule)
 
-When `ready_top` is empty **and** `housekeeping` is empty (or contains nothing
-actionable at your autonomy level):
+When `epic_tails` and `ready_top` are empty **and** `housekeeping` is empty (or
+none of them contains anything actionable at your autonomy level):
 
 1. `routine_run_finish(outcome='empty')` with a one-line summary
    ("nothing ready, no housekeeping").
@@ -221,7 +263,9 @@ separate report entity.
 - [ ] `routine_run_start` called — and an `already_open` run resolved first?
 - [ ] Every `stale_in_progress` task got an explicit verdict (continue / return / close)?
 - [ ] Housekeeping done only at autonomy >= 1; execution only at autonomy == 2?
+- [ ] Execute phase worked `epic_tails` first (closable epics closed with `resolution`), and only then `ready_top`?
 - [ ] Executed at most `max_tasks_per_run` tasks, one at a time, each through IN_PROGRESS → verify → DONE with `resolution`?
+- [ ] Digest names the current milestone — and a release milestone was left for the owner to close?
 - [ ] Empty agenda → `routine_run_finish(outcome='empty')` and exit, no invented work?
 - [ ] `routine_run_finish` called exactly once — and no separate `log_progress` for the run?
 - [ ] Weekly cadence → reflection block (chronic gaps, estimate/actual, BLOCKED review) included?

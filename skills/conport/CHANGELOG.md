@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.30.0
+Roadmap milestones: three new MCP tools — `add_milestone`, `update_milestone`, `list_milestones` — plus `milestone_id` on `add_task` / `update_task` to attach an epic to a milestone (`0` detaches). `init` and `get_agenda` gained two sections, `roadmap` (current milestone with its epics and the next one) and `epic_tails` (epics near closing, each with a prescribed action), and the current milestone softly floats its rows to the top of `backlog.top` / `ready_top`. The conport skill carries the discipline: work the current milestone unless the owner decides otherwise, close a milestone only with a `resolution`, and close a release milestone only after the release actually shipped. conport-routine now works `epic_tails` before `ready_top` and opens every digest with the current milestone. New live-docs page `projects/roadmap`.
+
 ## 15.29.0
 `superpowers-conport` gained a `finish` mode: a read-only audit that prints a release verdict from the state of the plan's epic and the SDD ledger. Import now writes a terminal `ConPort finish` task and a `### ConPort execution contract` block into the plan, so an executed plan with an open epic no longer reads as finished work. Splitting a plan into tasks now masks fenced code blocks, so a plan that quotes task headings inside examples no longer produces phantom tasks.
 
