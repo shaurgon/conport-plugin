@@ -1,5 +1,10 @@
 # conport changelog
 
+## 15.31.0
+Epic tails stay in the agent's attention. Every write that moves an epic's tail — `add_task` under an epic, `update_task` status change or re-parent, `delete_task` — now echoes `epic_progress` (`epic_id`, `epic_title`, `open_children`, `total_children`, `closable`, plus `grew_after_start` when a started epic gained a child), and the conport skill prints it as `[EPIC] task-N: K of M children open` or, when the epic is closable, as a prescription to close it with a `resolution` right then. Epic progress is counted from `epic_progress` / `list_tasks(parent_task_id=…)`, never from a plan file's task list. The `UserPromptSubmit` hook adds a `[TAILS]` reminder line per near-closing epic, read from the new `GET /api/v1/projects/{identifier}/epic-tails` — cached per project for 10 minutes — including a successful response with zero tails, the steady state for a caught-up project — dropping to 2 minutes only on an actual failure (non-200, timeout, thrown error) so a non-ConPort repo or an outage doesn't re-spend the budget on every prompt, the HTTP request itself capped at 500 ms, project-identifier resolution cached separately (env vars stay uncached and take priority; only the `git config` fallback is cached, and per working directory, so different projects never share a cached identifier) to keep it off the subprocess-spawning hot path, and the whole thing silent on any failure, so a prompt is never slowed by it.
+
+Release note for REST clients: `DELETE /api/v1/projects/{identifier}/tasks/{task_id}` now answers **200 with a body** (`message` plus `epic_progress` when the delete shrank an epic's tail) instead of 204 No Content — a client asserting on 204 must be updated. The MCP `delete_task` response likewise gained `deleted` / `id` alongside its `message`, and MCP `add_task` now always returns a `summary` (it had none before).
+
 ## 15.30.1
 Docs fix: the CLI examples in the other-agents install guide now use the real commands and flags — `npx conport api search create --query …` (not `search query --q`) and `--project_identifier` (not `--project-id`).
 

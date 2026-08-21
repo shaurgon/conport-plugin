@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.30.1
+  version: 15.31.0
 ---
 
 # ConPort — Project Management System
@@ -129,6 +129,14 @@ IN_PROGRESS. This keeps `current_focus` accurate and the backlog honest.
 **An epic closes only with its children closed** — the server refuses
 `update_task(status='DONE')` on an epic that still has open children with
 `epic_not_ready`, listing them. A snoozed child counts as open.
+
+**Epic progress is counted ONLY from `epic_progress` /
+`list_tasks(parent_task_id=…)` — never from a plan file's task list.** A plan
+document is a snapshot of the intent; the epic's children are the state. Every
+write that touches a child (`add_task` under an epic, `update_task` status or
+re-parent, `delete_task`) echoes `epic_progress` — read that rollup, print it
+per *OUTPUT FORMAT*, and when it says `closable`, close the epic with a
+`resolution` right then instead of leaving the tail to rot.
 
 **Closing tasks — always pass `resolution`:**
 On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
@@ -374,6 +382,7 @@ MCP tools return JSON with a `summary` field. Use it to inform the user.
 | `update_task` | `✅ {summary}` |
 | Task DONE/CANCELLED | `✅ {summary}` (progress entry was auto-logged from `resolution`) + suggest updating active_context |
 | `add_milestone` / `update_milestone` | `✅ {summary}` (carries id, title, `seq N`, `[release]`, epics-closed rollup) |
+| Any write response carrying `epic_progress` | `[EPIC] task-{epic_id}: {open_children} of {total_children} children open` — when `closable` is true, print `[EPIC] task-{epic_id} ready to close — close it with a resolution now` instead, and do it. Print this line only when the summary you already printed doesn't carry the rollup itself: `add_task` / `update_task` summaries end with either `— epic task-N: K of M children open` or, on the closable branch, `— epic task-N ready to close: update_task(...)` — either way the count/prescription is already on screen; `delete_task` and the REST responses need the explicit `[EPIC]` line |
 
 **Roadmap sections.** `init` and `get_agenda` return `roadmap` and `epic_tails`
 **only when the project has them** — a missing section means "nothing to show",

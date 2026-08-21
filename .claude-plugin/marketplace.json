@@ -7,7 +7,7 @@
     {
       "name": "conport",
       "source": "./",
-      "version": "15.30.1",
+      "version": "15.31.0",
       "description": "ConPort — project context for Claude Code.",
       "keywords": ["conport", "context", "memory", "mcp", "agents", "graphrag"]
     }

@@ -14,7 +14,7 @@ and skills work across many clients.
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns
-  - `UserPromptSubmit` — context restore + save reminder every 5 messages
+  - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing
   - `SessionEnd` — LLM-based reflection of unsaved decisions
 
 ## Install — one line, any agent

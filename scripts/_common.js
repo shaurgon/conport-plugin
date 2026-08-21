@@ -15,11 +15,17 @@ function dataDir() {
   return dir;
 }
 
-function detectProjectIdentifier() {
+function detectProjectIdentifierFromEnv() {
   const id = (process.env.CONPORT_PROJECT_ID || '').trim();
   if (id) return id;
   const name = (process.env.CONPORT_PROJECT_NAME || '').trim();
   if (name) return name;
+  return null;
+}
+
+function detectProjectIdentifier() {
+  const envId = detectProjectIdentifierFromEnv();
+  if (envId) return envId;
   try {
     const url = execFileSync('git', ['config', '--get', 'remote.origin.url'],
       { stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).toString().trim();
@@ -75,5 +81,6 @@ function readStdin() {
 }
 
 module.exports = {
-  CONPORT_URL, dataDir, detectProjectIdentifier, authHeader, request, readStdin,
+  CONPORT_URL, dataDir, detectProjectIdentifier, detectProjectIdentifierFromEnv,
+  authHeader, request, readStdin,
 };

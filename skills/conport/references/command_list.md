@@ -466,7 +466,13 @@ mcp__conport__add_task({
 | milestone_id | integer | no | Per-project ID of the roadmap milestone this epic belongs to. Only `kind='epic'` rows may carry one (`milestone_on_non_epic`); an unknown milestone is rejected with `milestone_not_found`. `0` means no milestone — exactly the same as omitting it (there is nothing to detach on create) |
 
 **Returns:** a slim echo — `id`, `tags`, `summary` — plus the applied `kind`,
-`estimated_seconds` and `milestone_id`.
+`estimated_seconds` and `milestone_id`. Creating a task under an epic also
+returns `epic_progress`, the parent epic's children rollup: `epic_id`,
+`epic_title`, `open_children`, `total_children`, `closable` (no open children
+left and the epic itself still open) and `grew_after_start: true` when the
+append landed on an epic somebody had already started — a growing tail. The
+`summary` spells the rollup out; the field stays machine-readable. A task
+created at root level carries no `epic_progress`.
 
 **Refusals:** the hierarchy invariants come back as structured errors:
 `parent_not_epic` (with `suggestions` naming the promote / attach call to make
@@ -514,6 +520,13 @@ IN_PROGRESS and on DONE), `claim_expires_at` (the IN_PROGRESS lease — renewed
 on every touch while the task is IN_PROGRESS, cleared when it leaves that
 status) and `estimate_drift` (`estimated_seconds`, `actual_seconds`, `ratio`),
 present only when a task that carried an estimate actually transitions to DONE.
+A write that moves the parent epic's tail — a status change or a re-parent —
+also returns `epic_progress` (same shape as under `add_task`, without
+`grew_after_start`); an edit that leaves the tail alone (title, description,
+priority, …) carries none. On a detach (`parent_task_id: 0`) the rollup
+describes the epic the task **left** — that is the tail that just changed. A
+move between epics (A → B) echoes only the **new** parent B, so when you need
+A's tail after the move, read it with `list_tasks(parent_task_id=A)`.
 
 **Refusals:** closing an epic (`status: "DONE"`) while any of its children is
 still open comes back as a structured `epic_not_ready` with
@@ -617,8 +630,12 @@ mcp__conport__delete_task({
 | project_id | integer | yes | Project ID |
 | task_id | integer | yes | Per-project task ID |
 
-**Returns:** a `message` confirming the deletion. Dependencies and graph
-mentions of the task are removed with it; an unknown task is an error.
+**Returns:** a `message` confirming the deletion plus `deleted: true` and the
+`id` that was removed; deleting a child of an epic also returns `epic_progress`
+— the shrunk epic's rollup (same shape as under `add_task`, without
+`grew_after_start`), so a delete that empties a tail says so on the spot.
+Dependencies and graph mentions of the task are removed with it; an unknown
+task is an error.
 
 ### add_linked_task
 
