@@ -50,8 +50,8 @@ npx conport docs
 npx conport api __schema
 
 # Call any operation: conport api <resource> <operation> [--flags]
-npx conport api tasks list --project-id <id>
-npx conport api search query --q "auth flow"
+npx conport api tasks list --project_identifier <project>
+npx conport api search create --query "auth flow"
 ```
 
 `npx conport docs` works without a key and confirms the CLI can reach the API.

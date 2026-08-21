@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.30.1
+Docs fix: the CLI examples in the other-agents install guide now use the real commands and flags — `npx conport api search create --query …` (not `search query --q`) and `--project_identifier` (not `--project-id`).
+
 ## 15.30.0
 Roadmap milestones: three new MCP tools — `add_milestone`, `update_milestone`, `list_milestones` — plus `milestone_id` on `add_task` / `update_task` to attach an epic to a milestone (`0` detaches). `init` and `get_agenda` gained two sections, `roadmap` (current milestone with its epics and the next one) and `epic_tails` (epics near closing, each with a prescribed action), and the current milestone softly floats its rows to the top of `backlog.top` / `ready_top`. The conport skill carries the discipline: work the current milestone unless the owner decides otherwise, close a milestone only with a `resolution`, and close a release milestone only after the release actually shipped. conport-routine now works `epic_tails` before `ready_top` and opens every digest with the current milestone. New live-docs page `projects/roadmap`.
 
