@@ -984,9 +984,9 @@ timestamps. An unknown document is an error.
 
 ### get_block_backlinks
 
-Incoming Wave 6 edges (`document_links`) pointing at this document or one
-of its blocks. Surfaces *authored* references — the markdown callout/
-wikilink that produced each edge sits in `source_text`.
+Incoming Wave 6 document links pointing at this document or one of its
+blocks. Surfaces *authored* references — the markdown callout/wikilink
+that produced each edge sits in `source_text`.
 
 ```
 mcp__conport__get_block_backlinks({
@@ -1013,9 +1013,9 @@ mcp__conport__get_block_backlinks({
 ### get_semantically_related_blocks
 
 Top-N semantically related blocks by embedding similarity. Excludes the
-source block itself and any blocks already linked to/from it via
-`document_links` — surfaces *discovered* relationships, not already-
-authored ones. Companion to `get_block_backlinks`.
+source block itself and any blocks already linked to/from it by an
+authored document link — surfaces *discovered* relationships, not
+already-authored ones. Companion to `get_block_backlinks`.
 
 ```
 mcp__conport__get_semantically_related_blocks({
@@ -1187,12 +1187,12 @@ mcp__conport__link_items({
 
 ### get_linked
 
-Get items linked to a specific item. By default returns rows from the
-`item_links` graph (manually authored item-graph edges). When
-`item_type='doc'` and `include_section_links=true`, the response also
-includes `section_links: { incoming, outgoing }` — Wave 5 `document_links`
-rows where this document is either source or target. Default is `false`
-for backwards-compat.
+Get items linked to a specific item. By default returns the manually
+authored item-graph edges. When `item_type='doc'` and
+`include_section_links=true`, the response also includes
+`section_links: { incoming, outgoing }` — Wave 5 document links where this
+document is either source or target. Default is `false` for
+backwards-compat.
 
 ```
 mcp__conport__get_linked({
@@ -1210,12 +1210,12 @@ mcp__conport__get_linked({
 | item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Link type from the `link_items` vocabulary. Accepted, but **not applied today** — every link type comes back |
 | direction | string | no | outgoing \| incoming \| both (default: both). Accepted, but **not applied today** — both directions come back |
-| include_section_links | boolean | no | `item_type: "doc"` only — also return Wave 5 `document_links`. Default false. |
+| include_section_links | boolean | no | `item_type: "doc"` only — also return Wave 5 document links. Default false. |
 
 **Returns:** `links` (`id`, both endpoints, `link_type`, `description`,
 `weight`, the `created_by*` attribution fields, `created_at`) and `total`; with
 `include_section_links` also `section_links` (`incoming`, `outgoing` —
-`document_links` rows with `edge_type`, `source_text`, block ULIDs). Filter
+document links with `edge_type`, `source_text`, block ULIDs). Filter
 client-side while `relationship` / `direction` are inert.
 
 ---
@@ -1332,7 +1332,22 @@ Each hit carries:
   `covered_by_pattern` (with `_pattern_id`)
 
 An empty result set adds `_hint: "knowledge_gap_detected"` with a
-`_hint_message` telling you to save the answer once you have it.
+`_hint_message` telling you to save the answer once you have it — but only
+when the search itself was healthy.
+
+**Incomplete searches.** Search fuses several sources; if one of them cannot
+run, the rest still answer and the reply says so:
+
+- `degraded: true` and `failed_sources` (e.g. `["fts:document"]`) name the
+  sources that failed;
+- `_summary` ends with `WARNING: search is incomplete — ...`;
+- `_hint` is `search_degraded`, not `knowledge_gap_detected`, whether the
+  result set is empty or not.
+
+A degraded result set is missing whatever those sources hold, so **a missing
+answer does not prove the knowledge base lacks it**. Retry the search; do not
+record a new decision or document on the strength of what a degraded search
+failed to return.
 
 ---
 
@@ -1419,7 +1434,11 @@ mcp__conport__communities({
 | include_summaries | boolean | no | Include summaries (default: true) |
 
 **Returns:** `communities` (`community_id`, `level`, `entity_count`,
-`entity_names`, `keywords`, plus `summary` when asked for) and `total`.
+`entity_names`, `keywords`, plus `summary`, `summary_generated_at` and
+`summary_stale` when summaries are asked for) and `total`. A summary is
+rewritten only when its cluster's membership changed or its text has aged, so
+`summary_stale: true` means the prose describes a different set of entities
+than the one listed — treat it as a hint, not as fact.
 
 ### community
 
@@ -1435,10 +1454,10 @@ mcp__conport__community({
 |-----------|------|----------|-------------|
 | community_id | string | yes | Community ID (string) |
 
-**Returns:** `community_id`, `level`, `summary`, `keywords`, `entities`
-(`entity_id`, `canonical_name`, `entity_type`), `relationships` (`source_id`,
-`target_id`, `relation_type`, `weight`), `entity_count` and
-`relationship_count`.
+**Returns:** `community_id`, `level`, `summary`, `summary_generated_at`,
+`summary_stale`, `keywords`, `entities` (`entity_id`, `canonical_name`,
+`entity_type`), `relationships` (`source_id`, `target_id`, `relation_type`,
+`weight`), `entity_count` and `relationship_count`.
 
 ### graph_stats
 
@@ -1518,7 +1537,7 @@ Run a registered recipe from a start node.
 mcp__conport__assemble_context({
   project_id: 11,
   recipe: "task_briefing",
-  start_id: "task-271"
+  start_id: "task-<id>"
 })
 ```
 
@@ -1526,7 +1545,7 @@ mcp__conport__assemble_context({
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
 | recipe | string | yes | Registered recipe name — `task_briefing` (starts from a task) or `spec_implementation_status` (starts from a document). `list_context_recipes` is the live list |
-| start_id | integer/string | yes | Start node. Prefer the prefix form `"<type>-<id>"` (`"task-271"`, `"doc-76"`); the wikilink form `"[[task-271]]"` works too. A bare integer is the legacy fallback and is resolved as the recipe's own type. Prefixes: `task`, `doc`, `decision`, `pattern`, `progress` |
+| start_id | integer/string | yes | Start node. Prefer the prefix form `"<type>-<id>"` (`"task-<id>"`, `"doc-<id>"`); the wikilink form `"[[task-<id>]]"` works too. A bare integer is the legacy fallback and is resolved as the recipe's own type. Prefixes: `task`, `doc`, `decision`, `pattern`, `progress` |
 | format | string | no | `markdown` (default) or `json` |
 | depth | integer | no | Override the recipe's own traversal depth. Omit for the recipe default |
 

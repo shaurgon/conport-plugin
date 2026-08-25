@@ -155,8 +155,8 @@ The `unmarked_supersession` detector emits a gap when two sections in
 different active docs:
 - Have a representative-chunk cosine similarity ≥ 0.90 (the
   drift_score), AND
-- Have no `document_links` edge between their docs (any direction, any
-  anchor combination).
+- Have no authored document link between their docs (any direction,
+  any anchor combination).
 
 Severity high ≥ 0.95, low 0.90–0.95. Tunable per-project via
 `custom_data.gap_thresholds` keys: `drift_cosine_prefilter`,
@@ -177,7 +177,7 @@ but failed to parse (unknown type, missing target).
 Two paths, both spec-blessed:
 
 **Author the relationship.** Edit the right doc, add a callout. The next
-ingest cycle creates a `document_links` row, and the next detection run
+ingest cycle creates the document link, and the next detection run
 auto-resolves the gap.
 
 **Dismiss with a reason.** When two docs are independently authoritative
@@ -201,7 +201,7 @@ drift or dangling wikilink gaps.
 ## Tools
 
 - `get_block_backlinks(project_id, document_id, [block_ulid], [edge_types])`
-  — incoming `document_links` for the doc or one of its blocks.
+  — incoming document links for the doc or one of its blocks.
 - `get_semantically_related_blocks(project_id, document_id, block_ulid, [limit], [threshold])`
   — top-N semantically similar blocks in OTHER docs, excluding already-
   linked targets.

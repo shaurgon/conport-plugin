@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.31.0
+  version: 15.32.0
 ---
 
 # ConPort — Project Management System
@@ -346,7 +346,7 @@ Every reference to another ConPort item — in `summary`, `rationale`,
 **Forms accepted by the parser:**
 - Plain prose: `decision-321`, `task-271`, `doc-76`.
 - Wikilink: `[[decision-321]]`, `[[task-271]]`, `[[doc-76]]` — preferred inside
-  document bodies; the autolinker reifies them as `item_links` rows.
+  document bodies; the autolinker reifies them as item-graph edges.
 - Block anchor (documents only): `[[doc-89#<block_ulid>]]` — link to a
   specific block (Wave 6).
 
@@ -448,7 +448,7 @@ echo against intent:
 | `tags=[...]` | Response `tags` is non-empty and matches intent (count + values) |
 | `description=...` | `description` length ≈ what you sent (not visibly truncated) |
 | `priority=N` | `priority` equals `N` |
-| `parent_task_id`, `tag_kinds`, links | Field is present and equal to intent |
+| `parent_task_id`, links | Field is present and equal to intent |
 | `kind='epic'` / `kind='task'` | Response `kind` matches the promote/demote you asked for |
 | `milestone_id=N` / `milestone_id=0` on a task | Response `milestone_id` is `N` (or `null` after a detach) |
 | `sequence` / `is_release` on a milestone | Response `sequence` / `is_release` match intent — milestone writes echo `sequence`, `is_release`, `status` (not `title`), so those are the verification channel |

@@ -65,7 +65,7 @@ across edits to the body, but it changes if you rename the heading.
 
 Two surfaces in the dashboard help you find existing connections:
 
-- **Referenced by** — incoming `document_links` rows authored by other docs.
+- **Referenced by** — incoming document links authored by other docs.
   Always visible below the document content.
 - **Semantically related** — opt-in (sparkles button). Picks the section
   you point at and finds the closest other docs by embedding similarity,
@@ -82,7 +82,7 @@ documentation drift in the background:
 
 | Class | Triggered when |
 |---|---|
-| `unmarked_supersession` | Two sections in different docs score above the cosine threshold and don't have any `document_links` edge between their docs. |
+| `unmarked_supersession` | Two sections in different docs score above the cosine threshold and don't have any authored document link between their docs. |
 | `stale_open_question` | A section whose heading matches "Open Questions" is older than 30 days with no incoming `[!resolves]` edge. |
 | `dangling_wikilink` | A `[[doc-N]]` or callout target points at a doc/section that no longer exists. |
 | `malformed_callout` | A `> [!type] [[...]]` line failed to parse — wrong syntax or unknown type. |
