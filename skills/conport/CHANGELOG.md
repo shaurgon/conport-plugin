@@ -1,5 +1,11 @@
 # conport changelog
 
+## 15.34.0
+New `/conport:epic` workflow: deterministic execution of a whole epic from its plan — waves of isolated implementers, an independent review per task, strictly sequential merges behind the full gate, a single adversarially-verified gap hunt, acceptance of the goal by observation, and ConPort accounting that never grows the running epic (deferred findings land in a separate tails epic).
+
+## 15.33.0
+New `/conport:task` workflow: deterministic single-task execution — a worktree, an independent review, a gated merge and the ConPort close.
+
 ## 15.32.0
 Controlled vocabularies now travel in the tool schema. Twenty-three parameters that named a controlled column — `doc_type`, `status`, `kind`, `dependency_type`, `change_kind`, `category`, `source` and their siblings — were declared as free-form strings, so an invented value reached the database and died on a CHECK constraint. They now carry their enum in the schema itself, drawn from the same definitions the REST surface uses, so a client sees the accepted values before it sends. Nothing that previously worked was narrowed. A surface-wide sweep keeps it that way: it walks every registered tool and requires an enum on any parameter named after a guarded column, with the filter expressions declared as explicit exceptions.
 

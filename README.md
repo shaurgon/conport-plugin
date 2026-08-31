@@ -11,6 +11,7 @@ and skills work across many clients.
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
   - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict.
+- **Workflows** (Claude Code, paid plan) — `/conport:task`: deterministic execution of one ConPort task (worktree, independent review, gated merge, close with resolution). See [docs/workflows.md](./docs/workflows.md).
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns
