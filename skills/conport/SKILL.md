@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.35.0
+  version: 15.36.0
 ---
 
 # ConPort — Project Management System
@@ -171,12 +171,18 @@ return it in the `roadmap` section.
   actually happened.** "Every epic is DONE" is not a release; the resolution
   names the shipped version/artifact. If the release hasn't shipped, leave the
   milestone open and say so.
+- **A release milestone is a point, not a container.** Keep the work in
+  ordinary milestones before (and, when needed, after) the release point; an
+  empty release milestone is legal and closes with the resolution naming the
+  shipped artifact. Attaching epics to it stays legal as a compact form.
 - **`milestone_not_ready` is a prescription, not an error to route around.**
   `update_milestone(status='DONE')` is refused while any epic of the milestone
   is open; `context.open_epics` lists exactly what to close first (an empty
-  milestone is refused too — attach the epic that carries the work). Do the
-  prescribed closes, then retry. Never CANCEL a milestone just to get past the
-  refusal.
+  NON-release milestone is refused too — attach the epic that carries the
+  work). A release milestone is also refused while any EARLIER milestone is
+  still open — `context.open_milestones` lists them: close those first, or
+  move their remaining epics to a later milestone. Do the prescribed closes,
+  then retry. Never CANCEL a milestone just to get past the refusal.
 
 → Deep detail: live docs `projects/roadmap`.
 

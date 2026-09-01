@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.36.0
+A release milestone is now a point, not a container. Work is a process that runs before or after a release, so the work belongs to ordinary milestones on either side of the point: an empty release milestone is legal and closes with the resolution naming the shipped artifact, while closing it is refused while any earlier milestone is still open (`context.open_milestones` lists them — close those first, or move their remaining epics to a later milestone). Attaching epics to a release milestone stays legal as a compact form for small releases, and their closing rules are unchanged.
+
 ## 15.35.0
 Workflows stop flooding the backlog. The fix round of `/conport:task` and `/conport:epic` now applies every review finding, minors included — a minor is fixed in the same run, not deferred. A minor still open after the round travels in the run ledger only; no task is created for it. The new `fileMinors` argument collects leftovers into one umbrella task under a tails epic — never scattered root tasks. Unresolved criticals and escalations of an epic run remain the only findings that always become tasks.
 
