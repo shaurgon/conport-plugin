@@ -530,6 +530,11 @@ if (!L.outcome) {
     if (!res) fail('UNKNOWN_MERGE')
     else if (res.status === 'MERGED' || res.status === 'ALREADY_MERGED') { L.merge_sha = res.merge_sha; L.outcome = 'MERGED' }
     else if (res.status === 'GATE_RED') fail('GATE_RED', res.gate_tail)
+    // The merge did not happen and the helper said so. Without this branch the
+    // outcome stays unset and ends as UNKNOWN, and the accounting table — which
+    // closes only on MERGED and blocks only on FAILED — leaves the ConPort task
+    // untouched: the one path that records less than an outright failure.
+    else if (res.status === 'NOT_MERGED') fail('NOT_MERGED', res.gate_tail)
     else if (res.status === 'RED_BASELINE') fail('RED_BASELINE', res.gate_tail)
     else if (res.status === 'DIRTY_ABORTED') { L.outcome = 'ABORTED'; L.abort_reason = 'ABORTED_DIRTY_MERGE' }
   }

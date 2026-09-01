@@ -796,16 +796,33 @@ function applyParity(tasks, par, L) {
   })
 }
 // PARITY_BLOCK_END
-function applyMerge(L, q, mg) {
+// APPLY_MERGE_BEGIN — pure between these markers (only the ledger `L` is touched),
+// so the parity test can extract and exercise it. Every status of S_MG must have a
+// branch here: a status that falls through leaves the row in its pre-merge state,
+// which propagates as "not merged, nobody told" — the row reaches none of the
+// accounting lists and dependants are dispatched onto a base that never got it.
+function applyMerge(L, q, mg, opts) {
   for (const r of mg.results) {
     const t = q.find(x => matchId(x) === r.id); if (!t) continue
     if (r.status === 'MERGED' || r.status === 'ALREADY_MERGED') L.done(t, r.merge_sha)
     else if (r.status === 'CONFLICT') L.conflict(t, r.conflict_files)
     else if (r.status === 'GATE_RED') L.fail(t, 'GATE_RED', r.gate_tail)
+    // NOT_MERGED means the merge did not happen — but what to do about it
+    // depends on who is reporting. A --state-only reading is a survey taken
+    // before the retry: the row must stay pendingMerge, because that is what
+    // feeds the retry queue. From a real merge attempt there is no retry left,
+    // so the row is recorded FAILED, which makes propagateSkips hold back its
+    // dependants. On a run that reaches its end that also blocks the task in
+    // ConPort; on a run that aborts (a RED_BASELINE later in the same results,
+    // say) every path returns before buildCallTable, so the row stays in the
+    // returned ledger only — better than the nothing it used to be, but not a
+    // ConPort write.
+    else if (r.status === 'NOT_MERGED') { if (!opts || !opts.stateOnly) L.fail(t, 'NOT_MERGED', r.gate_tail) }
     else if (r.status === 'RED_BASELINE') L.abortRun('RED_BASELINE', r.gate_tail)
     else if (r.status === 'DIRTY_ABORTED') L.abortRun('DIRTY_ABORTED', r.gate_tail)
   }
 }
+// APPLY_MERGE_END
 const gapAsTask = (g, r) => ({ id: 100000 + g.gid, conport_id: null, key: 'gap' + g.gid,
   branch: r.branch, head_sha: r.head_sha, title: 'gap fix: ' + g.min_action.title })
 
@@ -823,8 +840,12 @@ function buildCallTable(sc, L, goal) {
   const rows = Object.entries(L.tasks)
   const doneList = rows.filter(([, r]) => r.state === 'DONE' && r.id)
     .map(([, r]) => ({ id: r.id, resolution: 'merged as ' + r.merge_sha + '; review clean; full gate green' }))
-  const failedList = rows.filter(([, r]) => r.state === 'FAILED' && r.id)
-    .map(([, r]) => ({ id: r.id, reason: r.reason + (r.detail ? ': ' + JSON.stringify(r.detail) : '') }))
+  // UNKNOWN_MERGE belongs here too: the merge agent came back with nothing, so
+  // the run does not know whether the branch landed. Left out of every list, such
+  // a row is silently unrecorded in ConPort — the one outcome worse than a wrong
+  // one. Blocking it with the reason is what puts a human on it.
+  const failedList = rows.filter(([, r]) => (r.state === 'FAILED' || r.state === 'UNKNOWN_MERGE') && r.id)
+    .map(([, r]) => ({ id: r.id, reason: (r.reason || r.state) + (r.detail ? ': ' + JSON.stringify(r.detail) : '') }))
   const skippedList = rows.filter(([, r]) => r.state === 'SKIPPED_DEP' && r.id)
     .map(([, r]) => ({ id: r.id, dep: r.dep }))               // dep = the failed supplier's key from propagateSkips
   const deferred = L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '') + ' [task ' + f.from + ']')
@@ -967,7 +988,11 @@ for (let w = 0; w < waves.length; w++) {
       const st = await agent(mergeStatePrompt(rows, gate), { label: `mstate-w${w}`, effort: 'low', schema: S_MG })
       if (!st) { L.markUnknownMerge(q) }
       else {
-        applyMerge(L, q, st)
+        applyMerge(L, q, st, { stateOnly: true })   // a survey, not a verdict: unmerged rows stay pending for the retry below
+        // A red baseline found by the survey aborts here, before the retry:
+        // re-merging onto a base the run has already given up on is the one
+        // thing this recovery must never do.
+        if (L.aborted) return finishLedger(L, null, null)
         const rest = q.filter(t => L.pendingMerge(t))
         if (rest.length) {
           mg = await agent(mergePrompt(rest.map(t => mergeRow(t, L)), gate), { label: `merge-w${w}-r2`, effort: 'low', schema: S_MG })
