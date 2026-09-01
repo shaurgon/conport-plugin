@@ -70,6 +70,22 @@ start: a line like
 appears at the top of the first reply. Run `claude plugins update` and the
 notice clears on the next `init`.
 
+Rolling back to a previous version: an install always follows the marketplace's
+current release, so pin the source instead — clone
+`https://github.com/shaurgon/conport-plugin` and `git checkout` the tag you
+want, then run exactly:
+
+```
+/plugin uninstall conport
+/plugin marketplace remove conport-plugin
+/plugin marketplace add <path to the clone at the desired tag>
+/plugin install conport
+/reload-plugins
+```
+
+Then `/mcp reconnect conport`. To return to the current release, repeat the
+sequence with `https://github.com/shaurgon/conport-plugin` as the marketplace.
+
 > **Versioning note.** The `skill_version` in `SKILL.md` frontmatter is
 > independent of plugin release tags — bumped only when SKILL.md content
 > actually changes. A plugin release that only touches hooks or scripts

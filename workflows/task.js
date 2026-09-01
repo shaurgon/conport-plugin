@@ -6,7 +6,10 @@ export const meta = {
     { title: 'Execute' }, { title: 'Merge' }, { title: 'Accounting' }, { title: 'Cleanup' },
   ],
 }
-// Mirror rule: shared prompt skeletons are duplicated in task.js and epic.js — edit both.
+// Mirror rule: the mechanical skeletons live in wf-helper.mjs and in the pipe
+// prompts of this file — edit them together. task.js and epic.js carry the pipe
+// skeletons and SKELETON_VERSION byte for byte alike; the judgement prompts remain
+// duplicated in both files as well.
 
 const A = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 if (A.task === undefined || A.task === null) throw new Error('conport task workflow requires args: {task: <id>}')
@@ -14,7 +17,7 @@ const TASK = A.task
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
 const FILE_MINORS = !!A.fileMinors // default: minors live in the ledger only — they never become tasks
-const SKELETON_VERSION = 2        // prompt skeleton version; bump on every skeleton edit (mirror it)
+const SKELETON_VERSION = 10       // prompt skeleton version; bump on every skeleton edit (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 
 const L = {
@@ -44,7 +47,8 @@ const collectMinors = rev => {
 
 const S_PRE = { type: 'object', required: ['clean', 'branch', 'current_branch', 'main_sha'], properties: {
   clean: { type: 'boolean' }, dirty_paths: { type: 'array', items: { type: 'string' } },
-  branch: { type: 'string' }, current_branch: { type: 'string' }, main_sha: { type: 'string' } } }
+  branch: { type: 'string' }, current_branch: { type: 'string' }, main_sha: { type: 'string' },
+  helper_version: { type: ['string', 'null'] } } }
 
 const S_BASE = { type: 'object', required: ['gate'], properties: {
   gate: { type: 'string', enum: ['GREEN', 'RED'] }, red_summary: { type: 'string' } } }
@@ -65,6 +69,7 @@ const S_SCOUT = { type: 'object', required: ['project_id', 'task', 'brief'], pro
     global_constraints: { type: 'string' } } },
   gate: { type: ['object', 'null'], properties: {
     dir: { type: 'string' }, commands: { type: 'array', items: { type: 'string' } } } },
+  via: { type: 'string' },
   notes: { type: 'array', items: { type: 'string' } } } }
 
 const S_IMPL = { type: 'object', required: ['status', 'branch', 'head_sha', 'worktree_path'], properties: {
@@ -99,6 +104,7 @@ const S_MG = { type: 'object', required: ['results'], properties: {
     gate_tail: { type: 'string' } } } } } }
 
 const S_ACC = { type: 'object', required: ['actions', 'task_closed'], properties: {
+  via: { type: 'string' },
   actions: { type: 'array', items: { type: 'object', required: ['step', 'result'], properties: {
     step: { type: 'string' }, target: { type: 'integer' },
     result: { type: 'string', enum: ['done', 'skipped_already', 'failed'] }, detail: { type: 'string' } } } },
@@ -112,20 +118,103 @@ const S_JAN = { type: 'object', properties: {
 
 // ---------------------------------------------------------------- prompts
 
-const prePrompt = () => `Mechanical check, change nothing — with one exception: an existing MERGE_HEAD is
-debris of an interrupted previous run — abort it. Return strict JSON per schema.
-1) git status --porcelain -> clean/dirty + path list; if MERGE_HEAD exists:
-   git merge --abort, then re-check.
-2) git rev-parse HEAD; determine the current branch AND the repository's default
-   branch (main / master / trunk / whatever this repo uses) — return BOTH names
-   (current_branch and branch); the script aborts when they differ.`
+// PIPE_BASE_BEGIN — pipe/argFiles/gateFile/shq are mirrored in epic.js; the region
+// between the markers is compared byte for byte by the mirror parity test.
+// The mechanical steps are a single call of the workflow helper: the agent only
+// locates it, feeds it the arguments assembled here and pipes its stdout back.
+// A missing helper yields a sentinel JSON object: for the four required-bearing
+// schemas (preflight, gate, merge, merge state) it fails schema validation on
+// purpose and the workflow takes its usual retry / abort path. Cleanup (S_JAN has
+// no required keys) instead degrades to a silent no-op — practically unreachable,
+// since a helper missing at cleanup was already missing at preflight, which aborts.
+const pipe = (command, prep) => `Mechanical step: run the workflow helper and pipe its output back. Decide nothing,
+fix nothing, judge nothing.
+Locate the helper, in this exact order, and take the first match:
+(a) plugins/conport-plugin/workflows/wf-helper.mjs relative to the repository root;
+(b) the glob ~/.claude/plugins/cache/*/conport-plugin/*/workflows/wf-helper.mjs —
+    on several matches take the highest semantic version.
+Neither exists -> return exactly {"error": "wf-helper not found"} and nothing else.
+${prep ?? ''}Run exactly ONE helper command: node <helper> ${command}
+Return its stdout verbatim as your final answer — no commentary, no reformatting, no
+"fixing" of values. The helper's exit code does not matter to you; stdout is the answer.`
 
-const basePrompt = gate => `Mechanical check, change nothing. Run the project gate in ${gate.dir}:
-${gate.commands.join('; ')}, one by one. Do not print secret values.
-Red = real test failures / lint / type errors. On red return the last 30 lines.
-Return strict JSON per schema.`
+// Composite arguments travel through files: create a scratch directory outside the
+// working tree so nothing lands in the tree the helper inspects.
+const argFiles = files => `Prepare the arguments: create a temporary directory outside the working tree
+(mktemp -d) and write these files into it, byte for byte as given here:
+${files.map(f => `  ${f.name}: ${f.json}`).join('\n')}
+Below, <tmp> is that directory.
+`
+const gateFile = gate => ({ name: 'gate-commands.json', json: JSON.stringify(gate.commands) })
+
+// Single quotes, not JSON.stringify: double quotes still expand $ and backticks.
+const shq = v => `'${String(v).replaceAll("'", `'\\''`)}'`
+// PIPE_BASE_END
+
+const prePrompt = () => pipe('preflight')
+
+const basePrompt = gate => pipe(
+  `gate --dir ${shq(gate.dir)} --commands-file <tmp>/gate-commands.json`,
+  argFiles([gateFile(gate)]))
+
+// The scout is a hybrid: the helper gathers the mechanical part (the task over the
+// ConPort REST API, the plan slice, the constraints, the gate, the spec reference)
+// and the agent only compresses what is too long and digests the spec. Every path
+// out of the helper — no key, no project, an API error, no helper at all — lands in
+// branch B, the full scout that predates it. Mirror this skeleton in epic.js —
+// the region between the markers is compared byte for byte by the parity test.
+// SCOUT_BASE_BEGIN
+const scoutBase = args => `Locate the workflow helper, in this exact order, and take the first match:
+(a) plugins/conport-plugin/workflows/wf-helper.mjs relative to the repository root;
+(b) the glob ~/.claude/plugins/cache/*/conport-plugin/*/workflows/wf-helper.mjs —
+    on several matches take the highest semantic version.
+Found -> run exactly ONE command: node <helper> scout ${args}
+Its stdout is a JSON object with project_id / task / plan / plan_path /
+global_constraints / gc_lines / gate / acceptance / spec_doc_id / via -> that
+object is your BASE: carry its values over unchanged, never re-deriving or
+"fixing" them; then do STEP 2.
+Its stdout is an object carrying an "error" key, is not a JSON object at all (empty
+output, a crash trace, a bare string, an array), or no helper exists -> that is NOT
+a base: discard it and do BRANCH B instead.`
+// SCOUT_BASE_END
 
 const scoutPrompt = (taskId, project, planPath) => `You are the scout for ConPort task-${taskId}. Mutate nothing.
+
+=== STEP 1 (mechanical, always first) ===
+${scoutBase(`--task ${taskId}${project === null ? '' : ` --project ${shq(project)}`}${planPath ? ` --plan ${shq(planPath)}` : ''}`)}
+
+=== STEP 2 (judgement, only where the base is not already the answer) ===
+Fill the schema from the base:
+- project_id and task.{id,kind,status,title}: copied; task.parent_epic_id = base
+  task.parent_epic_id.
+- via = base.via verbatim: the stamp of the branch that ran the scout.
+- base.plan is not null -> brief.source="plan", brief.plan_path=base.plan.path,
+  brief.lines={from,to} from base.plan, brief.files={modify: base.plan.files, test: []}
+  (an empty file list -> files=null). base.plan is null -> brief.source="conport",
+  plan_path=null, lines=null, files=null.
+- brief.acceptance = base.acceptance verbatim; empty stays empty — do NOT invent one.
+- brief.description = base task.description compressed to <=600 chars, keeping every
+  requirement, name, format and threshold; already shorter -> verbatim.
+- brief.global_constraints = base.global_constraints verbatim; ONLY when base.gc_lines
+  is above 60 compress it, preserving every prohibition.
+- brief.spec_digest: base.spec_doc_id is null -> empty string; otherwise exactly ONE
+  MCP call — get_document(<base.spec_doc_id>) via conport tools (ToolSearch) —
+  digested to <=40 lines (goal, invariants, contracts relevant to this task).
+- gate = base.gate; it is null -> read the gate (working directory + full check
+  commands) out of the constraints prose yourself; the prose names none -> gate=null
+  (do NOT invent commands).
+base.plan_path is null -> locate the plan yourself before filling those values:
+grep the anchor '<!-- conport-task: <id> -->' of the id above (an epic id: its
+'<!-- conport-epic: <id> -->' anchor) across docs/superpowers/plans/*.md, else a
+plan reference in the task description;
+nothing found -> leave the values empty (do NOT invent a plan).
+Plan file known here — base.plan_path, or one you located in this step — while the
+base carried none of its values (base.global_constraints empty, base.gate null) ->
+read the Global Constraints verbatim and the gate object out of THAT file; never
+carry the base's empty values forward.
+Return strict JSON per schema; minimal texts, pointers instead of copies.
+
+=== BRANCH B (fallback: there is no base to build on) ===
 0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, derive it
    yourself: env CONPORT_PROJECT_NAME -> repository name from git remote -> working
    directory name. Load conport MCP tools via ToolSearch and resolve project_id by
@@ -146,6 +235,8 @@ const scoutPrompt = (taskId, project, planPath) => `You are the scout for ConPor
 4) Gate: if the found plan's Global Constraints name the project gate (working
    directory + full check commands), return {dir, commands}; otherwise gate=null
    (do NOT invent commands).
+5) via: set via="mcp" — this branch is the MCP fallback; the ledger records which
+   branch ran the scout.
 Return strict JSON per schema; minimal texts, pointers instead of copies.`
 
 const implPrompt = (sc, gate, serial, branch, extra) => {
@@ -157,7 +248,9 @@ const implPrompt = (sc, gate, serial, branch, extra) => {
 those; the path inside the worktree is the same).`
     : `There is no plan file. The task brief is its ConPort description plus the spec
 digest — nothing else is authoritative: ${b.description} ${b.spec_digest}`
-  const gc = b.source === 'plan' && b.global_constraints && b.global_constraints.trim()
+  // Not gated on source: an epic's plan carries the constraints even when it holds
+  // no slice of this task, and dropping them would ship the implementer without them.
+  const gc = b.global_constraints && b.global_constraints.trim()
     ? `\n=== GLOBAL CONSTRAINTS (from the plan, verbatim) === ${b.global_constraints}`
     : ''
   const ser = serial
@@ -259,32 +352,13 @@ Never the full suite. git stash is forbidden. Commit atomically. Return JSON per
 schema.`
 }
 
-const mergePrompt = (q, gate, MAIN) => `Mechanics, strictly in list order, decide nothing, fix nothing. Branch list:
-${JSON.stringify(q)}. For EACH in turn:
-0) git status --porcelain: MERGE_HEAD exists -> git merge --abort (debris of an
-   interruption), re-check; tree still dirty -> status=DIRTY_ABORTED for this branch
-   (+ the path list in gate_tail) and STOP.
-1) git merge-base --is-ancestor <head_sha> ${MAIN} -> already merged: skip the merge
-   but still run the full gate (step 3); green -> status=ALREADY_MERGED, red ->
-   status=RED_BASELINE and STOP (no further merging).
-2) git merge --no-ff --no-commit <branch>. Conflict -> git merge --abort ->
-   status=CONFLICT + conflicted file list, move to the next branch.
-3) Full gate in ${gate.dir}: ${gate.commands.join('; ')}, one by one. Red -> git merge --abort ->
-   status=GATE_RED + last 30 red lines (no secret values), move to the next branch.
-4) Green -> git commit -m "merge task-<id>: <title>" -> status=MERGED + merge_sha.
-No reset --hard, no fix attempts, NEVER push.
-On an early STOP (DIRTY_ABORTED / RED_BASELINE) emit status=NOT_MERGED for every
-remaining branch so the results array stays complete.
-Return JSON: the result of each branch in order.`
+const mergeArgs = (q, gate) => argFiles([{ name: 'queue.json', json: JSON.stringify(q) }, gateFile(gate)])
+const mergeCommand = gate =>
+  `merge --queue <tmp>/queue.json --gate-dir ${shq(gate.dir)} --gate-commands-file <tmp>/gate-commands.json`
 
-const mergeStatePrompt = (q, gate, MAIN) => `Read-only recovery after an interrupted merge batch. The only mutation allowed: an
-existing MERGE_HEAD is debris — git merge --abort it first.
-Branch list: ${JSON.stringify(q)}. For EACH branch in order:
-git merge-base --is-ancestor <head_sha> ${MAIN} -> status=ALREADY_MERGED, else
-status=NOT_MERGED. Then run the full gate ONCE in ${gate.dir}: ${gate.commands.join('; ')};
-red -> replace the status of the FIRST NOT_MERGED entry with RED_BASELINE (+ last
-30 red lines in gate_tail). Fix nothing, merge nothing, never push.
-Return JSON: the result of each branch in order.`
+const mergePrompt = (q, gate) => pipe(mergeCommand(gate), mergeArgs(q, gate))
+
+const mergeStatePrompt = (q, gate) => pipe(mergeCommand(gate) + ' --state-only', mergeArgs(q, gate))
 
 const rebasePrompt = (sc, impl, serial, MAIN) => {
   const slice = sc.brief.lines ? `:${sc.brief.lines.from}-${sc.brief.lines.to}` : ''
@@ -300,46 +374,79 @@ git stash is forbidden. Then: focused checks only (lint/types; tests only for th
 task's test files${ser}). Never the full suite. Return JSON.`
 }
 
+// Branch A of the accountant: the helper executes the table over the ConPort
+// REST API and its stdout is the report. Its two sentinels — no key, or a table
+// whose steps it does not implement — hand the work back to branch B, which does
+// the same table through MCP tools. Mirror this skeleton in epic.js — the region
+// between the markers is compared byte for byte by the mirror parity test.
+// ACCOUNT_PIPE_BEGIN
+const accountPipe = table => `Accounting of an already computed table. Decide nothing, judge nothing, add
+nothing to the table.
+TABLE: ${JSON.stringify(table)}
+
+=== BRANCH A (mechanical, try this first) ===
+Locate the workflow helper, in this exact order, and take the first match:
+(a) plugins/conport-plugin/workflows/wf-helper.mjs relative to the repository root;
+(b) the glob ~/.claude/plugins/cache/*/conport-plugin/*/workflows/wf-helper.mjs —
+    on several matches take the highest semantic version.
+Found -> create a temporary directory outside the working tree (mktemp -d), write the
+TABLE above into <tmp>/table.json byte for byte, and run exactly ONE command:
+node <helper> account --table <tmp>/table.json
+Its stdout is an accounting report -> return that stdout verbatim as your final
+answer: no commentary, no reformatting, no "fixing" of values. The exit code does
+not matter to you; stdout is the answer.
+Its stdout is exactly {"error": "no api key"} or exactly {"error": "unsupported table"},
+or no helper exists -> that output is NOT an answer: discard it and do BRANCH B.
+Its stdout is not a JSON object — empty output included, a crash trace, a bare
+string or an array -> that is NOT an answer either: discard it and do BRANCH B.
+
+=== BRANCH B (fallback: execute the same TABLE yourself) ===`
+// ACCOUNT_PIPE_END
+
 const accountantPrompt = table => {
   const minorsStep = table.minors_umbrella
     ? `3) MINORS (one umbrella, never scattered tasks): ensure the epic titled
    'Workflow run tails' exists — search/list_tasks by that EXACT title
    (kind=epic, open); none -> add_task(kind="epic", priority=4,
    title='Workflow run tails', description='Deferred review minors from
-   workflow runs'). Then ONE child: a child with the exact title
-   ${JSON.stringify(table.minors_umbrella.title)} exists -> skip; else
-   add_task(parent_task_id=<that epic>, title=${JSON.stringify(table.minors_umbrella.title)},
-   priority=4, description=<the umbrella body from the table, verbatim>).
-   Umbrella body: ${JSON.stringify(table.minors_umbrella.description)}`
+   workflow runs'). Then ONE child: a child with the exact title from
+   minors_umbrella.title exists -> skip; else add_task(parent_task_id=<that
+   epic>, title=<minors_umbrella.title>, priority=4,
+   description=<minors_umbrella.description, verbatim>).`
     : `3) MINORS: none to file — deferred minors travel in the run ledger and the
    resolution; do NOT create any task for them.`
-  return `You are the ConPort accountant (conport MCP tools via ToolSearch, project_id=${table.project_id}).
+  return `${accountPipe(table)}
+You are the ConPort accountant (conport MCP tools via ToolSearch, project_id=${table.project_id}).
 Execute the table STRICTLY in order, each item behind an idempotency guard.
 FORBIDDEN: creating anything beyond the table; rewording resolutions; creating
 any ROOT task.
-1) CLOSE ${JSON.stringify(table.close)}: if null skip; else get_task(id); already
+1) CLOSE — the table's close: if null skip; else get_task(id); already
    DONE -> skip; else update_task(task_id=<id>, status="DONE", resolution=<verbatim
    from the table>) — never replace the description.
-2) BLOCK ${JSON.stringify(table.block)}: if null skip; else get_task(id); already
+2) BLOCK — the table's block: if null skip; else get_task(id); already
    BLOCKED -> skip; else update_task(task_id=<id>, status="BLOCKED") and APPEND to
    the description a '## Blocked: <reason>' section (keep the original text).
 ${minorsStep}
 Return a report per item: done | skipped_already | failed + details; a failed call
-goes into failed_calls while the rest continue.`
+goes into failed_calls while the rest continue. Stamp the report with via:"mcp" —
+branch B is the MCP path.`
 }
 
-const janPrompt = (mergedBranches, allWorktrees) => `Mechanical cleanup, decide nothing.
-Merged branches to delete: ${JSON.stringify(mergedBranches)} -> git branch -D each.
-Every other branch of this run stays (forensics — the commits live in the branches).
-Worktrees to remove: ${JSON.stringify(allWorktrees)} -> git worktree remove --force
-each path that still exists, then git worktree prune.
-Never push. Return JSON per schema.`
+const janPrompt = (mergedBranches, allWorktrees) => pipe(
+  'cleanup --merged-file <tmp>/merged.json --worktrees-file <tmp>/worktrees.json',
+  argFiles([
+    { name: 'merged.json', json: JSON.stringify(mergedBranches) },
+    { name: 'worktrees.json', json: JSON.stringify(allWorktrees) },
+  ]))
 
 // ---------------------------------------------------------------- control flow
 
 phase('Preflight')
 const pre = await retry('preflight', l => agent(prePrompt(), { label: l, effort: 'low', schema: S_PRE }))
 if (!pre) return abort('ABORTED_PREFLIGHT')
+// The version handshake, before any abort check: "unknown" means a stale helper
+// in the plugin cache (it predates the stamp) — update the plugin first.
+L.notes.push('helper_version:"' + (pre.helper_version ?? 'unknown') + '"')
 if (!pre.clean) return abort('ABORTED_DIRTY', pre.dirty_paths)
 if (pre.current_branch !== pre.branch)
   return abort('ABORTED_NOT_DEFAULT_BRANCH', pre.current_branch)   // mirror this in epic.js
@@ -348,6 +455,7 @@ const MAIN = pre.branch
 phase('Scout')
 const sc = await retry('scout', l => agent(scoutPrompt(TASK, PROJECT, A.plan), { label: l, schema: S_SCOUT }))
 if (!sc) return abort('ABORTED_NO_SCOUT')
+L.notes.push('scout via:"' + (sc.via ?? 'unknown') + '"')  // the branch that ran the scout: wf-helper (A) or mcp (B)
 if (sc.task.kind === 'epic') return abort('ABORTED_IS_EPIC', 'this id is an epic — use /conport:epic')
 if (sc.task.status === 'DONE' || sc.task.status === 'CANCELLED') return abort('ABORTED_ALREADY_DONE', sc.task.status)
 if (sc.brief.source === 'conport' && !sc.brief.acceptance.trim())
@@ -395,13 +503,13 @@ if (!L.outcome) {
 phase('Merge')
 if (!L.outcome) {
   const q = [{ id: sc.task.id, branch: L.branch, head_sha: L.head_sha, title: sc.task.title }]
-  let mg = await agent(mergePrompt(q, gate, MAIN), { label: 'merge', effort: 'low', schema: S_MG })
+  let mg = await agent(mergePrompt(q, gate), { label: 'merge', effort: 'low', schema: S_MG })
   if (!mg) {
-    const st = await agent(mergeStatePrompt(q, gate, MAIN), { label: 'mstate', effort: 'low', schema: S_MG })
+    const st = await agent(mergeStatePrompt(q, gate), { label: 'mstate', effort: 'low', schema: S_MG })
     const s0 = st && st.results[0]
     if (s0 && s0.status === 'ALREADY_MERGED') mg = st
     else if (s0 && s0.status === 'RED_BASELINE') fail('RED_BASELINE', s0.gate_tail)   // symmetric to epic.js: on a red base the merge is not restarted
-    else if (st) mg = await agent(mergePrompt(q, gate, MAIN), { label: 'merge-r2', effort: 'low', schema: S_MG })
+    else if (st) mg = await agent(mergePrompt(q, gate), { label: 'merge-r2', effort: 'low', schema: S_MG })
   }
   let res = mg && mg.results[0]
   if (res && res.status === 'CONFLICT') {
@@ -412,7 +520,7 @@ if (!L.outcome) {
     if (!rb || !rr || hard(rr)) { fail('MERGE_CONFLICT'); res = null }
     else {
       L.head_sha = rb.head_sha
-      const m1 = await agent(mergePrompt([{ ...q[0], head_sha: rb.head_sha }], gate, MAIN),
+      const m1 = await agent(mergePrompt([{ ...q[0], head_sha: rb.head_sha }], gate),
                              { label: 'merge-rb', effort: 'low', schema: S_MG })
       res = m1 && m1.results[0]
       if (res && res.status === 'CONFLICT') { fail('MERGE_CONFLICT'); res = null }
@@ -448,7 +556,11 @@ if (L.branch || L.outcome === 'FAILED') {
       : null,
   }
   const acc = await retry('account', l => agent(accountantPrompt(table), { label: l, effort: 'low', schema: S_ACC }))
-  if (!acc) { L.accounting = 'INCOMPLETE'; L.pending_table = table } else L.accounting = acc
+  if (!acc) { L.accounting = 'INCOMPLETE'; L.pending_table = table }
+  else {
+    L.accounting = acc
+    L.notes.push('account via:"' + (acc.via ?? 'unknown') + '"')  // the branch that ran the account: wf-helper (A) or mcp (B)
+  }
 }
 
 phase('Cleanup')
