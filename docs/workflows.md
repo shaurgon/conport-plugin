@@ -36,6 +36,7 @@ it leaves the machine.
 | `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor. |
 | `gate` | object | no | `{dir, commands}` — the directory to run in and the list of gate commands. Omitted → taken from the plan's Global Constraints. |
 | `serialChecks` | boolean | no | Worktree agents run static checks only — all tests are deferred to the merge gate, which runs alone. For projects whose gate shares one test database. |
+| `fileMinors` | boolean | no | Leftover minors (rare — minors are normally fixed in the run) are collected into ONE umbrella task under the "Workflow run tails" epic. Off by default: leftovers travel only in the run ledger. |
 
 Example:
 
@@ -45,9 +46,11 @@ Example:
 
 ### Behavior
 
-- **Minor review findings become tasks, not silence.** Each MINOR the reviewer
-  raised is created as a root TODO task with priority 4, deduplicated by title,
-  so nothing is lost and nothing blocks the merge.
+- **Minor review findings are fixed in the same run.** The fix round applies
+  every finding, minors included. A minor still open after the round does not
+  block the merge — it travels in the run ledger; no task is ever created for it
+  unless you pass `fileMinors`, and then all leftovers become ONE umbrella task
+  under a tails epic, never scattered root tasks.
 - **An epic id is rejected.** An epic is not a unit of execution; use
   `/conport:epic`.
 - **A task with neither an acceptance criterion nor a plan slice is rejected.**
@@ -82,10 +85,13 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
 
 ### Anti-sprawl guarantees
 
-- **Findings never grow the running epic.** There is no code path that adds a
-  discovered issue to the epic being executed: minors and unverified findings go
-  to a separate tails epic, confirmed criticals get one capped fix round in the
-  same run, and anything beyond the cap is escalated to you.
+- **Findings never grow the running epic — or your backlog.** There is no code
+  path that adds a discovered issue to the epic being executed. Review minors
+  are fixed in the same run; leftovers travel in the run ledger only. Confirmed
+  criticals get one capped fix round; unresolved criticals and escalations are
+  the only findings that always become tasks (priority 1, in a separate tails
+  epic). Pass `fileMinors` to also collect leftover minors into ONE umbrella
+  child there.
 - **Every counter is a literal in the script**, not an agent's judgment: one fix
   round plus one re-review per task, one rebase per merge conflict, one hunt
   pass, one critical-fix round.
@@ -102,6 +108,7 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
 | `gate` | object | no | `{dir, commands}` — as in `/conport:task`. |
 | `allowNoPlan` | boolean | no | Without a plan file the run aborts. Set this to execute the epic's ConPort children from their own descriptions instead — strictly sequentially. |
 | `serialChecks` | boolean | no | As in `/conport:task`. |
+| `fileMinors` | boolean | no | As in `/conport:task`: leftover minors become ONE umbrella child of the tails epic instead of staying ledger-only. |
 
 ### Failure behavior
 

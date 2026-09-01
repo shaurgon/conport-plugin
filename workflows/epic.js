@@ -14,9 +14,10 @@ if (A.epic === undefined || A.epic === null) throw new Error('conport epic workf
 const EPIC = A.epic
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
+const FILE_MINORS = !!A.fileMinors // default: leftover minors live in the ledger only — they never become tasks
 const CAP_WAVE = 5
 const CAP_CRIT = 5
-const SKELETON_VERSION = 1        // prompt skeleton version; bump on every skeleton edit (mirror it)
+const SKELETON_VERSION = 2        // prompt skeleton version; bump on every skeleton edit (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 const hard = rev => rev.findings.some(f => f.severity === 'CRITICAL' || f.severity === 'IMPORTANT')
 
@@ -321,14 +322,13 @@ Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${re}${rb
 const fixPrompt = (t, rev, impl, serial) => {
   const list = rev.findings
     .map((f, i) => ({ idx: i, severity: f.severity, at: f.file + (f.line ? ':' + f.line : ''), what: f.what, specRef: f.specRef, fix: f.fix }))
-    .filter(f => f.severity === 'CRITICAL' || f.severity === 'IMPORTANT')
   const ser = serial ? '; skip tests entirely — static checks only' : ''
   return `You fix one implemented task per the review findings list. Work in worktree
 ${impl.worktree_path} (branch ${impl.branch}). Worktree missing -> restore it:
 git worktree prune && git worktree add <a sibling directory outside the primary working tree> ${impl.branch}.
 Apply EVERY finding and NOTHING else: no adjacent refactoring, do not leave the
 task's files.
-Findings (critical+important): ${JSON.stringify(list)}.
+Findings (ALL severities — minors are fixed on the spot too): ${JSON.stringify(list)}.
 A finding unclear or, in your view, wrong — do not invent a fix and do not skip it
 silently: return action=DISPUTED for it with reasoning, apply the rest.
 A changed test inherits the rules: fails without the protected mechanism, threshold
@@ -460,14 +460,15 @@ rewording resolutions.
    exact string '[epic-run:${table.epic}]' via conport search (fallback: list_progress
    paginated to the very end); if no entry with this prefix and this title ->
    log_progress '[epic-run:${table.epic}] plan task without a child: <title> — <outcome>'.
-5) MINOR_LIST ${JSON.stringify(table.minors)}: when this list, unresolved criticals or
-   escalations are non-empty -> search/list_tasks for the EXACT title
-   'Tails of epic task-${table.epic}' (kind=epic, open); none -> add_task(kind="epic",
-   priority=3, title='Tails of epic task-${table.epic}', description='Findings deferred
-   from the epic run'). Then each minor: a child of the tails epic with the same
-   title exists -> skip; else add_task(parent_task_id=<tails epic>, title,
-   description, priority). Priority-1 entries in the list are unresolved criticals
-   and escalations — they go there too.
+5) TAILS_LIST ${JSON.stringify(table.minors)}: when non-empty -> search/list_tasks for
+   the EXACT title 'Tails of epic task-${table.epic}' (kind=epic, open); none ->
+   add_task(kind="epic", priority=3, title='Tails of epic task-${table.epic}',
+   description='Findings deferred from the epic run'). Then each entry: a child of
+   the tails epic with the same title exists -> skip; else add_task(
+   parent_task_id=<tails epic>, title, description, priority). Priority-1 entries
+   are unresolved criticals and escalations; a priority-4 entry is the single
+   minors umbrella. Create NOTHING beyond this list — deferred minors outside it
+   live in the run ledger, never as tasks.
 6) Run summary: log_progress '[epic-run:${table.epic}] result: ${table.close_resolution}'
    (same dedup guard: search, fallback full pagination) — numbers, not a chronicle.
 7) Closing: only if ${JSON.stringify(table.may_close)} is true. list_tasks(
@@ -626,20 +627,18 @@ function buildCallTable(sc, L, goal) {
     .map(([, r]) => ({ id: r.id, reason: r.reason + (r.detail ? ': ' + JSON.stringify(r.detail) : '') }))
   const skippedList = rows.filter(([, r]) => r.state === 'SKIPPED_DEP' && r.id)
     .map(([, r]) => ({ id: r.id, dep: r.dep }))               // dep = the failed supplier's key from propagateSkips
-  const minors = L.minors.map(f => ({
-    title: f.file + ': ' + f.what, priority: 4,
-    description: 'Minor review finding (task ' + f.from + '). ' + (f.scenario || '') + (f.fix ? ' Fix: ' + f.fix : '') }))
-    .concat((L.gap_minors || []).map(g => ({
-      title: g.min_action.title, priority: 4,
-      description: (g.not_verified
-        ? 'NOT VERIFIED (the gap verifier failed; treat as a claim to check): '
-        : 'Confirmed-minor or unverifiable gap: ') + g.claim + '. ' + (g.min_action.note || '') })))
-    .concat(L.unresolved_criticals.map(u => ({
-      title: 'UNRESOLVED CRITICAL: ' + u.claim, priority: 1,
-      description: 'Critical gap not fixed in the run (failed at ' + u.stage + ').' })))
+  const deferred = L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '') + ' [task ' + f.from + ']')
+    .concat((L.gap_minors || []).map(g => '- ' + (g.not_verified ? '[NOT VERIFIED] ' : '') + g.min_action.title + ' — ' + g.claim))
+  const minors = L.unresolved_criticals.map(u => ({
+    title: 'UNRESOLVED CRITICAL: ' + u.claim, priority: 1,
+    description: 'Critical gap not fixed in the run (failed at ' + u.stage + ').' }))
     .concat(L.escalations.map(g => ({
       title: 'ESCALATED CRITICAL: ' + g.min_action.title, priority: 1,
       description: 'Confirmed critical beyond the per-run cap: ' + g.claim })))
+    .concat((FILE_MINORS && deferred.length) ? [{
+      title: 'Review minors of the epic run', priority: 4,
+      description: ('Deferred minors and unverified gap findings of the run:\n' + deferred.join('\n')).slice(0, 1900) }] : [])
+  // by default deferred minors travel ONLY in the returned ledger — they never become tasks
   const mayClose = !!goal && goal.verdict === 'READY' &&
     !L.unresolved_criticals.length && !L.escalations.length
   const planRowsTotal = rows.filter(([k]) => !k.startsWith('gap')).length   // denominator counts plan tasks only, not gap fixes
@@ -648,7 +647,8 @@ function buildCallTable(sc, L, goal) {
     may_close: mayClose,
     close_resolution: 'plan tasks ' + doneList.length + '/' + planRowsTotal +
       ' merged; criticals fixed ' + (L.criticals.length - L.unresolved_criticals.length) + ' of ' +
-      L.criticals.length + '; tails ' + minors.length + '; gate green; acceptance ' + (goal ? goal.verdict : 'UNKNOWN') }
+      L.criticals.length + '; tails filed ' + minors.length + '; minors deferred in ledger ' + deferred.length +
+      '; gate green; acceptance ' + (goal ? goal.verdict : 'UNKNOWN') }
 }
 function finishLedger(L, goal, acc) {
   L.goal = goal ?? null
@@ -726,15 +726,18 @@ for (let w = 0; w < waves.length; w++) {
     const t = b[i]
     let rev = revs[i] ?? await agent(revPrompt(t, sc, L.implOf(t), MAIN), { label: `rev-${t.key}-r2`, schema: S_REV })
     if (!rev) { L.fail(t, 'REVIEW_DEAD'); continue }        // no merge without a review, ever
-    L.collectMinors(t, rev)
-    if (hard(rev)) {
+    if (rev.findings.length) {                              // minors are fixed on the spot too
       const fx = await retry(`fix-${t.key}`, l =>
         agent(fixPrompt(t, rev, L.implOf(t), SERIAL), { label: l, schema: S_FIX }))
-      if (!fx || fx.status !== 'DONE') { L.fail(t, 'FIX_FAILED'); continue }
-      const r2 = await agent(revPrompt(t, sc, L.implOf(t), MAIN, { rereview: rev, fixed: fx }),
-                             { label: `rev2-${t.key}`, schema: S_REV })
-      if (!r2 || hard(r2)) { L.fail(t, 'RED_AFTER_FIX'); continue }
-      L.collectMinors(t, r2); L.approve(t, fx.head_sha)
+      if (!fx || fx.status !== 'DONE') {
+        if (hard(rev)) { L.fail(t, 'FIX_FAILED'); continue }
+        L.collectMinors(t, rev); L.approve(t, L.implOf(t).head_sha)  // minors alone never block — leftovers to the ledger
+      } else {
+        const r2 = await agent(revPrompt(t, sc, L.implOf(t), MAIN, { rereview: rev, fixed: fx }),
+                               { label: `rev2-${t.key}`, schema: S_REV })
+        if (!r2 || hard(r2)) { L.fail(t, 'RED_AFTER_FIX'); continue }
+        L.collectMinors(t, r2); L.approve(t, fx.head_sha)
+      }
     } else L.approve(t, L.implOf(t).head_sha)
   }
   // 5) wave batch merger: merges are sequential, the full gate runs after each

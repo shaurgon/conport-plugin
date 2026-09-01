@@ -13,7 +13,8 @@ if (A.task === undefined || A.task === null) throw new Error('conport task workf
 const TASK = A.task
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
-const SKELETON_VERSION = 1        // prompt skeleton version; bump on every skeleton edit (mirror it)
+const FILE_MINORS = !!A.fileMinors // default: minors live in the ledger only — they never become tasks
+const SKELETON_VERSION = 2        // prompt skeleton version; bump on every skeleton edit (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 
 const L = {
@@ -241,14 +242,13 @@ Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${re}${rb
 const fixPrompt = (sc, rev, impl, serial) => {
   const list = rev.findings
     .map((f, i) => ({ idx: i, severity: f.severity, at: f.file + (f.line ? ':' + f.line : ''), what: f.what, specRef: f.specRef, fix: f.fix }))
-    .filter(f => f.severity === 'CRITICAL' || f.severity === 'IMPORTANT')
   const ser = serial ? '; skip tests entirely — static checks only' : ''
   return `You fix one implemented task per the review findings list. Work in worktree
 ${impl.worktree_path} (branch ${impl.branch}). Worktree missing -> restore it:
 git worktree prune && git worktree add <a sibling directory outside the primary working tree> ${impl.branch}.
 Apply EVERY finding and NOTHING else: no adjacent refactoring, do not leave the
 task's files.
-Findings (critical+important): ${JSON.stringify(list)}.
+Findings (ALL severities — minors are fixed on the spot too): ${JSON.stringify(list)}.
 A finding unclear or, in your view, wrong — do not invent a fix and do not skip it
 silently: return action=DISPUTED for it with reasoning, apply the rest.
 A changed test inherits the rules: fails without the protected mechanism, threshold
@@ -300,22 +300,33 @@ git stash is forbidden. Then: focused checks only (lint/types; tests only for th
 task's test files${ser}). Never the full suite. Return JSON.`
 }
 
-const accountantPrompt = table => `You are the ConPort accountant (conport MCP tools via ToolSearch, project_id=${table.project_id}).
+const accountantPrompt = table => {
+  const minorsStep = table.minors_umbrella
+    ? `3) MINORS (one umbrella, never scattered tasks): ensure the epic titled
+   'Workflow run tails' exists — search/list_tasks by that EXACT title
+   (kind=epic, open); none -> add_task(kind="epic", priority=4,
+   title='Workflow run tails', description='Deferred review minors from
+   workflow runs'). Then ONE child: a child with the exact title
+   ${JSON.stringify(table.minors_umbrella.title)} exists -> skip; else
+   add_task(parent_task_id=<that epic>, title=${JSON.stringify(table.minors_umbrella.title)},
+   priority=4, description=<the umbrella body from the table, verbatim>).
+   Umbrella body: ${JSON.stringify(table.minors_umbrella.description)}`
+    : `3) MINORS: none to file — deferred minors travel in the run ledger and the
+   resolution; do NOT create any task for them.`
+  return `You are the ConPort accountant (conport MCP tools via ToolSearch, project_id=${table.project_id}).
 Execute the table STRICTLY in order, each item behind an idempotency guard.
-FORBIDDEN: add_task with a parent_task_id — every task you create is a ROOT task;
-creating anything beyond the table; rewording resolutions.
+FORBIDDEN: creating anything beyond the table; rewording resolutions; creating
+any ROOT task.
 1) CLOSE ${JSON.stringify(table.close)}: if null skip; else get_task(id); already
    DONE -> skip; else update_task(task_id=<id>, status="DONE", resolution=<verbatim
    from the table>) — never replace the description.
 2) BLOCK ${JSON.stringify(table.block)}: if null skip; else get_task(id); already
    BLOCKED -> skip; else update_task(task_id=<id>, status="BLOCKED") and APPEND to
    the description a '## Blocked: <reason>' section (keep the original text).
-3) MINORS ${JSON.stringify(table.minors)}: for each {title, description, priority} —
-   look for the EXACT title among the project's open tasks (list_tasks, paginate;
-   or search); exists -> skip; else add_task(title, description, priority) as a
-   ROOT task (no parent).
+${minorsStep}
 Return a report per item: done | skipped_already | failed + details; a failed call
 goes into failed_calls while the rest continue.`
+}
 
 const janPrompt = (mergedBranches, allWorktrees) => `Mechanical cleanup, decide nothing.
 Merged branches to delete: ${JSON.stringify(mergedBranches)} -> git branch -D each.
@@ -366,11 +377,13 @@ if (!L.outcome) {
   const rev = await retry('rev', l => agent(revPrompt(sc, impl, MAIN), { label: l, schema: S_REV }))
   if (!rev) fail('REVIEW_DEAD')
   else {
-    L.review = rev; collectMinors(rev)
-    if (hard(rev)) {
+    L.review = rev
+    if (rev.findings.length) {                       // minors are fixed on the spot too
       const fx = await retry('fix', l => agent(fixPrompt(sc, rev, impl, SERIAL), { label: l, schema: S_FIX }))
-      if (!fx || fx.status !== 'DONE') fail('FIX_FAILED')
-      else {
+      if (!fx || fx.status !== 'DONE') {
+        if (hard(rev)) fail('FIX_FAILED')
+        else collectMinors(rev)                      // minors alone never block the merge — leftovers go to the ledger
+      } else {
         const r2 = await agent(revPrompt(sc, impl, MAIN, { rereview: rev, fixed: fx }), { label: 'rev2', schema: S_REV })
         if (!r2 || hard(r2)) fail('RED_AFTER_FIX')
         else { L.rereview = r2; collectMinors(r2); L.head_sha = fx.head_sha }
@@ -416,20 +429,23 @@ if (!L.outcome) {
 
 phase('Accounting')                       // always, once the implementer has started
 if (L.branch || L.outcome === 'FAILED') {
+  const minorsNote = L.minors.length
+    ? '; ' + L.minors.length + ' review minor(s) deferred in the run ledger' + (FILE_MINORS ? ' and filed as one umbrella task' : '')
+    : ''
   const table = {
     project_id: sc.project_id,
     close: L.outcome === 'MERGED'
       ? { id: sc.task.id, resolution: 'merged as ' + L.merge_sha + '; review ' +
-          (L.rereview ? 'clean after one fix round' : 'clean') + '; full gate green' }
+          (L.rereview ? 'clean after one fix round' : 'clean') + '; full gate green' + minorsNote }
       : null,
     block: L.outcome === 'FAILED'
       ? { id: sc.task.id, reason: L.fail_reason + (L.fail_detail ? ': ' + JSON.stringify(L.fail_detail) : '') }
       : null,
-    minors: L.minors.map(f => ({
-      title: f.file + ': ' + f.what,
-      description: 'Minor review finding from the run of task-' + sc.task.id + '. ' +
-        (f.scenario || '') + (f.fix ? ' Suggested fix: ' + f.fix : ''),
-      priority: 4 })),
+    minors_umbrella: (FILE_MINORS && L.minors.length)
+      ? { title: 'Review minors: task-' + sc.task.id + ' run',
+          description: ('Deferred review minors from the /conport:task run of task-' + sc.task.id + ':\n' +
+            L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '')).join('\n')).slice(0, 1900) }
+      : null,
   }
   const acc = await retry('account', l => agent(accountantPrompt(table), { label: l, effort: 'low', schema: S_ACC }))
   if (!acc) { L.accounting = 'INCOMPLETE'; L.pending_table = table } else L.accounting = acc

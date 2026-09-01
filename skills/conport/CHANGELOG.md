@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.35.0
+Workflows stop flooding the backlog. The fix round of `/conport:task` and `/conport:epic` now applies every review finding, minors included — a minor is fixed in the same run, not deferred. A minor still open after the round travels in the run ledger only; no task is created for it. The new `fileMinors` argument collects leftovers into one umbrella task under a tails epic — never scattered root tasks. Unresolved criticals and escalations of an epic run remain the only findings that always become tasks.
+
 ## 15.34.0
 New `/conport:epic` workflow: deterministic execution of a whole epic from its plan — waves of isolated implementers, an independent review per task, strictly sequential merges behind the full gate, a single adversarially-verified gap hunt, acceptance of the goal by observation, and ConPort accounting that never grows the running epic (deferred findings land in a separate tails epic).
 
