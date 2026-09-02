@@ -1078,6 +1078,32 @@ mcp__conport__delete_document({
 
 ---
 
+## Architecture diagrams
+
+A diagram is a document (`doc_type='diagram'`) whose body is a JSON spec the
+dashboard draws itself. The body is written through `add_document` /
+`update_document` and read through `get_document`; history is the document's
+own version history. The one tool of its own is the list.
+
+### list_diagrams
+
+List a project's diagrams with the scope each was drawn for.
+
+```
+mcp__conport__list_diagrams({
+  project_id: 11
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+
+**Returns:** `diagrams` (`id`, `title`, `scope` from the stored spec,
+`version`, `updated_at`) and `total`.
+
+---
+
 ## Patterns
 
 ### log_pattern
@@ -2215,6 +2241,7 @@ mcp__conport__list_error_solutions({
 | GraphRAG | `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats` |
 | History | `recent_activity`, `item_history`, `context_history` |
 | Context assembly | `assemble_context`, `list_context_recipes`, `render_current_architecture`, `audit_doc_l1_coverage` |
+| Architecture diagrams | `list_diagrams` |
 | Gaps | `gap_list`, `gap_ack`, `gap_dismiss`, `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
 | Semantic pass | `semantic_cleanup`, `semantic_pass_run`, `semantic_proposals_list`, `semantic_proposal_approve`, `semantic_proposal_reject`, `semantic_proposal_defer`, `semantic_proposals_apply`, `semantic_pass_stats` |
 | Routine cycle | `get_agenda`, `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |

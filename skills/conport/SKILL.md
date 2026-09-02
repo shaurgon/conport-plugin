@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.39.0
+  version: 15.40.0
 ---
 
 # ConPort — Project Management System
@@ -300,47 +300,40 @@ mismatch.
 
 | Trigger | Tool |
 |---------|------|
-| "Draw / visualize subsystem X", "architecture diagram of X" | author the flow below, then `add_document(doc_type='diagram')` + the render PUT |
-| "Update the diagram", gap `diagram_stale` | same flow from step 2; `update_document` the body, then PUT a fresh render |
-| "What diagrams does this project have?" | `list_documents(doc_type='diagram')`, or the dashboard's Architecture section |
+| "Draw / visualize subsystem X", "architecture diagram of X" | author the flow below, then `add_document(doc_type='diagram', content=<the JSON spec>)` |
+| "Update the diagram", gap `diagram_stale` | same flow from step 2; `update_document` with the rewritten spec |
+| "What diagrams does this project have?" | `list_diagrams` (id, title, scope, version, updated_at) — `list_documents` hides diagrams unless `doc_type='diagram'` is passed |
 
-A diagram is a document whose body is a **JSON spec**, not markdown, with its
-rendered HTML stored beside it as a render — one row per upload, so the history
-keeps what the architecture looked like at an earlier commit.
+A diagram is a document whose body is a **JSON spec**, not markdown. The
+dashboard draws it itself — there is no picture to render or upload, so what is
+on screen is exactly as current as the body.
 
 **The flow.** Scope (the owner's subsystem tags) → topology from the code (a
 code-graph tool if the project has one) → semantics from
 `render_current_architecture(scope, format='json')`, which is where the *why*
-and the provenance ids come from → write the JSON spec → render it with any
-renderer that emits a standalone HTML file → store the body and PUT the HTML.
+and the provenance ids come from → write the spec → `add_document`. Four steps;
+nothing to draw.
 
-**What the body must carry.** `diagram_type: "architecture"`, and a `conport`
-object with a non-empty `scope` (subsystem tags — the tie to the decisions
-behind the picture). `provenance` (block id → canonical references) and
-`source_commit` are not enforced, but a diagram without them cannot be traced or
-dated. References must be canonical — `decision-321`, `doc-76`, `task-5`,
-`pattern-4`, `progress-9`; the wikilink form accepted elsewhere is not accepted
-here — because the dashboard turns each into a link; anything else is refused at
-write time.
-
-**Storing the render** is the one step with no MCP tool:
-`PUT <api base>/api/v1/projects/{project}/diagrams/{doc_id}/render` with the
-`X-API-Key` header and body `{"html": "<!doctype html>…"}` — the HTML in a JSON
-field, not as the payload. Under 2 MiB; larger is refused.
+**The spec is a contract**, checked on every write, one violation named at a
+time:
+- `schema_version: 1`, `diagram_type: "architecture"`, `meta.title`.
+- `lanes` (optional, ordered `{id, label}`) — the horizontal bands. Name them:
+  without a list, bands are derived from `components[].lane` and headed by the
+  raw id.
+- `components` — non-empty, unique `id`, `label`, optional `lane` and `note`.
+- `connections` — `{from, to, label?}`; both ends must name a component.
+- `conport.scope` — non-empty subsystem tags, the tie to the decisions behind
+  the picture; `conport.provenance` — component id → canonical references
+  (`decision-321`, `doc-76`, `task-5`, `pattern-4`, `progress-9`; the wikilink
+  form accepted elsewhere is not accepted here); `conport.source_commit`.
 
 **Discipline.**
-- A block that exists because of a decision names that decision in
-  `provenance`. A block drawn from the code alone gets an empty list, never a
-  plausible-looking id.
-- Do not send the spec with the render: the snapshot is taken server-side from
-  the body at the moment of the PUT, which is what keeps a picture and its spec
-  the same pair after the body moves on.
-- Inline the HTML's styles and scripts, within that 2 MiB. It renders in a
-  sandboxed iframe with an opaque origin (no dashboard DOM, storage or cookies);
-  a file that pulls its look from a CDN depends on the viewer's network and
-  browser policy and sometimes arrives naked.
+- A component that exists because of a decision names that decision in
+  `provenance`. A component drawn from the code alone gets an empty list, never
+  a plausible-looking id.
 - Regenerate on the `diagram_stale` gap rather than on a schedule: it fires when
-  a decision or spec lands in the diagram's own scope after its last render.
+  a decision or spec lands in the diagram's scope after the spec was last
+  written. Regenerating is rewriting the body — nothing else moves the anchor.
 
 → Deep detail: live docs `projects/architecture-diagrams`.
 
