@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.38.0
+  version: 15.39.0
 ---
 
 # ConPort — Project Management System
@@ -296,6 +296,56 @@ mismatch.
 
 ---
 
+## ARCHITECTURE DIAGRAMS
+
+| Trigger | Tool |
+|---------|------|
+| "Draw / visualize subsystem X", "architecture diagram of X" | author the flow below, then `add_document(doc_type='diagram')` + the render PUT |
+| "Update the diagram", gap `diagram_stale` | same flow from step 2; `update_document` the body, then PUT a fresh render |
+| "What diagrams does this project have?" | `list_documents(doc_type='diagram')`, or the dashboard's Architecture section |
+
+A diagram is a document whose body is a **JSON spec**, not markdown, with its
+rendered HTML stored beside it as a render — one row per upload, so the history
+keeps what the architecture looked like at an earlier commit.
+
+**The flow.** Scope (the owner's subsystem tags) → topology from the code (a
+code-graph tool if the project has one) → semantics from
+`render_current_architecture(scope, format='json')`, which is where the *why*
+and the provenance ids come from → write the JSON spec → render it with any
+renderer that emits a standalone HTML file → store the body and PUT the HTML.
+
+**What the body must carry.** `diagram_type: "architecture"`, and a `conport`
+object with a non-empty `scope` (subsystem tags — the tie to the decisions
+behind the picture). `provenance` (block id → canonical references) and
+`source_commit` are not enforced, but a diagram without them cannot be traced or
+dated. References must be canonical — `decision-321`, `doc-76`, `task-5`,
+`pattern-4`, `progress-9`; the wikilink form accepted elsewhere is not accepted
+here — because the dashboard turns each into a link; anything else is refused at
+write time.
+
+**Storing the render** is the one step with no MCP tool:
+`PUT <api base>/api/v1/projects/{project}/diagrams/{doc_id}/render` with the
+`X-API-Key` header and body `{"html": "<!doctype html>…"}` — the HTML in a JSON
+field, not as the payload. Under 2 MiB; larger is refused.
+
+**Discipline.**
+- A block that exists because of a decision names that decision in
+  `provenance`. A block drawn from the code alone gets an empty list, never a
+  plausible-looking id.
+- Do not send the spec with the render: the snapshot is taken server-side from
+  the body at the moment of the PUT, which is what keeps a picture and its spec
+  the same pair after the body moves on.
+- Inline the HTML's styles and scripts, within that 2 MiB. It renders in a
+  sandboxed iframe with an opaque origin (no dashboard DOM, storage or cookies);
+  a file that pulls its look from a CDN depends on the viewer's network and
+  browser policy and sometimes arrives naked.
+- Regenerate on the `diagram_stale` gap rather than on a schedule: it fires when
+  a decision or spec lands in the diagram's own scope after its last render.
+
+→ Deep detail: live docs `projects/architecture-diagrams`.
+
+---
+
 ## TASK HIERARCHY (2 levels, schema-enforced)
 
 The task tree is **two levels** and the database enforces it:
@@ -528,6 +578,7 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Block-level document model | `projects/block-model` |
 | Task hierarchy | `projects/task-hierarchy` |
 | Roadmap milestones | `projects/roadmap` |
+| Architecture diagrams | `projects/architecture-diagrams` |
 | Full per-tool parameter reference | `projects/tool-reference` |
 
 **Local references** (shipped with the skill): `references/command_list.md`
