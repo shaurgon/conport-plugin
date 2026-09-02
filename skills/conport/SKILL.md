@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.40.0
+  version: 15.41.0
 ---
 
 # ConPort — Project Management System
@@ -315,13 +315,24 @@ and the provenance ids come from → write the spec → `add_document`. Four ste
 nothing to draw.
 
 **The spec is a contract**, checked on every write, one violation named at a
-time:
+time. **You place every box** — the dashboard does cell math and orthogonal
+routing, it does not lay out for you.
 - `schema_version: 1`, `diagram_type: "architecture"`, `meta.title`.
-- `lanes` (optional, ordered `{id, label}`) — the horizontal bands. Name them:
-  without a list, bands are derived from `components[].lane` and headed by the
-  raw id.
-- `components` — non-empty, unique `id`, `label`, optional `lane` and `note`.
-- `connections` — `{from, to, label?}`; both ends must name a component.
+- `layout: {mode: "grid", cols, cellW?, cellH?, gapX?, gapY?, origin?}` and, on every
+  component, a cell `row`/`col` (or an absolute `pos: [x, y]` with `size`).
+  Place all or none — a half-placed spec is refused. Put connected boxes in the
+  same column across rows so their arrows run straight.
+- `components` — non-empty, unique `id`, `label`, `sublabel` (file path, role),
+  `type` for the colour family (`backend`, `frontend`, `database`, `cloud`,
+  `external`, `messagebus`, `security`), optional `note`.
+- `boundaries` — zones: `{kind, label, wraps: [component ids]}`; the frame is
+  drawn around exactly the boxes it wraps. Name them the way the owner names
+  parts of the system.
+- `connections` — `{from, to, label?, variant?, fromSide?, toSide?, via?}`;
+  both ends must name a component; sides are `top | right | bottom | left`;
+  `variant` is `emphasis | dashed | security`; `via` lists `[x, y]` waypoints,
+  used as given, for the rare line the automatic bridge would run through
+  something — keep them axis-aligned. Unknown keys are ignored.
 - `conport.scope` — non-empty subsystem tags, the tie to the decisions behind
   the picture; `conport.provenance` — component id → canonical references
   (`decision-321`, `doc-76`, `task-5`, `pattern-4`, `progress-9`; the wikilink
@@ -331,6 +342,9 @@ time:
 - A component that exists because of a decision names that decision in
   `provenance`. A component drawn from the code alone gets an empty list, never
   a plausible-looking id.
+- Composition is your job: aligned columns, one zone per part of the system,
+  arrows that do not cross boxes. Read the picture back through `list_diagrams`
+  and the dashboard before calling it done.
 - Regenerate on the `diagram_stale` gap rather than on a schedule: it fires when
   a decision or spec lands in the diagram's scope after the spec was last
   written. Regenerating is rewriting the body — nothing else moves the anchor.
