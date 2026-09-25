@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.42.3
+The `[TAILS]` block on user messages no longer reads as an order. An epic whose children are still open is listed for reference — `open: task-a, task-b` — instead of the server's "Finish …, then close" action, since the block rides along with every message, questions included, and those children are often not doable yet. Only an epic with nothing left open keeps its action line, "Close epic task-N with a resolution". The first message of a session no longer prints the block at all: `init` already reports the same tails.
+
 ## 15.42.2
 The Stop hook for epic tails now lists only the epics the nearest release waits for: those attached to the open milestones up to and including the first open release milestone. Epics after the release, or on no milestone, no longer hold the turn. When the roadmap has no release milestone, every session tail is listed together with a reminder to create one (`add_milestone` with `is_release=true`). A child's status change (for example TODO → IN_PROGRESS) is no longer a new composition, so it does not hold the turn again.
 

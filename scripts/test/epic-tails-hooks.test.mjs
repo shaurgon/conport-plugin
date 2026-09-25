@@ -1,6 +1,7 @@
 // The session-epic tails loop: PostToolUse records the epics a session
 // changed, Stop holds the turn while their children are open, and
-// UserPromptSubmit prints the [TAILS] block only when its composition changed.
+// UserPromptSubmit prints the [TAILS] block only when its composition changed
+// and never on a session's first prompt, where init prints the same tails.
 // Every hook runs as the real script in a child process against a local
 // stand-in for the ConPort REST API.
 import { test } from 'node:test'
@@ -159,6 +160,37 @@ test('Stop holds a turn only once per stop cycle', () => withEnv(async (ctx) => 
   assert.equal((await stop(ctx, 's1', { stop_hook_active: true })).out, '')
 }))
 
+// GET /epic-tails rows as the server builds them: open_tasks in the order it
+// sends them, closable exactly when none is open, and an imperative
+// suggested_action either way.
+const openTail = (id, openIds) => ({
+  epic_id: id, title: `Epic ${id}`, milestone_id: null, closable: false,
+  open_tasks: openIds.map((t) => ({ id: t, title: `child ${t}`, status: 'TODO' })),
+  suggested_action: `Finish ${openIds.map((t) => `task-${t}`).join(', ')}, then close epic task-${id} with a resolution`,
+})
+const closableTail = (id) => ({
+  epic_id: id, title: `Epic ${id}`, milestone_id: null, closable: true, open_tasks: [],
+  suggested_action: `Close epic task-${id} with a resolution`,
+})
+
+const INIT = /run mcp__conport__init\(\) before responding/
+const tailsCache = (ctx) => join(ctx.dataDir, 'hook_state', 'epic_tails_11.json')
+const promptContext = async (ctx, session = 's1') => {
+  const { code, out } = await runHook('user-prompt-submit.js', { session_id: session, prompt: 'hi' }, ctx)
+  assert.equal(code, 0)
+  return out ? JSON.parse(out).hookSpecificOutput.additionalContext : ''
+}
+const tailLines = (context) => context.split('\n').filter((l) => l.startsWith('[TAILS]'))
+// The first prompt of a session is init's turn; spend it with no tails so the
+// next prompt is an ordinary one that may print the block.
+const pastFirstPrompt = async (ctx, session = 's1') => {
+  const tails = ctx.api.tails
+  ctx.api.tails = []
+  assert.match(await promptContext(ctx, session), INIT)
+  ctx.api.tails = tails
+  rmSync(tailsCache(ctx))
+}
+
 const held = async (ctx, session) => {
   const { code, out } = await stop(ctx, session)
   assert.equal(code, 0)
@@ -296,14 +328,11 @@ test('an unwritable Stop memory still holds the turn rather than losing it', () 
 test('the Stop hold and the UserPromptSubmit [TAILS] block keep separate memories', () => withEnv(async (ctx) => {
   await addUnderEpic(ctx, 's1', 50, 51)
   ctx.api.children = [child(51, 50, 'TODO')]
-  ctx.api.tails = [{ epic_id: 50, title: 'Epic 50', suggested_action: 'Finish task-51, then close epic task-50' }]
-  const prompt = async () => {
-    const { out } = await runHook('user-prompt-submit.js', { session_id: 's1', prompt: 'hi' }, ctx)
-    return out ? JSON.parse(out).hookSpecificOutput.additionalContext : ''
-  }
-  assert.match(await prompt(), /\[TAILS\] task-50/)
+  ctx.api.tails = [openTail(50, [51])]
+  await pastFirstPrompt(ctx)
+  assert.match(await promptContext(ctx), /\[TAILS\] task-50/)
   assert.equal(await held(ctx, 's1'), true)                       // the prompt block did not count
-  assert.doesNotMatch(await prompt(), /\[TAILS\]/)                // the hold did not reset it
+  assert.doesNotMatch(await promptContext(ctx), /\[TAILS\]/)      // the hold did not reset it
   assert.equal(await held(ctx, 's1'), false)                      // nor the prompt the hold
 }))
 
@@ -365,41 +394,91 @@ test('a readable add_task payload without the epic echo records nothing, even wi
   assert.equal((await stop(ctx, 's1')).out, '')
 }))
 
+test('the first prompt of a session leaves the [TAILS] block to init but remembers its composition', () => withEnv(async (ctx) => {
+  ctx.api.tails = [openTail(50, [51])]
+  const first = await promptContext(ctx)
+  assert.match(first, INIT)
+  assert.doesNotMatch(first, /\[TAILS\]/)
+  rmSync(tailsCache(ctx))
+  const second = await promptContext(ctx)
+  assert.doesNotMatch(second, INIT)
+  assert.doesNotMatch(second, /\[TAILS\]/)                         // same composition: still quiet
+  ctx.api.tails = [openTail(50, [51, 52])]
+  rmSync(tailsCache(ctx))
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-50 Epic 50 — open: task-51, task-52'])
+}))
+
+test('a closable tail keeps the close action the server suggests', () => withEnv(async (ctx) => {
+  ctx.api.tails = [closableTail(60)]
+  await pastFirstPrompt(ctx)
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-60 Epic 60 — Close epic task-60 with a resolution'])
+}))
+
+test('a tail with no open children listed prints the server action, never an empty "open:"', () => withEnv(async (ctx) => {
+  const { open_tasks: _, ...noList } = closableTail(70)
+  ctx.api.tails = [
+    { ...closableTail(60), closable: false },                     // flag says open, list is empty
+    { ...noList, closable: undefined },                          // neither flag nor list
+  ]
+  await pastFirstPrompt(ctx)
+  const context = await promptContext(ctx)
+  assert.deepEqual(tailLines(context), [
+    '[TAILS] task-60 Epic 60 — Close epic task-60 with a resolution',
+    '[TAILS] task-70 Epic 70 — Close epic task-70 with a resolution',
+  ])
+  assert.doesNotMatch(context, /open:/)
+}))
+
+test('a tail with open children is a reference to them, never an order to finish them', () => withEnv(async (ctx) => {
+  ctx.api.tails = [openTail(50, [52, 51]), closableTail(60)]
+  await pastFirstPrompt(ctx)
+  const context = await promptContext(ctx)
+  assert.deepEqual(tailLines(context), [
+    '[TAILS] task-50 Epic 50 — open: task-52, task-51',             // in the order the server sent
+    '[TAILS] task-60 Epic 60 — Close epic task-60 with a resolution',
+  ])
+  assert.doesNotMatch(context, /Finish/)
+}))
+
+test('a tails cache written in the old ready-made line format is not served', () => withEnv(async (ctx) => {
+  ctx.api.tails = [openTail(50, [51])]
+  await pastFirstPrompt(ctx)
+  writeFileSync(tailsCache(ctx), JSON.stringify({
+    fetched_at: Date.now(), ok: true,
+    lines: ['[TAILS] task-50 Epic 50 — Finish task-51, then close epic task-50 with a resolution'],
+  }))
+  const context = await promptContext(ctx)
+  assert.deepEqual(tailLines(context), ['[TAILS] task-50 Epic 50 — open: task-51'])
+  assert.doesNotMatch(context, /Finish/)
+}))
+
 test('the UserPromptSubmit [TAILS] block is printed only when its composition changes', () => withEnv(async (ctx) => {
-  const cache = join(ctx.dataDir, 'hook_state', 'epic_tails_11.json')
-  const prompt = async (session) => {
-    const { out } = await runHook('user-prompt-submit.js', { session_id: session, prompt: 'hi' }, ctx)
-    return out ? JSON.parse(out).hookSpecificOutput.additionalContext : ''
-  }
-  const tail = (id, action) => ({ epic_id: id, title: `Epic ${id}`, suggested_action: action })
-
-  ctx.api.tails = [tail(50, 'Finish task-51, then close epic task-50 with a resolution')]
-  assert.match(await prompt('s1'), /\[TAILS\] task-50/)
-  assert.doesNotMatch(await prompt('s1'), /\[TAILS\]/)          // cached, unchanged
+  const cache = tailsCache(ctx)
+  ctx.api.tails = [openTail(50, [51])]
+  await pastFirstPrompt(ctx)
+  assert.match(await promptContext(ctx), /\[TAILS\] task-50/)
+  assert.doesNotMatch(await promptContext(ctx), /\[TAILS\]/)       // cached, unchanged
   rmSync(cache)
-  assert.doesNotMatch(await prompt('s1'), /\[TAILS\]/)          // re-fetched, unchanged
-  assert.match(await prompt('s2'), /\[TAILS\] task-50/)         // a new session sees it once
+  assert.doesNotMatch(await promptContext(ctx), /\[TAILS\]/)       // re-fetched, unchanged
+  assert.doesNotMatch(await promptContext(ctx, 's2'), /\[TAILS\]/) // a new session: init shows it
+  assert.doesNotMatch(await promptContext(ctx, 's2'), /\[TAILS\]/) // and it stays quiet after
 
-  ctx.api.tails = [tail(50, 'Close epic task-50 with a resolution')]
+  ctx.api.tails = [closableTail(50)]
   rmSync(cache)
-  const changed = await prompt('s1')
-  assert.match(changed, /\[TAILS\] task-50 Epic 50 — Close epic task-50/)
+  assert.match(await promptContext(ctx), /\[TAILS\] task-50 Epic 50 — Close epic task-50/)
   assert.ok(JSON.parse(readFileSync(cache, 'utf8')).ok)
 }))
 
 test('a failed tails fetch neither prints nor resets what the session was shown', () => withEnv(async (ctx) => {
-  const cache = join(ctx.dataDir, 'hook_state', 'epic_tails_11.json')
-  const prompt = async () => {
-    const { out } = await runHook('user-prompt-submit.js', { session_id: 's1', prompt: 'hi' }, ctx)
-    return out ? JSON.parse(out).hookSpecificOutput.additionalContext : ''
-  }
-  ctx.api.tails = [{ epic_id: 50, title: 'Epic 50', suggested_action: 'Close epic task-50 with a resolution' }]
-  assert.match(await prompt(), /\[TAILS\] task-50/)
+  const cache = tailsCache(ctx)
+  ctx.api.tails = [closableTail(50)]
+  await pastFirstPrompt(ctx)
+  assert.match(await promptContext(ctx), /\[TAILS\] task-50/)
   rmSync(cache)
   const url = ctx.api.url
   ctx.api.url = 'http://127.0.0.1:1'                             // outage
-  assert.doesNotMatch(await prompt(), /\[TAILS\]/)
+  assert.doesNotMatch(await promptContext(ctx), /\[TAILS\]/)
   ctx.api.url = url
   rmSync(cache)
-  assert.doesNotMatch(await prompt(), /\[TAILS\]/)               // back, unchanged: still quiet
+  assert.doesNotMatch(await promptContext(ctx), /\[TAILS\]/)       // back, unchanged: still quiet
 }))

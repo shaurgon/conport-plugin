@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // UserPromptSubmit: restore context on first prompt, remind to save every N
 // messages, and surface the project's rotting epic tails — only when their
-// composition changed since this session last saw them.
+// composition changed since this session last saw them, and never on the
+// first prompt, where init prints the same tails itself.
 'use strict';
 
 const fs = require('fs');
@@ -111,11 +112,31 @@ function resolveProjectIdentifier() {
   return id;
 }
 
-function writeTailsCache(cachePath, lines, ok) {
+// The cache holds the raw `tails` rows, not printed lines: a cache left by an
+// older hook (ready-made `lines`, possibly carrying the imperative wording)
+// has no `tails` array and is simply a miss, and a future format change
+// cannot be served stale text either.
+function writeTailsCache(cachePath, tails, ok) {
   try {
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify({ fetched_at: Date.now(), lines, ok }));
+    fs.writeFileSync(cachePath, JSON.stringify({ fetched_at: Date.now(), tails, ok }));
   } catch (_) {}
+}
+
+// A tail with no open children keeps the server's one action — close the
+// epic now. A tail with open children is a reference, not an order: this
+// block rides along with every kind of prompt, questions included, and its
+// open children are often not doable yet (a measurement waiting for its
+// observation window). So it lists them from `open_tasks` instead of
+// printing the server's imperative "Finish …" suggested_action. The split is
+// on `open_tasks` itself, not the `closable` flag, so a row whose flag and
+// list disagree never prints an empty "open: ".
+function formatTail(t) {
+  const open = t.open_tasks || [];
+  const note = open.length
+    ? `open: ${open.map((c) => `task-${c.id}`).join(', ')}`
+    : t.suggested_action;
+  return `[TAILS] task-${t.epic_id} ${t.title} — ${note}`;
 }
 
 async function fetchEpicTails() {
@@ -130,8 +151,8 @@ async function fetchEpicTails() {
   try {
     if (fs.existsSync(cachePath)) {
       const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-      if (Array.isArray(cached.lines)) {
-        // `ok` (not "lines is empty") decides the TTL: a 200 with zero
+      if (Array.isArray(cached.tails)) {
+        // `ok` (not "tails is empty") decides the TTL: a 200 with zero
         // tails is the steady state for a healthy, caught-up project and
         // must get the full TTL like any other real hit. Only an actual
         // failure (non-200, thrown error, client-side race timeout) is
@@ -140,7 +161,7 @@ async function fetchEpicTails() {
         // hammer it either.
         const ttl = cached.ok === false ? TAILS_NEGATIVE_CACHE_TTL_MS : TAILS_CACHE_TTL_MS;
         if (Date.now() - cached.fetched_at < ttl) {
-          return { lines: cached.lines, ok: cached.ok !== false };
+          return { lines: cached.tails.map(formatTail), ok: cached.ok !== false };
         }
       }
     }
@@ -167,12 +188,11 @@ async function fetchEpicTails() {
     }
     const tails = (JSON.parse(res.body).tails) || [];
     // No open-count filter: closable tails (0 open) are exactly the
-    // "close it now" reminder this feature exists for. Reuse the existing
-    // [TAILS] format from the conport skill's OUTPUT FORMAT section —
-    // suggested_action carries both cases.
-    const lines = tails.map(
-      (t) => `[TAILS] task-${t.epic_id} ${t.title} — ${t.suggested_action}`);
-    writeTailsCache(cachePath, lines, true);
+    // "close it now" reminder this feature exists for, and tails with open
+    // children are listed too — as a reference to them (see formatTail),
+    // never as an order to finish them.
+    const lines = tails.map(formatTail);
+    writeTailsCache(cachePath, tails, true);
     return { lines, ok: true };
   } catch (_) {
     writeTailsCache(cachePath, [], false);
@@ -194,7 +214,8 @@ async function main() {
   const sessionId = input.session_id || 'unknown';
 
   const messages = [];
-  if (shouldRestoreContext(sessionId)) {
+  const restoring = shouldRestoreContext(sessionId);
+  if (restoring) {
     messages.push('ConPort: run mcp__conport__init() before responding.');
     markSessionRestored(sessionId);
   }
@@ -211,8 +232,13 @@ async function main() {
   }
   saveState(state);
 
+  // On the first prompt init prints these same tails, so the block would be
+  // a duplicate. Its composition is still recorded (tailsChanged runs first),
+  // so the next prompt with the same tails stays quiet too.
   const tails = await fetchEpicTails();
-  if (tails.ok && tailsChanged(sessionId, tails.lines)) messages.push(...tails.lines);
+  if (tails.ok && tailsChanged(sessionId, tails.lines) && !restoring) {
+    messages.push(...tails.lines);
+  }
 
   if (messages.length) {
     process.stdout.write(JSON.stringify({
