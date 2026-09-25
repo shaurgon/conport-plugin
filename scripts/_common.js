@@ -70,6 +70,34 @@ function request(method, urlStr, { headers = {}, body = null, timeoutMs = 10000 
   });
 }
 
+// Per-session record of the epics this session changed: the PostToolUse hook
+// appends one JSON line per touch, the Stop hook reads them. Keyed by session
+// id — another session's epics are not this session's tails. Append-only
+// because parallel tool calls run their hooks concurrently: a
+// read-modify-write of one JSON document would drop records.
+function sessionEpicsPath(sessionId) {
+  const dir = path.join(dataDir(), 'hook_state');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `session_epics_${encodeURIComponent(sessionId)}.jsonl`);
+}
+
+// Distinct epics in first-touch order; the latest non-empty title wins.
+function loadSessionEpics(sessionId) {
+  let raw = '';
+  try { raw = fs.readFileSync(sessionEpicsPath(sessionId), 'utf8'); } catch (_) { return []; }
+  const byKey = new Map();
+  for (const line of raw.split('\n')) {
+    let rec;
+    try { rec = JSON.parse(line); } catch (_) { continue; }
+    if (!rec || typeof rec.project !== 'string' || !Number.isInteger(rec.epic_id)) continue;
+    const key = `${rec.project}:${rec.epic_id}`;
+    const prev = byKey.get(key);
+    if (!prev) byKey.set(key, { project: rec.project, epic_id: rec.epic_id, title: rec.title || '' });
+    else if (rec.title) prev.title = rec.title;
+  }
+  return [...byKey.values()];
+}
+
 function readStdin() {
   return new Promise((resolve) => {
     let raw = '';
@@ -82,5 +110,5 @@ function readStdin() {
 
 module.exports = {
   CONPORT_URL, dataDir, detectProjectIdentifier, detectProjectIdentifierFromEnv,
-  authHeader, request, readStdin,
+  authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
 };

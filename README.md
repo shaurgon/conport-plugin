@@ -20,7 +20,9 @@ and skills work across many clients.
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns
-  - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing
+  - `PostToolUse(add_task / update_task)` — records the epics this session changed
+  - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing, printed only when its composition changed
+  - `Stop` — holds the end of the turn once while an epic this session changed still has open children, and lists them (epics that grew after work started first)
   - `SessionEnd` — LLM-based reflection of unsaved decisions
 
 ## Install — one line, any agent

@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.42.0
+The epic-tails reminder now watches the epics your session actually touched. A new Stop hook records every epic the session changed — a task added under it, a child's status moved — and when the turn ends while any of those epics still has open children, it holds the turn once and lists them: if the turn reports the work as done, it is not, and the open children must be named to the user; otherwise the turn ends as planned. The "at most three open" threshold of the `[TAILS]` block no longer hides these session epics, and an epic that grew after work started is shown first. The `[TAILS]` block on each user message is now printed only when its composition changed since the previous message, instead of repeating the same text every time.
+
 ## 15.41.0
 Architecture diagrams are now authored the way a person draws them: the spec places every box on a grid (`layout` plus `row`/`col`, or an absolute `pos`/`size`), declares zones as `boundaries` that wrap component ids, gives each box a `type` for its colour and a `sublabel` for its file or role, and may name which side a connection leaves and enters. The dashboard does the cell math, frames the zones, spreads ports along a side and routes every connection orthogonally around other boxes — it does not lay out for you, because no engine recovers the composition of a forty-box map. Half-placed specs are refused; specs without placement still draw as stacked bands. Keys the contract does not name are ignored, so a spec written for another renderer ports without editing. The conport skill and the `projects/architecture-diagrams` live-docs page carry the contract with a valid example.
 

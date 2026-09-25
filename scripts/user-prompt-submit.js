@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // UserPromptSubmit: restore context on first prompt, remind to save every N
-// messages, and surface the project's rotting epic tails.
+// messages, and surface the project's rotting epic tails — only when their
+// composition changed since this session last saw them.
 'use strict';
 
 const fs = require('fs');
@@ -120,7 +121,7 @@ function writeTailsCache(cachePath, lines, ok) {
 async function fetchEpicTails() {
   // Cached, time-boxed, silent-failure: the hook must never slow a prompt.
   const project = resolveProjectIdentifier();
-  if (!project) return [];
+  if (!project) return { lines: [], ok: false };
   // The data dir is machine-global, so the cache file is keyed by project —
   // otherwise a session in another repo is served the first project's tails
   // (its epic ids!) for the rest of the TTL.
@@ -139,7 +140,7 @@ async function fetchEpicTails() {
         // hammer it either.
         const ttl = cached.ok === false ? TAILS_NEGATIVE_CACHE_TTL_MS : TAILS_CACHE_TTL_MS;
         if (Date.now() - cached.fetched_at < ttl) {
-          return cached.lines;
+          return { lines: cached.lines, ok: cached.ok !== false };
         }
       }
     }
@@ -149,7 +150,7 @@ async function fetchEpicTails() {
     // authHeader() returns {} when no key (truthy!) — gate on the header itself.
     // No cache write here: this path never spends a request or a subprocess,
     // so there's nothing to protect against re-spending on the next prompt.
-    if (!auth.Authorization) return [];
+    if (!auth.Authorization) return { lines: [], ok: false };
     // request() resolves {status, body} with body a RAW STRING — parse it.
     const pending = request('GET',
       `${CONPORT_URL}/api/v1/projects/${encodeURIComponent(project)}/epic-tails`,
@@ -162,7 +163,7 @@ async function fetchEpicTails() {
     })]);
     if (!res || res.status !== 200) {
       writeTailsCache(cachePath, [], false);
-      return [];
+      return { lines: [], ok: false };
     }
     const tails = (JSON.parse(res.body).tails) || [];
     // No open-count filter: closable tails (0 open) are exactly the
@@ -172,11 +173,29 @@ async function fetchEpicTails() {
     const lines = tails.map(
       (t) => `[TAILS] task-${t.epic_id} ${t.title} — ${t.suggested_action}`);
     writeTailsCache(cachePath, lines, true);
-    return lines;
+    return { lines, ok: true };
   } catch (_) {
     writeTailsCache(cachePath, [], false);
-    return [];
+    return { lines: [], ok: false };
   }
+}
+
+// The block used to be printed on every prompt, weeks on end with the same
+// text — noise the agent learns to skip. It is printed only when its
+// composition differs from what this session was last shown. A failed fetch
+// says nothing about the composition, so it neither prints nor resets.
+function tailsChanged(sessionId, lines) {
+  const p = path.join(dataDir(), 'hook_state',
+    `tails_shown_${encodeURIComponent(sessionId)}.json`);
+  const fingerprint = lines.join('\n');
+  try {
+    if (JSON.parse(fs.readFileSync(p, 'utf8')).fingerprint === fingerprint) return false;
+  } catch (_) {}
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify({ fingerprint }));
+  } catch (_) {}
+  return true;
 }
 
 async function main() {
@@ -202,8 +221,8 @@ async function main() {
   }
   saveState(state);
 
-  const tailLines = await fetchEpicTails();
-  messages.push(...tailLines);
+  const tails = await fetchEpicTails();
+  if (tails.ok && tailsChanged(sessionId, tails.lines)) messages.push(...tails.lines);
 
   if (messages.length) {
     process.stdout.write(JSON.stringify({
