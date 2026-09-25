@@ -9,7 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const {
   CONPORT_URL, dataDir, detectProjectIdentifier, detectProjectIdentifierFromEnv,
-  authHeader, request, readStdin,
+  authHeader, request, readStdin, fingerprintChanged,
 } = require('./_common.js');
 
 const MESSAGES_BEFORE_REMINDER = 5;
@@ -185,17 +185,7 @@ async function fetchEpicTails() {
 // composition differs from what this session was last shown. A failed fetch
 // says nothing about the composition, so it neither prints nor resets.
 function tailsChanged(sessionId, lines) {
-  const p = path.join(dataDir(), 'hook_state',
-    `tails_shown_${encodeURIComponent(sessionId)}.json`);
-  const fingerprint = lines.join('\n');
-  try {
-    if (JSON.parse(fs.readFileSync(p, 'utf8')).fingerprint === fingerprint) return false;
-  } catch (_) {}
-  try {
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, JSON.stringify({ fingerprint }));
-  } catch (_) {}
-  return true;
+  return fingerprintChanged('tails_shown', sessionId, lines.join('\n'));
 }
 
 async function main() {

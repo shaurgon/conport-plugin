@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Stop: the end of the turn is where "done" gets said. If an epic this
 // session changed (see track-session-epics.js) still has open children, hold
-// the turn once and hand the agent the list. No session epics → no output,
-// no request. Any failure → silent: an outage must never trap a turn.
+// the turn once and hand the agent the list — once per composition of those
+// tails: a later turn on the same list ends freely. No session epics → no
+// output, no request. Any failure → silent: an outage must never trap a turn.
 'use strict';
 
 const {
-  CONPORT_URL, authHeader, request, readStdin, loadSessionEpics,
+  CONPORT_URL, authHeader, request, readStdin, loadSessionEpics, fingerprintChanged,
 } = require('./_common.js');
 
 const PAGE_LIMIT = 200;
@@ -94,6 +95,16 @@ function formatReason(tails) {
   return lines.join('\n');
 }
 
+// What the hold is about: which epics, which children are open and in what
+// status. Titles are left out — a rename is not a new tail.
+function composition(tails) {
+  return tails
+    .map((t) => `${t.project}:${t.epic_id}=` +
+      t.open.map((c) => `${c.id}:${c.status}`).join(','))
+    .sort()
+    .join('\n');
+}
+
 async function main() {
   let input;
   try { input = JSON.parse(await readStdin()); } catch (_) { process.exit(0); }
@@ -116,7 +127,18 @@ async function main() {
   } catch (_) {
     process.exit(0);
   }
-  if (!tails || !tails.length) process.exit(0);
+  // Timed out: the composition is unknown, so the memory is left as it was.
+  if (!tails) process.exit(0);
+  const sid = input.session_id || 'unknown';
+  // Nothing open is a composition too: record it, so a child reopened later
+  // is a change and is held again.
+  if (!tails.length) {
+    fingerprintChanged('stop_tails_held', sid, '');
+    process.exit(0);
+  }
+  // The stop_hook_active guard lasts one stop cycle; without this the same
+  // list held every turn of the session. Hold again only on a new composition.
+  if (!fingerprintChanged('stop_tails_held', sid, composition(tails))) process.exit(0);
 
   process.stdout.write(JSON.stringify({ decision: 'block', reason: formatReason(tails) }));
   process.exit(0);

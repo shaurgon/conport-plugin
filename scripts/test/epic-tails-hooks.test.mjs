@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -155,6 +155,106 @@ test('Stop holds a turn only once per stop cycle', () => withEnv(async (ctx) => 
   await addUnderEpic(ctx, 's1', 50, 51)
   ctx.api.children = [child(51, 50, 'TODO')]
   assert.equal((await stop(ctx, 's1', { stop_hook_active: true })).out, '')
+}))
+
+const held = async (ctx, session) => {
+  const { code, out } = await stop(ctx, session)
+  assert.equal(code, 0)
+  return out ? JSON.parse(out).decision === 'block' : false
+}
+
+test('Stop does not hold a later turn on the same composition of tails', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO'), child(52, 50, 'IN_PROGRESS')]
+  assert.equal(await held(ctx, 's1'), true)
+  assert.equal((await stop(ctx, 's1')).out, '')                   // next turn, same tails
+  ctx.api.children = [child(51, 50, 'TODO', { title: 'renamed' }), child(52, 50, 'IN_PROGRESS')]
+  assert.equal(await held(ctx, 's1'), false)                      // a title is not composition
+  assert.equal(await held(ctx, 's2'), false)                      // s2 changed no epic
+  await addUnderEpic(ctx, 's2', 50, 51)
+  assert.equal(await held(ctx, 's2'), true)                       // per-session memory
+}))
+
+test('Stop holds again once the composition of tails changes', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO'), child(52, 50, 'TODO')]
+  assert.equal(await held(ctx, 's1'), true)
+
+  ctx.api.children = [child(51, 50, 'IN_PROGRESS'), child(52, 50, 'TODO')]
+  assert.equal(await held(ctx, 's1'), true)                       // a status changed
+  assert.equal(await held(ctx, 's1'), false)
+
+  ctx.api.children = [child(51, 50, 'IN_PROGRESS'), child(52, 50, 'DONE')]
+  assert.equal(await held(ctx, 's1'), true)                       // a child closed
+  assert.equal(await held(ctx, 's1'), false)
+
+  ctx.api.children.push(child(53, 50, 'TODO'))
+  assert.equal(await held(ctx, 's1'), true)                       // a new child appeared
+  assert.equal(await held(ctx, 's1'), false)
+
+  await addUnderEpic(ctx, 's1', 60, 61)
+  ctx.api.children.push(child(61, 60, 'TODO'))
+  const reason = JSON.parse((await stop(ctx, 's1')).out).reason   // a new epic joined
+  assert.match(reason, /task-50 Epic 50 — 2 open/)
+  assert.match(reason, /task-60 Epic 60 — 1 open/)
+  assert.equal(await held(ctx, 's1'), false)
+}))
+
+test('a child reopened after every tail closed is held again', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]
+  assert.equal(await held(ctx, 's1'), true)
+  ctx.api.children = [child(51, 50, 'DONE')]
+  assert.equal(await held(ctx, 's1'), false)                      // nothing open
+  ctx.api.children = [child(51, 50, 'TODO')]
+  assert.equal(await held(ctx, 's1'), true)                       // reopened: a change
+  assert.equal(await held(ctx, 's1'), false)
+}))
+
+test('a failed Stop fetch neither holds nor resets the held composition', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]
+  assert.equal(await held(ctx, 's1'), true)
+  const url = ctx.api.url
+  ctx.api.url = 'http://127.0.0.1:1'                             // outage
+  assert.equal(await held(ctx, 's1'), false)
+  ctx.api.url = url
+  assert.equal(await held(ctx, 's1'), false)                      // back, unchanged: still quiet
+}))
+
+test('an unwritable Stop memory still holds the turn rather than losing it', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]
+  const state = join(ctx.dataDir, 'hook_state')
+  chmodSync(state, 0o500)
+  try {
+    assert.equal(await held(ctx, 's1'), true)
+  } finally {
+    chmodSync(state, 0o700)
+  }
+}))
+
+test('the Stop hold and the UserPromptSubmit [TAILS] block keep separate memories', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]
+  ctx.api.tails = [{ epic_id: 50, title: 'Epic 50', suggested_action: 'Finish task-51, then close epic task-50' }]
+  const prompt = async () => {
+    const { out } = await runHook('user-prompt-submit.js', { session_id: 's1', prompt: 'hi' }, ctx)
+    return out ? JSON.parse(out).hookSpecificOutput.additionalContext : ''
+  }
+  assert.match(await prompt(), /\[TAILS\] task-50/)
+  assert.equal(await held(ctx, 's1'), true)                       // the prompt block did not count
+  assert.doesNotMatch(await prompt(), /\[TAILS\]/)                // the hold did not reset it
+  assert.equal(await held(ctx, 's1'), false)                      // nor the prompt the hold
+}))
+
+test('an unreadable Stop memory counts as changed, so the turn is held rather than lost', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]
+  assert.equal(await held(ctx, 's1'), true)
+  writeFileSync(join(ctx.dataDir, 'hook_state', 'stop_tails_held_s1.json'), 'not json')
+  assert.equal(await held(ctx, 's1'), true)
+  assert.equal(await held(ctx, 's1'), false)
 }))
 
 test('an epic that grew after work started is listed first', () => withEnv(async (ctx) => {

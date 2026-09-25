@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.42.1
+The Stop hook for epic tails no longer holds every turn with the same list. It holds a turn once per composition of the open children of the session's epics — which epics, which children are open, and their statuses — and lets later turns end freely until that composition changes: a child closes or changes status, a new child appears, or another epic joins. It keeps its own per-session memory, separate from the `[TAILS]` block printed on user messages.
+
 ## 15.42.0
 The epic-tails reminder now watches the epics your session actually touched. A new Stop hook records every epic the session changed — a task added under it, a child's status moved — and when the turn ends while any of those epics still has open children, it holds the turn once and lists them: if the turn reports the work as done, it is not, and the open children must be named to the user; otherwise the turn ends as planned. The "at most three open" threshold of the `[TAILS]` block no longer hides these session epics, and an epic that grew after work started is shown first. The `[TAILS]` block on each user message is now printed only when its composition changed since the previous message, instead of repeating the same text every time.
 

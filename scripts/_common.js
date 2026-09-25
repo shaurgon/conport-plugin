@@ -98,6 +98,29 @@ function loadSessionEpics(sessionId) {
   return [...byKey.values()];
 }
 
+// Per-session "last shown" memory of a hook, so a hook repeats itself only
+// when what it would say changed. True — and the new fingerprint recorded —
+// when `fingerprint` differs from the one stored under `name` for this
+// session. An unreadable record counts as changed; a failed write still
+// answers changed (the hook speaks this once rather than never). Never throws.
+function fingerprintChanged(name, sessionId, fingerprint) {
+  let p;
+  try {
+    p = path.join(dataDir(), 'hook_state',
+      `${name}_${encodeURIComponent(sessionId)}.json`);
+  } catch (_) {
+    return true;
+  }
+  try {
+    if (JSON.parse(fs.readFileSync(p, 'utf8')).fingerprint === fingerprint) return false;
+  } catch (_) {}
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify({ fingerprint }));
+  } catch (_) {}
+  return true;
+}
+
 function readStdin() {
   return new Promise((resolve) => {
     let raw = '';
@@ -111,4 +134,5 @@ function readStdin() {
 module.exports = {
   CONPORT_URL, dataDir, detectProjectIdentifier, detectProjectIdentifierFromEnv,
   authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
+  fingerprintChanged,
 };
