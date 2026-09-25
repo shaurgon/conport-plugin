@@ -2,8 +2,10 @@
 // Stop: the end of the turn is where "done" gets said. If an epic this
 // session changed (see track-session-epics.js) still has open children, hold
 // the turn once and hand the agent the list — once per composition of those
-// tails: a later turn on the same list ends freely. No session epics → no
-// output, no request. Any failure → silent: an outage must never trap a turn.
+// tails: a later turn on the same list ends freely. Only the epics the nearest
+// release milestone waits for are listed; a roadmap with no release point
+// lists them all and says to create one. No session epics → no output, no
+// request. Any failure → silent: an outage must never trap a turn.
 'use strict';
 
 const {
@@ -55,6 +57,28 @@ function grewAfterStart(children) {
   return children.some((c) => isOpen(c.status) && Date.parse(c.created_at) > firstStart);
 }
 
+// The epics the nearest release waits for: those attached to the open
+// milestones up to and including the first open release point. `null` when
+// the roadmap has no open release point. Throws when the roadmap is
+// unreadable — the caller then falls back to every session epic.
+async function releaseScope(project, auth) {
+  const res = await request('GET',
+    `${CONPORT_URL}/api/v1/projects/${encodeURIComponent(project)}/milestones`,
+    { headers: auth, timeoutMs: REQUEST_TIMEOUT_MS });
+  if (res.status !== 200) throw new Error(`status ${res.status}`);
+  const milestones = JSON.parse(res.body);
+  if (!Array.isArray(milestones)) throw new Error('not a list');
+  const ordered = [...milestones].sort((a, b) => a.sequence - b.sequence);
+  const release = ordered.find((m) => m.is_release);
+  if (!release) return null;
+  const ids = new Set();
+  for (const m of ordered) {
+    if (m.sequence > release.sequence) break;
+    for (const e of m.epics || []) ids.add(e.task_id);
+  }
+  return ids;
+}
+
 async function collectTails(epics, auth) {
   const byProject = new Map();
   for (const e of epics) {
@@ -62,7 +86,17 @@ async function collectTails(epics, auth) {
     byProject.get(e.project).push(e);
   }
   const tails = [];
-  for (const [project, projectEpics] of byProject) {
+  const noRelease = [];
+  for (const [project, sessionEpics] of byProject) {
+    // Work after the nearest release, or on no milestone at all, is not
+    // what this turn's "done" is about — only what the release waits for.
+    let scope;
+    try { scope = await releaseScope(project, auth); } catch (_) { scope = undefined; }
+    if (scope === null) noRelease.push(project);
+    const projectEpics = scope instanceof Set
+      ? sessionEpics.filter((e) => scope.has(e.epic_id))
+      : sessionEpics;
+    if (!projectEpics.length) continue;
     const children = await fetchChildren(
       project, projectEpics.map((e) => e.epic_id), auth);
     for (const epic of projectEpics) {
@@ -74,13 +108,16 @@ async function collectTails(epics, auth) {
   }
   // Grown epics first — work appended after the start is exactly what gets
   // forgotten; otherwise the order in which the session touched them.
-  return tails
+  const ordered = tails
     .map((t, i) => ({ t, i }))
     .sort((a, b) => (Number(b.t.grew) - Number(a.t.grew)) || (a.i - b.i))
     .map(({ t }) => t);
+  // A missing release point is only worth saying next to a tail of its project.
+  const listed = new Set(ordered.map((t) => t.project));
+  return { tails: ordered, noRelease: noRelease.filter((p) => listed.has(p)) };
 }
 
-function formatReason(tails) {
+function formatReason(tails, noRelease) {
   const lines = [
     '[TAILS] If this turn reports the work as done, it is not — these children ' +
       'of epics changed in this session are still open; name them to the user. ' +
@@ -92,15 +129,21 @@ function formatReason(tails) {
     lines.push(`[TAILS] task-${t.epic_id}${title}${grew} — ${t.open.length} open`);
     for (const c of t.open) lines.push(`  · task-${c.id} [${c.status}] ${c.title}`);
   }
+  for (const p of noRelease) {
+    lines.push(`[TAILS] Project ${p} has no release milestone on its roadmap — ` +
+      'create one (add_milestone with is_release=true) and attach the epics ' +
+      'it ships to the milestones before it.');
+  }
   return lines.join('\n');
 }
 
-// What the hold is about: which epics, which children are open and in what
-// status. Titles are left out — a rename is not a new tail.
-function composition(tails) {
+// What the hold is about: which epics, which children are open, and whether
+// a release point is missing. Titles and statuses are left out — a rename or
+// a TODO → IN_PROGRESS move is not a new tail.
+function composition(tails, noRelease) {
   return tails
-    .map((t) => `${t.project}:${t.epic_id}=` +
-      t.open.map((c) => `${c.id}:${c.status}`).join(','))
+    .map((t) => `${t.project}:${t.epic_id}=` + t.open.map((c) => c.id).join(','))
+    .concat(noRelease.map((p) => `${p}:no-release`))
     .sort()
     .join('\n');
 }
@@ -118,9 +161,9 @@ async function main() {
   const auth = authHeader();
   if (!auth.Authorization) process.exit(0);
 
-  let tails;
+  let found;
   try {
-    tails = await Promise.race([
+    found = await Promise.race([
       collectTails(epics, auth),
       new Promise((resolve) => { setTimeout(() => resolve(null), TOTAL_BUDGET_MS).unref(); }),
     ]);
@@ -128,7 +171,8 @@ async function main() {
     process.exit(0);
   }
   // Timed out: the composition is unknown, so the memory is left as it was.
-  if (!tails) process.exit(0);
+  if (!found) process.exit(0);
+  const { tails, noRelease } = found;
   const sid = input.session_id || 'unknown';
   // Nothing open is a composition too: record it, so a child reopened later
   // is a change and is held again.
@@ -138,9 +182,9 @@ async function main() {
   }
   // The stop_hook_active guard lasts one stop cycle; without this the same
   // list held every turn of the session. Hold again only on a new composition.
-  if (!fingerprintChanged('stop_tails_held', sid, composition(tails))) process.exit(0);
+  if (!fingerprintChanged('stop_tails_held', sid, composition(tails, noRelease))) process.exit(0);
 
-  process.stdout.write(JSON.stringify({ decision: 'block', reason: formatReason(tails) }));
+  process.stdout.write(JSON.stringify({ decision: 'block', reason: formatReason(tails, noRelease) }));
   process.exit(0);
 }
 

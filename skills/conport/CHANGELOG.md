@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.42.2
+The Stop hook for epic tails now lists only the epics the nearest release waits for: those attached to the open milestones up to and including the first open release milestone. Epics after the release, or on no milestone, no longer hold the turn. When the roadmap has no release milestone, every session tail is listed together with a reminder to create one (`add_milestone` with `is_release=true`). A child's status change (for example TODO → IN_PROGRESS) is no longer a new composition, so it does not hold the turn again.
+
 ## 15.42.1
 The Stop hook for epic tails no longer holds every turn with the same list. It holds a turn once per composition of the open children of the session's epics — which epics, which children are open, and their statuses — and lets later turns end freely until that composition changes: a child closes or changes status, a new child appears, or another epic joins. It keeps its own per-session memory, separate from the `[TAILS]` block printed on user messages.
 

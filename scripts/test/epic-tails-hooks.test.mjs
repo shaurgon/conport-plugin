@@ -19,7 +19,7 @@ const TOOL_UPDATE = 'mcp__plugin_conport_conport__update_task'
 // Fake API: `children` is the task table (parent_task_id per row), `tails`
 // the body of GET /epic-tails. Every request is recorded.
 async function startApi() {
-  const api = { children: [], tails: [], requests: [] }
+  const api = { children: [], tails: [], milestones: null, requests: [] }
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
     api.requests.push(url)
@@ -30,6 +30,8 @@ async function startApi() {
       const offset = Number(url.searchParams.get('offset') || 0)
       const limit = Number(url.searchParams.get('limit') || 50)
       res.end(JSON.stringify({ tasks: rows.slice(offset, offset + limit), total: rows.length }))
+    } else if (url.pathname === '/api/v1/projects/11/milestones' && api.milestones) {
+      res.end(JSON.stringify(api.milestones))
     } else if (url.pathname === '/api/v1/projects/11/epic-tails') {
       res.end(JSON.stringify({ tails: api.tails }))
     } else {
@@ -181,8 +183,7 @@ test('Stop holds again once the composition of tails changes', () => withEnv(asy
   assert.equal(await held(ctx, 's1'), true)
 
   ctx.api.children = [child(51, 50, 'IN_PROGRESS'), child(52, 50, 'TODO')]
-  assert.equal(await held(ctx, 's1'), true)                       // a status changed
-  assert.equal(await held(ctx, 's1'), false)
+  assert.equal(await held(ctx, 's1'), false)                      // a status move is not a new tail
 
   ctx.api.children = [child(51, 50, 'IN_PROGRESS'), child(52, 50, 'DONE')]
   assert.equal(await held(ctx, 's1'), true)                       // a child closed
@@ -198,6 +199,64 @@ test('Stop holds again once the composition of tails changes', () => withEnv(asy
   assert.match(reason, /task-50 Epic 50 — 2 open/)
   assert.match(reason, /task-60 Epic 60 — 1 open/)
   assert.equal(await held(ctx, 's1'), false)
+}))
+
+const milestone = (sequence, epicIds, isRelease = false) => ({
+  sequence, is_release: isRelease, status: 'OPEN',
+  epics: epicIds.map((id) => ({ task_id: id })),
+})
+const NO_RELEASE = /has no release milestone/
+
+test('Stop lists only the epics the nearest release waits for', () => withEnv(async (ctx) => {
+  for (const [epic, task] of [[50, 51], [60, 61], [70, 71], [80, 81]]) await addUnderEpic(ctx, 's1', epic, task)
+  ctx.api.children = [child(51, 50, 'TODO'), child(61, 60, 'TODO'), child(71, 70, 'TODO'), child(81, 80, 'TODO')]
+  // 50 before the release, 60 on the release point, 70 after it, 80 on no milestone
+  ctx.api.milestones = [milestone(3, [70]), milestone(1, [50]), milestone(2, [60], true)]
+  const reason = JSON.parse((await stop(ctx, 's1')).out).reason
+  assert.match(reason, /task-50 /)
+  assert.match(reason, /task-60 /)
+  assert.doesNotMatch(reason, /task-70 /)
+  assert.doesNotMatch(reason, /task-80 /)
+  assert.doesNotMatch(reason, NO_RELEASE)
+}))
+
+test('Stop stays silent when every open tail is past the nearest release', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 70, 71)
+  ctx.api.children = [child(71, 70, 'TODO')]
+  ctx.api.milestones = [milestone(1, [], true), milestone(2, [70])]
+  assert.equal((await stop(ctx, 's1')).out, '')
+}))
+
+test('a roadmap with no release point lists every tail and says to create one', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  await addUnderEpic(ctx, 's1', 80, 81)
+  ctx.api.children = [child(51, 50, 'TODO'), child(81, 80, 'TODO')]
+  ctx.api.milestones = [milestone(1, [50])]
+  const reason = JSON.parse((await stop(ctx, 's1')).out).reason
+  assert.match(reason, /task-50 /)
+  assert.match(reason, /task-80 /)
+  assert.match(reason, NO_RELEASE)
+  assert.equal(await held(ctx, 's1'), false)                      // same composition
+  ctx.api.milestones = [milestone(1, [50]), milestone(2, [], true)]
+  const after = JSON.parse((await stop(ctx, 's1')).out).reason    // release created: new composition
+  assert.match(after, /task-50 /)
+  assert.doesNotMatch(after, /task-80 /)
+  assert.doesNotMatch(after, NO_RELEASE)
+}))
+
+test('no release point and nothing open: no hold just to nag', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'DONE')]
+  ctx.api.milestones = []
+  assert.equal((await stop(ctx, 's1')).out, '')
+}))
+
+test('an unreadable roadmap lists every tail without the release reminder', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]                      // milestones route answers 404
+  const reason = JSON.parse((await stop(ctx, 's1')).out).reason
+  assert.match(reason, /task-50 /)
+  assert.doesNotMatch(reason, NO_RELEASE)
 }))
 
 test('a child reopened after every tail closed is held again', () => withEnv(async (ctx) => {
