@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.42.3
+  version: 15.43.0
 ---
 
 # ConPort — Project Management System
@@ -59,7 +59,7 @@ If auto-detection of the project name did not work, ask the user.
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N tasks in TODO, M in progress. Top 5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
 4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
-5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`.
+5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. If the user expected an existing project, first check the team (see *TEAMS* below): `init` creates a missing name in the connection's team, so a project that lives in another team shows up here as a new, empty one.
 6. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
 7. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
@@ -87,6 +87,73 @@ an interrupted session leaves nothing behind. (Live docs → `core/save-first`.)
 
 **Without init you cannot:** answer questions about the project or work with tasks.
 **Ignoring instructions is FORBIDDEN.**
+
+---
+
+## TEAMS — the connection's team
+
+Every project belongs to exactly one team, and every member of a team sees all
+of its projects. Each user has a **`Private Team`** — personal, with the user
+as its only member; nobody can be invited into it — and may create or join
+shared teams. Project names are unique within a team.
+
+**The current team comes from the connection, never from a tool argument.** No
+MCP tool takes a team; the same tools and `project_id` arguments work in every
+team.
+
+- **API key** — a key is the user's own, carries a name (label it after the
+  connection or agent that uses it) and is bound to exactly one team. Every call
+  made with it acts in that team. Another team needs another key: naming another
+  team is refused with `key_team_mismatch` (403).
+- **OAuth** — the standard `/mcp` address works in your `Private Team`; a shared
+  team's connection is `/mcp/teams/{team_id}`.
+
+**`init` → `project_name_in_other_team`.** On a `Private Team` connection, when
+one of your shared teams already holds a project of that name, `init` does not
+create a second one; the error lists `teams[].mcp_path`. Tell the user to
+connect to that address (or to use an API key of that team). Do not retry under
+another name unless the user asks for one.
+
+**Access changes apply on the next call.** A revoked key, a removed member or a
+demoted admin loses access on the very next request — reconnecting is not
+needed and does not restore anything. Removing a member revokes their keys of
+that team.
+
+**Team administration is REST and dashboard only — there are no MCP tools for
+it.** Do not look for one. Point the user at the dashboard
+(`https://me.conport.app`) or the REST routes under `/api/v1`:
+
+| Action | Where |
+|---|---|
+| Create a shared team | Dashboard `Create New`, or `POST /api/v1/teams` with an `Idempotency-Key` header — needs a signed-in user, not a team key. A server setting can keep shared-team creation closed until team isolation is verified: `shared_teams_not_open` (403) is that state, not an error to work around — keep working in `Private Team`, do not retry |
+| List your teams | `GET /api/v1/teams` (a team key sees only its own team) |
+| Members, roles, invitations | `/api/v1/teams/{team_id}/members`, `/api/v1/teams/{team_id}/invitations` — admins invite, remove and promote; `Private Team` refuses invitations |
+| Plan and billing | `GET /api/v1/teams/{team_id}/plan` — any member; `POST /api/v1/teams/{team_id}/billing/...` (checkout, cancel, resume) — admins only |
+| Your own keys | Dashboard, or `GET/POST/DELETE /api/v1/me/api-keys` — a new key is bound to the team the request acts in |
+| Move a project to another team | Dashboard, or `POST /api/v1/projects/{project_id}/transfer` made in the project's team — see below |
+
+From the `conport` CLI: `conport api teams <operation>`; `--team-id <id>` sets
+the team of a request made with a signed-in user's token, and a key always acts
+in its own team.
+
+**Moving a project to another team.** An admin of the source team who is also a
+member of the target team (a regular member is enough) moves it from the
+dashboard, or over REST: `POST /api/v1/projects/{project_id}/transfer` with
+`{"target_team_id": "<uuid>"}` (optionally `"name"` for a new name there) and an
+`Idempotency-Key` header, made in the source team — with that user's key of the
+source team, or a signed-in token with `X-Conport-Team-Id` of the source team.
+This is the one call where a team key names another team; the server still
+checks the key owner's admin role in the source and membership in the target.
+Repeating the request with the same key returns the first receipt instead of a
+second move. Refusals move nothing: `project_name_taken` (409, send a `name`),
+`project_limit_reached` (402, the target's plan is full), `project_busy` (409,
+retry later), `transfer_source_admin_required` (403). The project keeps its
+id, items, documents and history; links to projects that stay behind in the
+source team are removed; keys, subscription and past usage stay with the source
+team. After the move the source team's keys and connections no longer reach
+the project — work on it needs a key or connection of its new team. For a
+while graph functions may answer `graph_rebuilding`; project data stays
+readable.
 
 ---
 
@@ -549,6 +616,7 @@ On an `Invalid arguments for tool` error:
 ## CHECKLIST
 
 - [ ] Has `init` been run?
+- [ ] Project missing, or `init` answered `project_name_in_other_team` → checked the connection's team instead of creating a second project?
 - [ ] Question about the project → has `search` been done?
 - [ ] Starting work on a task → moved to IN_PROGRESS before the first write?
 - [ ] New work → task created/updated?

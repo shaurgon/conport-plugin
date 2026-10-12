@@ -1,5 +1,8 @@
 # conport changelog
 
+## 15.43.0
+Teams. Every project now belongs to a team: each account has a Private Team, and shared teams hold projects that several members work on. The skills describe the connection's team — a named API key is bound to one team, and a JWT session works in the Private Team unless a team is chosen — and how a project moves between teams: through the REST transfer route, callable with a key of the source team, with its refusals (a name already taken in the target, a busy project, a missing admin role in the source, a Private Team that is not your own). Team administration — members, invitations, plan — is shown as REST and dashboard operations; any member reads the plan, and only billing actions need an admin. The CLI takes `--team-id` and `--idempotency-key` and sends them as request headers.
+
 ## 15.42.3
 The `[TAILS]` block on user messages no longer reads as an order. An epic whose children are still open is listed for reference — `open: task-a, task-b` — instead of the server's "Finish …, then close" action, since the block rides along with every message, questions included, and those children are often not doable yet. Only an epic with nothing left open keeps its action line, "Close epic task-N with a resolution". The first message of a session no longer prints the block at all: `init` already reports the same tails.
 
