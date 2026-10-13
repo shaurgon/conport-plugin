@@ -25,6 +25,11 @@ mcp__conport__<tool_name>({
 > ID** (`task_id`, `decision_id`, `document_id`, `pattern_id`,
 > `progress_id`). `project_id` is still the integer project ID.
 
+> **Failure answers:** a section's **Refusals** are returned by a call that
+> itself succeeds — a dict with an `error` code, and whatever the section
+> names next to it. Its **Errors** fail the call: there is no result to read,
+> only the error message.
+
 ---
 
 ## Session
@@ -160,7 +165,7 @@ by name — and
 is left out. With `team` it is that one team, and the reply names it in a
 top-level `team`.
 
-**Refusals:** `team_not_found` when `team` is not a team of yours.
+**Errors:** `team_not_found` when `team` is not a team of yours.
 
 ---
 
@@ -172,7 +177,7 @@ Update a single product context field (vision, goals, architecture, etc.)
 
 ```
 mcp__conport__update_product_context({
-  project_id: 11,
+  project_id: <project_id>,
   field: "vision",
   value: "AI-powered knowledge base"
 })
@@ -195,7 +200,7 @@ that task leaves IN_PROGRESS, so manual writes are rarely needed.
 
 ```
 mcp__conport__update_active_context({
-  project_id: 11,
+  project_id: <project_id>,
   field: "open_questions",
   value: ["How should we handle rate limits?"]
 })
@@ -215,7 +220,7 @@ Context version history
 
 ```
 mcp__conport__context_history({
-  project_id: 11,
+  project_id: <project_id>,
   context_type: "product",
   limit: 10
 })
@@ -241,7 +246,7 @@ background (cluster of similar decisions may auto-generate a pattern).
 
 ```
 mcp__conport__sync_decision({
-  project_id: 11,
+  project_id: <project_id>,
   summary: "Use PostgreSQL",
   rationale: "ACID compliance",
   tags: ["database", "arch"]
@@ -267,7 +272,7 @@ references in the updated text become graph edges. Read the current body with
 
 ```
 mcp__conport__update_decision({
-  project_id: 11,
+  project_id: <project_id>,
   decision_id: 5,
   summary: "Use PostgreSQL with pgvector",
   tags: ["database", "arch", "search"]
@@ -296,7 +301,7 @@ as `superseded` and keeps the trail readable.
 
 ```
 mcp__conport__deprecate_decision({
-  project_id: 11,
+  project_id: <project_id>,
   decision_id: 5,
   reason: "The external tooling this assumed no longer exists"
 })
@@ -322,7 +327,7 @@ recomputed from scratch — the decision goes back to `current`, or to
 
 ```
 mcp__conport__reactivate_decision({
-  project_id: 11,
+  project_id: <project_id>,
   decision_id: 5
 })
 ```
@@ -343,7 +348,7 @@ List architectural decisions
 
 ```
 mcp__conport__list_decisions({
-  project_id: 11,
+  project_id: <project_id>,
   tags: ["database"],
   limit: 20,
   offset: 0
@@ -375,7 +380,7 @@ current tags — `update_decision` replaces the tag list wholesale.
 
 ```
 mcp__conport__get_decision({
-  project_id: 11,
+  project_id: <project_id>,
   decision_id: 5
 })
 ```
@@ -396,7 +401,7 @@ Delete a decision by per-project ID
 
 ```
 mcp__conport__delete_decision({
-  project_id: 11,
+  project_id: <project_id>,
   decision_id: 5
 })
 ```
@@ -424,7 +429,7 @@ Create an activity log entry. Optionally links to a task/decision/pattern
 
 ```
 mcp__conport__log_progress({
-  project_id: 11,
+  project_id: <project_id>,
   description: "Started work on auth module",
   title: "Auth update",
   linked_item_type: "task",
@@ -451,7 +456,7 @@ Update an activity entry
 
 ```
 mcp__conport__update_progress({
-  project_id: 11,
+  project_id: <project_id>,
   progress_id: 45,
   description: "Updated implementation notes"
 })
@@ -473,7 +478,7 @@ List progress entries
 
 ```
 mcp__conport__list_progress({
-  project_id: 11,
+  project_id: <project_id>,
   limit: 20,
   offset: 0
 })
@@ -494,7 +499,7 @@ Delete a progress entry
 
 ```
 mcp__conport__delete_progress({
-  project_id: 11,
+  project_id: <project_id>,
   progress_id: 8
 })
 ```
@@ -518,7 +523,7 @@ Create a task or an epic, with optional hierarchy and priority
 
 ```
 mcp__conport__add_task({
-  project_id: 11,
+  project_id: <project_id>,
   title: "Implement auth",
   status: "TODO",
   priority: 2,
@@ -560,7 +565,7 @@ Update a task. Closing it (`status: "DONE"` / `"CANCELLED"`) always carries a
 
 ```
 mcp__conport__update_task({
-  project_id: 11,
+  project_id: <project_id>,
   task_id: 5,
   status: "DONE",
   resolution: "Auth shipped behind a feature flag"
@@ -618,7 +623,7 @@ Pass `status: "ALL"` for all statuses, or a comma-separated list.
 
 ```
 mcp__conport__list_tasks({
-  project_id: 11,
+  project_id: <project_id>,
   status: "IN_PROGRESS"
 })
 ```
@@ -650,7 +655,7 @@ Task details with dependencies and subtasks
 
 ```
 mcp__conport__get_task({
-  project_id: 11,
+  project_id: <project_id>,
   task_id: 5
 })
 ```
@@ -670,7 +675,7 @@ Add a dependency between two tasks
 
 ```
 mcp__conport__add_task_dep({
-  project_id: 11,
+  project_id: <project_id>,
   task_id: 5,
   depends_on_task_id: 3,
   dependency_type: "blocks"
@@ -694,7 +699,7 @@ Delete a task (also removes its dependencies)
 
 ```
 mcp__conport__delete_task({
-  project_id: 11,
+  project_id: <project_id>,
   task_id: 5
 })
 ```
@@ -721,7 +726,7 @@ one of the source project: a linked task never crosses a team boundary.
 
 ```
 mcp__conport__add_linked_task({
-  source_project_id: 11,
+  source_project_id: <project_id>,
   target_project: "other-project",
   title: "Expose the new endpoint in the SDK",
   priority: 2
@@ -763,7 +768,7 @@ Create a milestone. Omit `sequence` to append after the last one.
 
 ```
 mcp__conport__add_milestone({
-  project_id: 11,
+  project_id: <project_id>,
   title: "MVP stabilisation",
   is_release: true
 })
@@ -787,7 +792,7 @@ Edit fields, move the milestone (`sequence`) or close it (`status` + `resolution
 
 ```
 mcp__conport__update_milestone({
-  project_id: 11,
+  project_id: <project_id>,
   milestone_id: 2,
   status: "DONE",
   resolution: "v1.3 released"
@@ -810,8 +815,12 @@ post-write verification channel as `add_milestone`.
 
 **Refusals:** `milestone_not_ready` when DONE is asked for while epics are still
 open — `context.open_epics` lists what to close first (an empty milestone with
-no epics attached is refused too). `validation_error` on an unknown status or a
-close without `resolution`. `not_found` for an unknown milestone.
+no epics attached is refused too). A release milestone held back by earlier
+open milestones is refused with the same code: `context.open_milestones`
+(`id`, `title`, `sequence`) lists them, and the `message` says to close them
+first. `validation_error` on an
+unknown status or a close without `resolution`. `not_found` for an unknown
+milestone.
 
 ### list_milestones
 
@@ -819,7 +828,7 @@ Roadmap view: milestones by `sequence`, each with its epics.
 
 ```
 mcp__conport__list_milestones({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -845,7 +854,7 @@ Create a document
 
 ```
 mcp__conport__add_document({
-  project_id: 11,
+  project_id: <project_id>,
   title: "API Spec",
   content: "# API\n...",
   doc_type: "api_docs"
@@ -872,7 +881,7 @@ Replace the document body and/or update metadata. Body changes go through the bl
 
 ```
 mcp__conport__update_document({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5,
   content: "# Auth Design\n\nFull markdown body — replaces the document content.\n\n## API\n..."
 })
@@ -899,7 +908,7 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 
 **Returns:** a slim echo — `id`, `tags` and the auto-bumped `version`.
 
-**Refusals:** a `doc_role='derived_view'` document rejects any body change (it
+**Errors:** a `doc_role='derived_view'` document rejects any body change (it
 is regenerated by the recipe runner); a spec body edit without `change_kind`,
 with `change_kind: "substantive"`, or with `change_kind: "amend"` and no
 `reason`, is rejected as well.
@@ -911,7 +920,7 @@ List a document's blocks in order with their ULIDs — the discovery step before
 
 ```
 mcp__conport__list_blocks({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5
 })
 ```
@@ -930,7 +939,7 @@ Read one block by ULID.
 
 ```
 mcp__conport__get_block({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5,
   block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
 })
@@ -951,7 +960,7 @@ Replace one block's markdown without touching the rest of the document. Surgical
 
 ```
 mcp__conport__update_block({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5,
   block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF",
   markdown: "## API Endpoints\n\nNew content for just this heading-block."
@@ -975,7 +984,7 @@ both to append at the end. `after` wins when both are given.
 
 ```
 mcp__conport__insert_block({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5,
   markdown: "## New Section\n\nFresh paragraph.",
   after: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
@@ -999,7 +1008,7 @@ re-serializes; an unknown ULID is an error.
 
 ```
 mcp__conport__delete_block({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5,
   block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
 })
@@ -1019,7 +1028,7 @@ List documents
 
 ```
 mcp__conport__list_documents({
-  project_id: 11,
+  project_id: <project_id>,
   doc_type: "spec"
 })
 ```
@@ -1045,7 +1054,7 @@ exports, and version history reads.
 
 ```
 mcp__conport__get_document({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5,
   raw: false
 })
@@ -1070,7 +1079,7 @@ that produced each edge sits in `source_text`.
 
 ```
 mcp__conport__get_block_backlinks({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 12,
   block_ulid: "01HZ...",   // omit for whole-doc + all blocks
   edge_types: ["supersedes", "resolves"]
@@ -1099,7 +1108,7 @@ already-authored ones. Companion to `get_block_backlinks`.
 
 ```
 mcp__conport__get_semantically_related_blocks({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 12,
   block_ulid: "01HZ...",
   limit: 5,
@@ -1125,7 +1134,7 @@ Document version history
 
 ```
 mcp__conport__document_versions({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5
 })
 ```
@@ -1144,7 +1153,7 @@ Delete a document
 
 ```
 mcp__conport__delete_document({
-  project_id: 11,
+  project_id: <project_id>,
   document_id: 5
 })
 ```
@@ -1171,7 +1180,7 @@ List a project's diagrams with the scope each was drawn for.
 
 ```
 mcp__conport__list_diagrams({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -1192,7 +1201,7 @@ Create a system pattern
 
 ```
 mcp__conport__log_pattern({
-  project_id: 11,
+  project_id: <project_id>,
   name: "Repository Pattern",
   description: "Data access abstraction",
   tags: ["architecture", "data"]
@@ -1217,7 +1226,7 @@ wholesale, not merged.
 
 ```
 mcp__conport__update_pattern({
-  project_id: 11,
+  project_id: <project_id>,
   pattern_id: 3,
   description: "Data access abstraction, one repository per aggregate",
   tags: ["architecture", "data"]
@@ -1240,7 +1249,7 @@ List architectural patterns
 
 ```
 mcp__conport__list_patterns({
-  project_id: 11,
+  project_id: <project_id>,
   limit: 20
 })
 ```
@@ -1266,7 +1275,7 @@ their **per-project IDs** (sequential within the project).
 
 ```
 mcp__conport__link_items({
-  project_id: 11,
+  project_id: <project_id>,
   source_type: "decision",
   source_id: 7,
   target_type: "pattern",
@@ -1293,16 +1302,16 @@ mcp__conport__link_items({
 
 ### get_linked
 
-Get items linked to a specific item. By default returns the manually
-authored item-graph edges. When `item_type='doc'` and
+Get items linked to a specific item: the item-graph edges the item is an end
+of, authored by hand or created automatically, of any link type and in both
+directions — the 100 newest of them. When `item_type='doc'` and
 `include_section_links=true`, the response also includes
-`section_links: { incoming, outgoing }` — Wave 5 document links where this
-document is either source or target. Default is `false` for
-backwards-compat.
+`section_links: { incoming, outgoing }` — the block-level document links where
+this document is either source or target. Default is `false`.
 
 ```
 mcp__conport__get_linked({
-  project_id: 11,
+  project_id: <project_id>,
   item_type: "doc",
   item_id: 12,
   include_section_links: true
@@ -1316,10 +1325,12 @@ mcp__conport__get_linked({
 | item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Link type from the `link_items` vocabulary. Accepted, but **not applied today** — every link type comes back |
 | direction | string | no | outgoing \| incoming \| both (default: both). Accepted, but **not applied today** — both directions come back |
-| include_section_links | boolean | no | `item_type: "doc"` only — also return Wave 5 document links. Default false. |
+| include_section_links | boolean | no | `item_type: "doc"` only — also return the block-level document links. Default false. |
 
 **Returns:** `links` (`id`, both endpoints, `link_type`, `description`,
-`weight`, the `created_by*` attribution fields, `created_at`) and `total`; with
+`weight`, the `created_by*` attribution fields, `created_at`) — at most 100,
+newest first — and `total`, the full number of the item's edges, so
+`total` above 100 means older ones were left out; with
 `include_section_links` also `section_links` (`incoming`, `outgoing` —
 document links with `edge_type`, `source_text`, block ULIDs). Filter
 client-side while `relationship` / `direction` are inert.
@@ -1335,7 +1346,7 @@ one of the source project (`project_id`); links never cross a team boundary.
 
 ```
 mcp__conport__link_project({
-  project_id: 11,
+  project_id: <project_id>,
   target_project: 15,
   link_type: "depends_on",
   description: "Uses for authentication"
@@ -1368,7 +1379,7 @@ Get cross-project links
 
 ```
 mcp__conport__get_project_links({
-  project_id: 11,
+  project_id: <project_id>,
   direction: "both"
 })
 ```
@@ -1389,7 +1400,7 @@ Delete a cross-project link
 
 ```
 mcp__conport__unlink_project({
-  project_id: 11,
+  project_id: <project_id>,
   link_id: 5
 })
 ```
@@ -1419,7 +1430,7 @@ Results are merged via **Reciprocal Rank Fusion (RRF)**.
 
 ```
 mcp__conport__search({
-  project_id: 11,
+  project_id: <project_id>,
   query: "caching performance",
   types: ["decision", "task"],
   limit: 10
@@ -1619,7 +1630,7 @@ Recent activity in the project
 
 ```
 mcp__conport__recent_activity({
-  project_id: 11,
+  project_id: <project_id>,
   hours: 24,
   limit: 20
 })
@@ -1641,7 +1652,7 @@ Version history of a specific item (by per-project ID)
 
 ```
 mcp__conport__item_history({
-  project_id: 11,
+  project_id: <project_id>,
   item_type: "decision",
   item_id: 5
 })
@@ -1671,7 +1682,7 @@ Run a registered recipe from a start node.
 
 ```
 mcp__conport__assemble_context({
-  project_id: 11,
+  project_id: <project_id>,
   recipe: "task_briefing",
   start_id: "task-<id>"
 })
@@ -1689,7 +1700,7 @@ mcp__conport__assemble_context({
 rendered markdown, or the structured payload with `format: "json"`) and
 `generated_at`.
 
-**Refusals:** an unknown `recipe` name, a `start_id` whose declared type does
+**Errors:** an unknown `recipe` name, a `start_id` whose declared type does
 not match the recipe (the message names the recipe to use instead), and a
 start node that exists in another table (the message names the prefix form to
 retry with) or nowhere at all.
@@ -1716,7 +1727,7 @@ start-node-based, which is why it is not an `assemble_context` recipe.
 
 ```
 mcp__conport__render_current_architecture({
-  project_id: 11,
+  project_id: <project_id>,
   scope: ["embedding", "graph"]
 })
 ```
@@ -1738,7 +1749,7 @@ promote.
 
 ```
 mcp__conport__audit_doc_l1_coverage({
-  project_id: 11,
+  project_id: <project_id>,
   doc_id: 7,
   threshold: 0.7
 })
@@ -1768,7 +1779,7 @@ List gaps. Defaults to the active ones (detected + acknowledged).
 
 ```
 mcp__conport__gap_list({
-  project_id: 11,
+  project_id: <project_id>,
   category: "coverage"
 })
 ```
@@ -1776,7 +1787,7 @@ mcp__conport__gap_list({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| category | string | no | structural \| temporal \| coverage \| dependency \| doc_drift |
+| category | string | no | structural \| temporal \| coverage \| dependency \| doc_drift \| routine |
 | state | string | no | detected \| acknowledged \| dismissed \| resolved. Comma-separated for several (default: `detected,acknowledged`) |
 | limit | integer | no | Max results (default: 50) |
 
@@ -1792,7 +1803,7 @@ comes back acknowledged rather than fresh.
 
 ```
 mcp__conport__gap_ack({
-  project_id: 11,
+  project_id: <project_id>,
   gap_hash: "a1b2c3d4"
 })
 ```
@@ -1813,7 +1824,7 @@ kept for audit; dismissal outranks acknowledgement.
 
 ```
 mcp__conport__gap_dismiss({
-  project_id: 11,
+  project_id: <project_id>,
   gap_hash: "a1b2c3d4",
   reason: "Both documents are canonical on their own layer"
 })
@@ -1837,7 +1848,7 @@ required — a filterless call would wipe the backlog.
 
 ```
 mcp__conport__gap_dismiss_bulk({
-  project_id: 11,
+  project_id: <project_id>,
   category: "doc_drift",
   reason: "Layered docs, drift is expected between them"
 })
@@ -1862,7 +1873,7 @@ Re-open a dismissed gap (`dismissed` → `detected`).
 
 ```
 mcp__conport__gap_undismiss({
-  project_id: 11,
+  project_id: <project_id>,
   gap_hash: "a1b2c3d4"
 })
 ```
@@ -1883,7 +1894,7 @@ Aggregated counts by state × category plus what was resolved recently.
 
 ```
 mcp__conport__gap_stats({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -1909,7 +1920,7 @@ Returns immediately and runs in the background.
 
 ```
 mcp__conport__semantic_cleanup({
-  project_id: 11,
+  project_id: <project_id>,
   dry_run: false
 })
 ```
@@ -1925,9 +1936,12 @@ mcp__conport__semantic_cleanup({
 `run_id` has `completed_at`, then review the remainder with
 `semantic_proposals_list`.
 
-**Refusals:** `already_running` (with the live `run_id`) when a pass or cleanup
-is already open for the project, and `rate_limited` (with
-`retry_after_seconds`) for a non-dry run inside the per-owner cooldown.
+**Already running:** when a pass or cleanup is already open for the project
+the answer is `already_running: true` with the live `run_id` and a `summary` —
+no `error` key; poll that run instead of starting another.
+
+**Refusals:** `rate_limited` (with `retry_after_seconds`) for a non-dry run
+inside the per-owner cooldown.
 
 ### semantic_pass_run
 
@@ -1935,7 +1949,7 @@ Run the pass manually and inspect proposals before anything is stored.
 
 ```
 mcp__conport__semantic_pass_run({
-  project_id: 11,
+  project_id: <project_id>,
   dry_run: true
 })
 ```
@@ -1959,7 +1973,7 @@ Review queue. Defaults to what is waiting for you.
 
 ```
 mcp__conport__semantic_proposals_list({
-  project_id: 11,
+  project_id: <project_id>,
   status: "pending_review"
 })
 ```
@@ -1984,7 +1998,7 @@ Approve a proposal for later execution by `semantic_proposals_apply`.
 
 ```
 mcp__conport__semantic_proposal_approve({
-  project_id: 11,
+  project_id: <project_id>,
   proposal_id: 42
 })
 ```
@@ -2006,7 +2020,7 @@ Reject a proposal. The reason is mandatory — it trains later passes.
 
 ```
 mcp__conport__semantic_proposal_reject({
-  project_id: 11,
+  project_id: <project_id>,
   proposal_id: 42,
   reason: "The two entities are genuinely different services"
 })
@@ -2028,7 +2042,7 @@ Park a proposal for a later review round.
 
 ```
 mcp__conport__semantic_proposal_defer({
-  project_id: 11,
+  project_id: <project_id>,
   proposal_id: 42
 })
 ```
@@ -2050,7 +2064,7 @@ Execute the approved proposals. Informational types are just marked applied.
 
 ```
 mcp__conport__semantic_proposals_apply({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -2068,7 +2082,7 @@ to poll a background `semantic_cleanup`.
 
 ```
 mcp__conport__semantic_pass_stats({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -2094,7 +2108,7 @@ housekeeping, what changed. Pure read. Empty sections are omitted entirely.
 
 ```
 mcp__conport__get_agenda({
-  project_id: 11,
+  project_id: <project_id>,
   ready_limit: 10
 })
 ```
@@ -2116,7 +2130,7 @@ Read the project's routine policy.
 
 ```
 mcp__conport__get_routine_config({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -2135,7 +2149,7 @@ call they take the defaults).
 
 ```
 mcp__conport__set_routine_config({
-  project_id: 11,
+  project_id: <project_id>,
   cadence: "weekly",
   autonomy_level: 2
 })
@@ -2161,7 +2175,7 @@ Open the run journal entry — once, at the start of every cycle, right before
 
 ```
 mcp__conport__routine_run_start({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -2181,11 +2195,11 @@ progress entry, so do **not** call `log_progress` separately for the finish.
 
 ```
 mcp__conport__routine_run_finish({
-  project_id: 11,
+  project_id: <project_id>,
   run_id: 7,
   outcome: "completed",
   summary: "Closed two tail epics, acknowledged three gaps",
-  task_ids: [271, 284]
+  task_ids: [12, 14]
 })
 ```
 
@@ -2207,7 +2221,7 @@ The run journal, newest first. An open (running or crashed) run has
 
 ```
 mcp__conport__list_routine_runs({
-  project_id: 11,
+  project_id: <project_id>,
   limit: 10
 })
 ```
@@ -2227,7 +2241,7 @@ gut estimate by the project's historical drift.
 
 ```
 mcp__conport__get_estimation_stats({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -2255,7 +2269,7 @@ Record a deny-list rule: this command shape is wrong, use that one instead.
 
 ```
 mcp__conport__add_convention({
-  project_id: 11,
+  project_id: <project_id>,
   pattern: "^pytest",
   replacement: "uv run pytest",
   reason: "The project runs Python through uv"
@@ -2279,7 +2293,7 @@ Record a known fix for a recurring error signature.
 
 ```
 mcp__conport__add_error_solution({
-  project_id: 11,
+  project_id: <project_id>,
   error_signature: "ModuleNotFoundError pytest",
   solution: "Run the suite through uv run pytest"
 })
@@ -2302,7 +2316,7 @@ List the project's conventions.
 
 ```
 mcp__conport__list_conventions({
-  project_id: 11
+  project_id: <project_id>
 })
 ```
 
@@ -2319,7 +2333,7 @@ List the known error solutions, newest first.
 
 ```
 mcp__conport__list_error_solutions({
-  project_id: 11,
+  project_id: <project_id>,
   limit: 20
 })
 ```

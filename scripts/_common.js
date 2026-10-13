@@ -4,7 +4,6 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
 
 const CONPORT_URL = process.env.CONPORT_URL || 'https://api.conport.app';
 
@@ -15,27 +14,46 @@ function dataDir() {
   return dir;
 }
 
-function detectProjectIdentifierFromEnv() {
-  const id = (process.env.CONPORT_PROJECT_ID || '').trim();
-  if (id) return id;
-  const name = (process.env.CONPORT_PROJECT_NAME || '').trim();
-  if (name) return name;
-  return null;
+// A project as a caller names it — a numeric id, a bare name or
+// `team/project` — split at its only "/": { raw, team, project }. An empty
+// value, an empty part or a second "/" is not a project: null.
+function parseProject(value) {
+  const raw = String(value == null ? '' : value).trim();
+  if (!raw) return null;
+  const parts = raw.split('/');
+  if (parts.length > 2 || parts.some((part) => !part)) return null;
+  return parts.length === 1
+    ? { raw, team: null, project: raw }
+    : { raw, team: parts[0], project: parts[1] };
 }
 
-function detectProjectIdentifier() {
-  const envId = detectProjectIdentifierFromEnv();
-  if (envId) return envId;
-  try {
-    const url = execFileSync('git', ['config', '--get', 'remote.origin.url'],
-      { stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }).toString().trim();
-    if (url) {
-      let base = url.replace(/\/+$/, '').split('/').pop() || '';
-      if (base.endsWith('.git')) base = base.slice(0, -4);
-      if (base) return base;
-    }
-  } catch (_) {}
-  return path.basename(process.cwd()) || null;
+// The project this session works in, or null when the environment names
+// none. CONPORT_PROJECT_ID comes first, then CONPORT_PROJECT_NAME; both go
+// through the same split, so a number carries no team (the server derives it
+// from the project) and a value that is not a number is read as a name and
+// never reaches a path with a "/" in it. The environment is the only source:
+// nothing is guessed from the repository or the working directory, and with
+// no project the hooks stay silent.
+function detectProject() {
+  const id = (process.env.CONPORT_PROJECT_ID || '').trim();
+  return parseProject(id || process.env.CONPORT_PROJECT_NAME);
+}
+
+// How a detected project goes into a `/projects/{…}` path: `team/project`
+// does not fit one path segment, so the short name is the segment and the
+// team travels as a header.
+function projectRoute(project) {
+  return {
+    segment: encodeURIComponent(project.project),
+    headers: project.team ? { 'X-Conport-Team-Id': project.team } : {},
+  };
+}
+
+// The deny-list of one project. The data dir is machine-global, so the file
+// is keyed by the project as named, team prefix included: a list fetched for
+// one project must never block commands in another.
+function denyListPath(project) {
+  return path.join(dataDir(), `deny-list_${encodeURIComponent(project.raw)}.json`);
 }
 
 function authHeader() {
@@ -132,7 +150,7 @@ function readStdin() {
 }
 
 module.exports = {
-  CONPORT_URL, dataDir, detectProjectIdentifier, detectProjectIdentifierFromEnv,
+  CONPORT_URL, dataDir, parseProject, detectProject, projectRoute, denyListPath,
   authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
   fingerprintChanged,
 };

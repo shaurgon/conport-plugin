@@ -18,23 +18,23 @@ The `conport` skill produces a compact dashboard by chaining three MCP calls:
 ## Sample output shape
 
 ```
-[CONPORT] conport-global (ID: 4) · 201 decisions · 27 patterns
+[CONPORT] <project> (ID: <project id>) · <n> decisions · <n> patterns
 
 Focus
-  Post-infrastructure: three-domain stack live …
+  Checkout redesign: cart and payment form in review …
 
 In progress
-  #140 Multi-client distribution
+  #<id> Payment form validation
 
 Last 48h
-  progress  "Phase 3: marketplace repo + CI sync"
-  decision  "#281 Use mirror repo for plugin distribution"
-  commit    "feat(landing): six-client install tabs"
+  progress  "Cart summary component merged"
+  decision  "#<id> Validate card numbers on the client first"
+  commit    "feat(checkout): inline validation errors"
 ```
 
 ## Variants
 
-- "Give me the status of epic #88" → add `parent_task_id: 88` to
-  `list_tasks`, skip global activity.
+- "Give me the status of epic #N" → add `parent_task_id: N`
+  (the epic's number) to `list_tasks`, skip global activity.
 - "What changed since Monday?" → `recent_activity` with a wider window.
 - "Just the numbers" → use the `stats` from `init` and stop there.

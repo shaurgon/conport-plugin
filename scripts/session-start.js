@@ -3,17 +3,16 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 const {
-  CONPORT_URL, dataDir, detectProjectIdentifier, authHeader, request,
+  CONPORT_URL, detectProject, denyListPath, authHeader, request,
 } = require('./_common.js');
 
 async function main() {
-  const project = detectProjectIdentifier();
+  const project = detectProject();
   if (!project) process.exit(0);
 
-  const target = path.join(dataDir(), 'deny-list.json');
-  const url = `${CONPORT_URL}/api/v1/hooks/conventions?project_id=${encodeURIComponent(project)}`;
+  const target = denyListPath(project);
+  const url = `${CONPORT_URL}/api/v1/hooks/conventions?project_id=${encodeURIComponent(project.raw)}`;
 
   try {
     const res = await request('GET', url, {

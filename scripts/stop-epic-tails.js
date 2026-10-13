@@ -4,12 +4,14 @@
 // the turn once and hand the agent the list — once per composition of those
 // tails: a later turn on the same list ends freely. Only the epics the nearest
 // release milestone waits for are listed; a roadmap with no release point
-// lists them all and says to create one. No session epics → no output, no
-// request. Any failure → silent: an outage must never trap a turn.
+// lists them all and says to create one. No project in the environment or no
+// session epics → no output, no request. Any failure → silent: an outage
+// must never trap a turn.
 'use strict';
 
 const {
   CONPORT_URL, authHeader, request, readStdin, loadSessionEpics, fingerprintChanged,
+  parseProject, detectProject, projectRoute,
 } = require('./_common.js');
 
 const PAGE_LIMIT = 200;
@@ -24,7 +26,7 @@ function isOpen(status) {
 // All children (every status, snoozed included) of the given epics of one
 // project. Every status, not just open ones: the "grew after start" test
 // needs the started_at of children that are already closed.
-async function fetchChildren(project, epicIds, auth) {
+async function fetchChildren(route, epicIds, auth) {
   const children = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const qs = new URLSearchParams({
@@ -35,8 +37,8 @@ async function fetchChildren(project, epicIds, auth) {
       offset: String(page * PAGE_LIMIT),
     });
     const res = await request('GET',
-      `${CONPORT_URL}/api/v1/projects/${encodeURIComponent(project)}/tasks?${qs}`,
-      { headers: auth, timeoutMs: REQUEST_TIMEOUT_MS });
+      `${CONPORT_URL}/api/v1/projects/${route.segment}/tasks?${qs}`,
+      { headers: { ...auth, ...route.headers }, timeoutMs: REQUEST_TIMEOUT_MS });
     if (res.status !== 200) throw new Error(`status ${res.status}`);
     const body = JSON.parse(res.body);
     const tasks = Array.isArray(body.tasks) ? body.tasks : [];
@@ -61,10 +63,10 @@ function grewAfterStart(children) {
 // milestones up to and including the first open release point. `null` when
 // the roadmap has no open release point. Throws when the roadmap is
 // unreadable — the caller then falls back to every session epic.
-async function releaseScope(project, auth) {
+async function releaseScope(route, auth) {
   const res = await request('GET',
-    `${CONPORT_URL}/api/v1/projects/${encodeURIComponent(project)}/milestones`,
-    { headers: auth, timeoutMs: REQUEST_TIMEOUT_MS });
+    `${CONPORT_URL}/api/v1/projects/${route.segment}/milestones`,
+    { headers: { ...auth, ...route.headers }, timeoutMs: REQUEST_TIMEOUT_MS });
   if (res.status !== 200) throw new Error(`status ${res.status}`);
   const milestones = JSON.parse(res.body);
   if (!Array.isArray(milestones)) throw new Error('not a list');
@@ -88,17 +90,22 @@ async function collectTails(epics, auth) {
   const tails = [];
   const noRelease = [];
   for (const [project, sessionEpics] of byProject) {
+    // The record holds the project as the tool call named it — an id or a
+    // name, possibly `team/project`. A record that is not a project is skipped.
+    const parsed = parseProject(project);
+    if (!parsed) continue;
+    const route = projectRoute(parsed);
     // Work after the nearest release, or on no milestone at all, is not
     // what this turn's "done" is about — only what the release waits for.
     let scope;
-    try { scope = await releaseScope(project, auth); } catch (_) { scope = undefined; }
+    try { scope = await releaseScope(route, auth); } catch (_) { scope = undefined; }
     if (scope === null) noRelease.push(project);
     const projectEpics = scope instanceof Set
       ? sessionEpics.filter((e) => scope.has(e.epic_id))
       : sessionEpics;
     if (!projectEpics.length) continue;
     const children = await fetchChildren(
-      project, projectEpics.map((e) => e.epic_id), auth);
+      route, projectEpics.map((e) => e.epic_id), auth);
     for (const epic of projectEpics) {
       const own = children.filter((c) => c.parent_task_id === epic.epic_id);
       const open = own.filter((c) => isOpen(c.status)).sort((a, b) => a.id - b.id);
@@ -154,6 +161,7 @@ async function main() {
   // Already held once in this stop cycle: let the turn end, or the hook
   // would loop the agent forever on a tail it cannot close right now.
   if (input.stop_hook_active) process.exit(0);
+  if (!detectProject()) process.exit(0);
 
   const epics = loadSessionEpics(input.session_id || 'unknown');
   if (!epics.length) process.exit(0);

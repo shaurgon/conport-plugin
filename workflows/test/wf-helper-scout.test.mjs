@@ -31,7 +31,10 @@ const startMock = async (opts = {}) => {
     req.on('data', () => {})
     req.on('end', () => {
       const url = new URL(req.url, 'http://localhost')
-      const rec = { method: req.method, path: url.pathname, key: req.headers['x-api-key'] }
+      const rec = {
+        method: req.method, path: url.pathname, key: req.headers['x-api-key'],
+        team: req.headers['x-conport-team-id'],
+      }
       state.requests.push(rec)
 
       const injected = fail(rec)
@@ -85,7 +88,7 @@ const GC = `## Global Constraints
 const PLAN = `# Sample Plan
 <!-- conport-epic: 900 -->
 
-**Spec:** \`docs/superpowers/specs/sample.md\` (ConPort doc-127).
+**Spec:** \`docs/superpowers/specs/sample.md\` (ConPort doc-950).
 
 ${GC}---
 
@@ -144,7 +147,7 @@ const withMock = (opts, body) => async () => {
 }
 
 const TASKS = [
-  { id: 901, title: 'first thing', status: 'TODO', kind: 'task', parent_task_id: 900, description: 'Implement the first thing per doc-127.\n\n## Acceptance\nThe first thing works end to end.\n' },
+  { id: 901, title: 'first thing', status: 'TODO', kind: 'task', parent_task_id: 900, description: 'Implement the first thing per doc-950.\n\n## Acceptance\nThe first thing works end to end.\n' },
   { id: 902, title: 'second thing', status: 'TODO', kind: 'task', parent_task_id: 900, description: 'Acceptance: the second thing works.' },
   { id: 903, title: 'planless thing', status: 'TODO', kind: 'task', parent_task_id: null, description: 'No plan slice exists for this one.' },
   { id: 900, title: 'the epic', status: 'IN_PROGRESS', kind: 'epic', parent_task_id: null, description: 'Ship both things.' },
@@ -174,7 +177,7 @@ test('a task with a plan slice: section lines, files, verbatim constraints, gate
   assert.equal(out.gc_lines, out.global_constraints.split('\n').length)
   assert.deepEqual(out.gate, { dir: 'backend', commands: ['uv run pytest -q', 'uv run ruff check'] })
   assert.equal(out.acceptance, 'The first thing works end to end.')
-  assert.equal(out.spec_doc_id, 127)
+  assert.equal(out.spec_doc_id, 950)
 }))
 
 test('the second task of the same plan gets its own slice, ending at EOF', withMock({ tasks: TASKS }, async mock => {
@@ -297,7 +300,7 @@ test('an epic id finds its plan by the epic anchor: path and constraints, no sli
   assert.equal(out.plan_path, join(root, 'docs', 'superpowers', 'plans', '2026-09-01-sample.md'))
   assert.ok(out.global_constraints.startsWith('- Shipped text is English'))
   assert.deepEqual(out.gate, { dir: 'backend', commands: ['uv run pytest -q', 'uv run ruff check'] })
-  assert.equal(out.spec_doc_id, 127)
+  assert.equal(out.spec_doc_id, 950)
 }))
 
 test('an explicit --plan overrides the anchor search', withMock({ tasks: TASKS }, async mock => {
@@ -313,14 +316,14 @@ test('an explicit --plan overrides the anchor search', withMock({ tasks: TASKS }
 // --------------------------------------------------------------- spec doc id
 
 test('spec_doc_id comes from the description first, then from the plan header', withMock({
-  tasks: [...TASKS, { id: 904, title: 'own spec', status: 'TODO', kind: 'task', description: 'Follows doc-321 closely.' }],
+  tasks: [...TASKS, { id: 904, title: 'own spec', status: 'TODO', kind: 'task', description: 'Follows doc-951 closely.' }],
 }, async mock => {
   const root = repoWithPlan('2026-09-01-sample.md', PLAN)
   const own = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', root])
-  assert.equal(own.out.spec_doc_id, 321, 'the description wins over the plan header')
+  assert.equal(own.out.spec_doc_id, 951, 'the description wins over the plan header')
 
   const fromPlan = await runScout(mock, ['--task', '902', '--project', PROJECT, '--repo-root', root])
-  assert.equal(fromPlan.out.spec_doc_id, 127, 'a description naming none falls back to the plan header')
+  assert.equal(fromPlan.out.spec_doc_id, 950, 'a description naming none falls back to the plan header')
 }))
 
 // -------------------------------------------------------------- environment
@@ -332,6 +335,47 @@ test('the project name is taken from the environment when no flag is passed', wi
 
   assert.equal(out.project_id, PROJECT_ID)
 }))
+
+// A `team/project` name does not fit one path segment: the team goes into the
+// header of every call, the short name into the path of the first one.
+test('scout reads a team/project name with the team header', withMock({ tasks: TASKS }, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  const { out } = await runScout(mock, ['--task', '901', '--project', 'k7m2qx9d/' + PROJECT, '--repo-root', root])
+
+  assert.equal(out.project_id, PROJECT_ID)
+  assert.deepEqual(mock.requests.map(r => [r.path, r.team]), [
+    ['/api/v1/projects/' + PROJECT, 'k7m2qx9d'],
+    [`/api/v1/projects/${PROJECT_ID}/tasks/901`, 'k7m2qx9d'],
+  ])
+}))
+
+test('scout takes a team/project name from the environment the same way', withMock({ tasks: TASKS }, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: 'pers/' + PROJECT }
+  await runScout(mock, ['--task', '901', '--repo-root', root], env)
+
+  assert.deepEqual(mock.requests.map(r => [r.path, r.team]), [
+    ['/api/v1/projects/' + PROJECT, 'pers'],
+    [`/api/v1/projects/${PROJECT_ID}/tasks/901`, 'pers'],
+  ])
+}))
+
+test('scout sends no team header for a bare name', withMock({ tasks: TASKS }, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  await runScout(mock, ['--task', '901', '--project', PROJECT, '--repo-root', root])
+
+  assert.deepEqual(mock.requests.map(r => r.team), [undefined, undefined])
+}))
+
+for (const name of ['a/b/c', '/' + PROJECT, 'pers/', '/']) {
+  test(`scout treats an invalid name as no project: ${name}`, withMock({ tasks: TASKS }, async mock => {
+    const r = await runHelper(scoutEnv(mock), 'scout', '--task', '901', '--project', name)
+
+    assert.equal(r.code, 0)
+    assert.equal(r.stdout.trim(), '{"error": "no project"}')
+    assert.deepEqual(mock.requests, [])
+  }))
+}
 
 // An installed plugin never sets CONPORT_API_KEY: the harness exposes the
 // configured key as CLAUDE_PLUGIN_OPTION_API_KEY, exactly as scripts/_common.js

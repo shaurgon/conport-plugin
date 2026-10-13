@@ -4,6 +4,24 @@ Cursor accepts both our MCP server and our `SKILL.md` bundles directly — no
 wrappers, no porting.
 
 Get an API key at https://me.conport.app/dashboard/connect (`cport_live_...`).
+The key is yours: one key works in your `Private Team` and in every shared team
+you are a member of.
+
+## Project name (required)
+
+```text
+Set CONPORT_PROJECT_NAME.
+Personal repository: <project>.
+Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
+A bare name in a team repository sends every member to their own Private Team.
+```
+
+Cursor reads it from the environment of its own process — export it in the
+shell Cursor inherits, next to the key:
+
+```bash
+export CONPORT_PROJECT_NAME=<project>
+```
 
 ## 1. MCP server
 
@@ -58,7 +76,12 @@ npx skills add shaurgon/conport-plugin --skill conport --skill conport-routine -
 Restart Cursor. In the MCP panel (Settings → MCP) the `conport` server should
 show green with ~40 tools. In Agent chat, ask:
 
-> Call `mcp__conport__init` with name "<your-project>".
+> Call `mcp__conport__init` with the name from `CONPORT_PROJECT_NAME`. If it
+> answers `project_not_found`, call `mcp__conport__create_project` with the
+> same name and repeat `init`.
+
+`init` only finds a project, it never creates one, and the agent calls
+`create_project` only on your word — which this request gives it.
 
 Expected: a JSON response with `project_id` and `summary`. Type `/conport` in
 chat — the skill should be offered as a slash completion.

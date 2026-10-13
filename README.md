@@ -55,10 +55,8 @@ Pick your client and follow the per-harness guide:
 | Variable | Where | Purpose |
 |---|---|---|
 | `user_config.api_key` | Plugin userConfig (prompted on install) | Auth for MCP + hooks |
+| `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (**required**) | Project name: `<project>` for a personal repository, `k7m2qx9d/<project>` for a team's one (the team ID is on the team's settings page) |
 | `CONPORT_PROJECT_ID` | `.claude/settings.local.json` env (optional) | Override numeric project id |
-| `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (optional) | Override project name |
-
-Fallback when neither override is set: `basename(git remote)` → current dir name.
 
 ## Paths (Claude Code hooks)
 

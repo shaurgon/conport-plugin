@@ -41,8 +41,36 @@ ConPort needs a per-user API key. **You never invent, store, or echo it.**
 - If the user pastes it into chat anyway, warn them it is now visible in the
   transcript and proceed without repeating it.
 
-Tenant isolation is enforced server-side: a key only ever sees its owner's
-projects and memory.
+Tenant isolation is enforced server-side: a key identifies its owner and only
+ever sees what that user is a member of — one key works in the user's
+`Private Team` and in every shared team they belong to.
+
+---
+
+## Project name (required)
+
+```text
+Set CONPORT_PROJECT_NAME.
+Personal repository: <project>.
+Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
+A bare name in a team repository sends every member to their own Private Team.
+```
+
+Where the variable goes:
+
+- **Claude Code** — `.claude/settings.local.json` of the repository:
+
+  ```json
+  "env": { "CONPORT_PROJECT_NAME": "<project>" }
+  ```
+
+- **Cursor and other agents** — an environment variable of the agent's
+  process (export it in the shell the agent inherits).
+- **No environment variables (Claude.ai)** — the user names the project in
+  the chat, in the same form.
+
+The name is never taken from anywhere else. If the variable is missing, stop
+and ask the user to set it — do not make a name up.
 
 ---
 
@@ -152,16 +180,27 @@ Notes:
 ## Step 4 — verify and report
 
 1. Bootstrap ConPort and confirm it works:
-   - **MCP host:** call the `init` tool with this project's name
-     (`mcp__conport__init` in Claude Code, or the equivalent MCP tool name).
+   - **MCP host:** call the `init` tool with the value of
+     `CONPORT_PROJECT_NAME` (`mcp__conport__init` in Claude Code, or the
+     equivalent MCP tool name). `init` only finds a project, it never creates
+     one: for a project that does not exist yet it answers
+     `project_not_found`. Ask the user, and only when they say so call
+     `create_project` with the same name, then call `init` again.
    - **CLI host:** run `npx -y conport api projects list`, then list this
      project's tasks with
-     `npx -y conport api tasks list --project_identifier <project> --status TODO,IN_PROGRESS`.
+     `npx -y conport api tasks list --project_identifier "$CONPORT_PROJECT_NAME" --status TODO,IN_PROGRESS`
+     — the flag takes the name as it is set, `k7m2qx9d/<project>` included.
+     A project that does not exist yet is not created by reading it: ask the
+     user, and only when they say so run
+     `npx -y conport api projects create --name <project>` — for a team's project
+     add `--team-id k7m2qx9d`; the name itself never contains `/`.
 
 2. Report the result to the user in plain language: confirm the connection
    works, name the project ConPort resolved, and summarize its current
    backlog (open tasks, recent decisions). If the project is new and empty, say
-   so and offer to start capturing decisions and tasks as you work.
+   so and offer to start capturing decisions and tasks as you work. If `init`
+   answered `project_name_in_other_team`, show the user its `candidates` and
+   ask them to put the chosen name into `CONPORT_PROJECT_NAME`.
 
 If `init` (or the first CLI call) returns auth errors, the key isn't reaching
 the process — recheck that `CONPORT_API_KEY` is set in the environment you run

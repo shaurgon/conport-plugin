@@ -7,9 +7,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const {
-  CONPORT_URL, dataDir, detectProjectIdentifier, detectProjectIdentifierFromEnv,
+  CONPORT_URL, dataDir, detectProject, projectRoute,
   authHeader, request, readStdin, fingerprintChanged,
 } = require('./_common.js');
 
@@ -22,9 +21,6 @@ const TAILS_CACHE_TTL_MS = 10 * 60 * 1000;
 // transient outage or a project that only just got created recovers fast.
 const TAILS_NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000;
 const TAILS_REQUEST_TIMEOUT_MS = 500;
-// How long a resolved project identifier is trusted before we ask
-// detectProjectIdentifier() (which may shell out to `git config`) again.
-const PROJECT_ID_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function sessionFlagPath(sessionId) {
   const dir = path.join(dataDir(), 'session_logs');
@@ -74,44 +70,6 @@ function shouldRemindSave(state) {
   return true;
 }
 
-function resolveProjectIdentifier() {
-  // CONPORT_PROJECT_ID / CONPORT_PROJECT_NAME are the highest-priority
-  // source AND free (no I/O, no subprocess) — check them first, every time,
-  // uncached. Skipping this and going straight to a cwd-keyed disk cache is
-  // what reintroduced the cross-project leak b408c92 fixed: the cache can't
-  // tell "same repo, different CONPORT_PROJECT_NAME override" from "stale",
-  // so a later run in the same cwd with a different env var got served the
-  // first run's project. Only the `git config` / cwd-basename fallback leg
-  // of detectProjectIdentifier() — the one that actually spawns a
-  // subprocess — is worth caching.
-  const envId = detectProjectIdentifierFromEnv();
-  if (envId) return envId;
-
-  // detectProjectIdentifier() may shell out to `git config` (up to a 2s
-  // timeout); this hook runs on every prompt, so re-running it every time —
-  // including on tails-cache hits — puts a subprocess spawn on the hot path
-  // for no reason. Cache the resolved fallback identifier per cwd (NOT
-  // globally: a session in a different repo must resolve its own project,
-  // same correctness requirement as the tails cache below) for the same
-  // window we trust the tails cache for.
-  const cwdKey = crypto.createHash('sha1').update(process.cwd()).digest('hex').slice(0, 16);
-  const idCachePath = path.join(dataDir(), 'hook_state', `project_id_${cwdKey}.json`);
-  try {
-    if (fs.existsSync(idCachePath)) {
-      const cached = JSON.parse(fs.readFileSync(idCachePath, 'utf8'));
-      if (Date.now() - cached.resolved_at < PROJECT_ID_CACHE_TTL_MS) {
-        return cached.id || null;
-      }
-    }
-  } catch (_) {}
-  const id = detectProjectIdentifier();
-  try {
-    fs.mkdirSync(path.dirname(idCachePath), { recursive: true });
-    fs.writeFileSync(idCachePath, JSON.stringify({ id, resolved_at: Date.now() }));
-  } catch (_) {}
-  return id;
-}
-
 // The cache holds the raw `tails` rows, not printed lines: a cache left by an
 // older hook (ready-made `lines`, possibly carrying the imperative wording)
 // has no `tails` array and is simply a miss, and a future format change
@@ -141,13 +99,14 @@ function formatTail(t) {
 
 async function fetchEpicTails() {
   // Cached, time-boxed, silent-failure: the hook must never slow a prompt.
-  const project = resolveProjectIdentifier();
+  const project = detectProject();
   if (!project) return { lines: [], ok: false };
   // The data dir is machine-global, so the cache file is keyed by project —
   // otherwise a session in another repo is served the first project's tails
-  // (its epic ids!) for the rest of the TTL.
+  // (its epic ids!) for the rest of the TTL. The key is the name as given,
+  // team prefix included: the same short name in two teams is two projects.
   const cachePath = path.join(dataDir(), 'hook_state',
-    `epic_tails_${encodeURIComponent(project)}.json`);
+    `epic_tails_${encodeURIComponent(project.raw)}.json`);
   try {
     if (fs.existsSync(cachePath)) {
       const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
@@ -169,13 +128,15 @@ async function fetchEpicTails() {
   try {
     const auth = authHeader();
     // authHeader() returns {} when no key (truthy!) — gate on the header itself.
-    // No cache write here: this path never spends a request or a subprocess,
-    // so there's nothing to protect against re-spending on the next prompt.
+    // No cache write here: this path never spends a request, so there's
+    // nothing to protect against re-spending on the next prompt.
     if (!auth.Authorization) return { lines: [], ok: false };
     // request() resolves {status, body} with body a RAW STRING — parse it.
+    const route = projectRoute(project);
     const pending = request('GET',
-      `${CONPORT_URL}/api/v1/projects/${encodeURIComponent(project)}/epic-tails`,
-      { headers: auth, timeoutMs: TAILS_REQUEST_TIMEOUT_MS }).catch(() => null);
+      `${CONPORT_URL}/api/v1/projects/${route.segment}/epic-tails`,
+      { headers: { ...auth, ...route.headers }, timeoutMs: TAILS_REQUEST_TIMEOUT_MS })
+      .catch(() => null);
     // Its own req.setTimeout only arms once the socket is connected, so an
     // unroutable host would hold the prompt for the OS connect timeout
     // (~4s observed). Race the whole call against our own budget.

@@ -108,19 +108,19 @@ After first import (anchors written back):
 
 ```markdown
 # Foo Feature Implementation Plan
-<!-- conport-epic: 320 -->
+<!-- conport-epic: <task_id> -->
 
 **Goal:** ...
 
 ### Task 1: Parser
-<!-- conport-task: 321 -->
+<!-- conport-task: <task_id> -->
 
 ...
 
 ### Task 2: Validator
-<!-- conport-task: 322 -->
+<!-- conport-task: <task_id> -->
 
 ...
 ```
 
-Re-running the bridge on the same file now updates `task-320` (epic), `task-321`, `task-322` rather than creating duplicates.
+Re-running the bridge on the same file now updates the epic and the two tasks those anchors name (`task-<id>`, with `<id>` taken from each anchor) rather than creating duplicates.

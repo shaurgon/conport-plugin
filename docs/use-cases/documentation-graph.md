@@ -20,7 +20,7 @@ of the edge.
 ```markdown
 ## Authentication
 
-> [!supersedes] [[doc-12#authentication]]
+> [!supersedes] [[doc-<id>#authentication]]
 > Reorganized after the Wave 2 redesign — JWT details consolidated here.
 
 (section content)
@@ -33,7 +33,7 @@ of the edge.
 | `[!extends]` | Adds detail to the linked doc/section; both remain canonical for their layer. | The target gets an "extended by" stub above the unmodified body. |
 | `[!relates-to]` | Soft cross-reference; both authoritative on their own terms. | Backlink only — no inline stub. |
 
-Inline wikilinks in flowing prose (`see [[doc-7#caching]]`) are parsed too,
+Inline wikilinks in flowing prose (`see [[doc-<id>#caching]]`) are parsed too,
 but they only produce low-weight `relates_to` edges — they show up in the
 Referenced-by panel without changing how the target renders.
 

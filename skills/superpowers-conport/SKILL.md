@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 15.43.0
+  version: 16.0.0
 ---
 
 # superpowers-conport — Bridge
@@ -50,11 +50,9 @@ hands it the block and nothing else, and this table is not read at that moment.
 
 ### 1. Resolve ConPort project
 
-Call `mcp__conport__init({name: <auto>})` where `<auto>` is:
-1. The basename of `git config --get remote.origin.url` (strip `.git`), or
-2. The basename of `pwd` if step 1 fails.
+Call `mcp__conport__init({name: <CONPORT_PROJECT_NAME>})` — the value of the env var `CONPORT_PROJECT_NAME`, exactly as set, team ID included. If the variable is not set, stop and ask the user to set it (see *Step 1* of the **conport** skill); never derive the name from the repository or the working directory.
 
-If init reports the project does not exist, ask the user via AskUserQuestion whether to create it under that name or pick from `list_projects`. Do not auto-create silently.
+If `init` answers `project_not_found`, tell the user and call `create_project` only when they say so. If it answers `project_name_in_other_team`, show its `candidates` and ask the user to put the chosen name into `CONPORT_PROJECT_NAME`.
 
 Record `project_id` for all subsequent calls.
 
@@ -385,8 +383,8 @@ the worst kind of disagreement.
 ### Sources
 
 The inputs are the ones named in `## Inputs` — `<plan_path>` and the paired `*-design.md`
-it derives from. `project_id` is resolved exactly as in step 1: `init` on the repo-derived
-name, which here is a lookup only — `finish` never creates a project, and never asks to.
+it derives from. `project_id` is resolved exactly as in step 1: `init` on the name from
+`CONPORT_PROJECT_NAME`, which here is a lookup only — `finish` never creates a project, and never asks to.
 
 **No such project.** When `init` reports the project does not exist there is no
 `project_id`, so there is no listing, no children and no subject to audit. That is RELEASE

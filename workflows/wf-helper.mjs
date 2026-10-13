@@ -327,8 +327,9 @@ const cleanup = flags => {
 // scrubbed where the report is built. Every call carries its own deadline: an
 // unreachable or silent server must degrade to an error the caller can act on,
 // never leave a workflow waiting forever.
-const conport = (base, key) => async (method, path, body) => {
+const conport = (base, key, team) => async (method, path, body) => {
   const headers = { 'X-API-Key': key, Accept: 'application/json' }
+  if (team) headers['X-Conport-Team-Id'] = team
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   const ms = timeoutMs()
   // A bare abort reads as 'This operation was aborted' and names neither the
@@ -786,6 +787,15 @@ const findPlan = (root, id) => {
   return null
 }
 
+// A project name as the caller holds it: a bare name, an id, or `team/project`.
+// The team does not fit the path segment, so it is split off here and sent as a
+// header. An empty part or a second "/" is not a name — null, as with no name.
+export const projectAddress = name => {
+  const parts = String(name || '').trim().split('/')
+  if (parts.length > 2 || parts.some(part => !part)) return null
+  return parts.length === 1 ? { team: null, project: parts[0] } : { team: parts[0], project: parts[1] }
+}
+
 // The mechanical half of the scout: the task from ConPort, its plan slice, the
 // constraints, the gate and the spec reference. Nothing here is a judgement —
 // compressing and digesting is left to the caller.
@@ -795,15 +805,15 @@ const scout = async flags => {
 
   const key = apiKey()
   if (!key) sentinel('no api key')
-  const project = typeof flags.project === 'string' ? flags.project : process.env.CONPORT_PROJECT_NAME
+  const project = projectAddress(typeof flags.project === 'string' ? flags.project : process.env.CONPORT_PROJECT_NAME)
   if (!project) sentinel('no project')
 
-  const api = conport(process.env.CONPORT_API_URL || API_BASE, key)
+  const api = conport(process.env.CONPORT_API_URL || API_BASE, key, project.team)
   const scrub = text => mask(String(text)).split(key).join('***')
   let projectId
   let task
   try {
-    projectId = (await api('GET', '/projects/' + encodeURIComponent(project))).id
+    projectId = (await api('GET', '/projects/' + encodeURIComponent(project.project))).id
     task = await api('GET', `/projects/${projectId}/tasks/${taskId}`)
   } catch (e) { errorOut(scrub(e && e.message ? e.message : e)) }
 

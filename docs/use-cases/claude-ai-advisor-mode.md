@@ -1,7 +1,8 @@
 # Claude.ai — advisor / researcher mode
 
-Claude.ai has no filesystem access, so the `conport` skill can't auto-detect
-the project via git remote or directory name the way Claude Code / Cursor do.
+Claude.ai has no environment variables, so the `conport` skill cannot read the
+project name from `CONPORT_PROJECT_NAME` the way Claude Code / Cursor do — the
+user names the project.
 The workaround: create a **Claude.ai project** dedicated to planning, give
 Claude a short system prompt that tells it how to find the right ConPort
 project, and rely on the user to name it at the start of each chat.
@@ -47,7 +48,7 @@ Every new chat in that Claude.ai project:
 
 - The system prompt enforces planning-only — stops Claude.ai from spinning
   up code it can't actually run in the browser.
-- Requiring the project name up-front removes the auto-detection gap —
+- Requiring the project name up-front stands in for the missing variable —
   `init(name=…)` works identically across all clients.
 - ConPort is the shared spine: what Claude.ai plans, Claude Code picks up
   on the next `init` in the same project.

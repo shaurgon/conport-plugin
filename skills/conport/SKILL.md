@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 15.43.0
+  version: 16.0.0
 ---
 
 # ConPort — Project Management System
@@ -30,19 +30,33 @@ page before acting on one of those topics; don't act from memory.
 
 ### Step 1: Determine the project name
 
-**Claude Code CLI** — the env var `CONPORT_PROJECT_NAME` is already available (from `.claude/settings.local.json`).
-If it's not set, fall back in this priority order:
+The project name comes from the env var `CONPORT_PROJECT_NAME` and from nowhere
+else. Never derive it from the repository, the working directory or a guess.
 
-1. **Git remote** — extract the repo name (last segment of the URL without `.git`)
-2. **Directory name** — basename of the current working directory
+**Claude Code CLI** — the variable is set in `.claude/settings.local.json`.
+**If it is not set — stop.** Do not call `init`. Show the user the line to add
+to `.claude/settings.local.json` and ask them to restart the session:
 
-**Claude.ai Chat** — ask the user (the file system is not available).
+```json
+"env": { "CONPORT_PROJECT_NAME": "<project>" }
+```
+
+For a repository that a team works on, the value carries the team ID:
+`k7m2qx9d/<project>` (the team ID is on the team's settings page). A bare
+`<project>` is a project of the user's own `Private Team` — see *TEAMS* below.
+
+**Cursor, Codex and other agents with a shell** — the variable is an environment
+variable of the agent's process. If it is not set — stop, do not call `init`,
+and ask the user to export `CONPORT_PROJECT_NAME` and restart the agent.
+
+**Claude.ai Chat** — there are no environment variables; the user names the
+project (`<project>`, or `k7m2qx9d/<project>` for a team's project). Ask for it.
 
 ### Step 2: Call init
 
 ```
 mcp__conport__init({
-  name: "<detected_name>",
+  name: "<CONPORT_PROJECT_NAME>",  // exactly as set, team ID included
   skill_id: "conport",
   skill_version: "<metadata.version from this SKILL.md frontmatter>",  // substitute the real value; never send this placeholder
   client_type: "claude-code"  // or claude-ai / cursor / codex
@@ -51,7 +65,10 @@ mcp__conport__init({
 
 `skill_id` / `skill_version` / `client_type` are optional but strongly recommended — they let the server tell you when SKILL.md has been updated upstream so manual installs (Claude.ai project files, hand-copied skills) don't silently drift. Pick `client_type` from the list above; fall back to omitting it if running somewhere else.
 
-If auto-detection of the project name did not work, ask the user.
+`init` only finds a project — it never creates one. Each refusal
+(`project_not_found`, `project_name_in_other_team`, `team_not_found`,
+`invalid_project_name`) has one prescribed action — see *TEAMS → Refusals* below. Do not answer a refusal by
+trying another name.
 
 ### After init — MANDATORY:
 
@@ -59,7 +76,7 @@ If auto-detection of the project name did not work, ask the user.
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N tasks in TODO, M in progress. Top 5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
 4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
-5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. If the user expected an existing project, first check the team (see *TEAMS* below): `init` creates a missing name in the connection's team, so a project that lives in another team shows up here as a new, empty one.
+5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
 6. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
 7. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
@@ -90,34 +107,70 @@ an interrupted session leaves nothing behind. (Live docs → `core/save-first`.)
 
 ---
 
-## TEAMS — the connection's team
+## TEAMS — one key, every team
 
 Every project belongs to exactly one team, and every member of a team sees all
 of its projects. Each user has a **`Private Team`** — personal, with the user
 as its only member; nobody can be invited into it — and may create or join
 shared teams. Project names are unique within a team.
 
-**The current team comes from the connection, never from a tool argument.** No
-MCP tool takes a team; the same tools and `project_id` arguments work in every
-team.
+**One key and one address work in all of the user's teams.** An API key belongs
+to its user and identifies only that user; access to a team comes from the
+user's membership, not from the key. The MCP address is always
+`https://api.conport.app/mcp/` — the same for a key and for OAuth, for the
+`Private Team` and for every shared team.
 
-- **API key** — a key is the user's own, carries a name (label it after the
-  connection or agent that uses it) and is bound to exactly one team. Every call
-  made with it acts in that team. Another team needs another key: naming another
-  team is refused with `key_team_mismatch` (403).
-- **OAuth** — the standard `/mcp` address works in your `Private Team`; a shared
-  team's connection is `/mcp/teams/{team_id}`.
+**A project is addressed as `<team ID>/<project>`.**
 
-**`init` → `project_name_in_other_team`.** On a `Private Team` connection, when
-one of your shared teams already holds a project of that name, `init` does not
-create a second one; the error lists `teams[].mcp_path`. Tell the user to
-connect to that address (or to use an API key of that team). Do not retry under
-another name unless the user asks for one.
+| Name | Means |
+|---|---|
+| `k7m2qx9d/<project>` | the project in the shared team whose team ID is `k7m2qx9d` |
+| `pers/<project>` | the project in the user's own `Private Team` |
+| `<project>` | the same as `pers/<project>` |
+
+The team ID is the eight-character identifier shown on the team's settings
+page. `pers` is always the caller's own `Private Team`, so `pers/<project>` is
+a different project for every user — a team's repository must carry the team ID
+in `CONPORT_PROJECT_NAME`.
+
+**The team of a call comes from the project, or from the `team` argument.**
+
+- A tool that takes `project_id` works in that project's team — nothing else to
+  pass.
+- `init` returns `team` (`handle`, `name`, `kind`) next to `project_id`, and
+  `canonical_name` — the full `<team ID>/<project>` form.
+- Tools that can run without a project take a `team` argument: `list_projects`,
+  `search` without `project_id`, and the graph tools (`entities`, `entity`,
+  `entity_related`, `communities`, `community`, `graph_stats`). Pass the
+  `handle` that `init` returned as `team`.
+- **Without `team`, `search` and the graph tools cover the `Private Team`
+  only**, and their response names the `team` they ran in. An empty result from
+  a call without `team` says nothing about a shared team — repeat it with
+  `team` before concluding that the knowledge is not there. `list_projects`
+  without `team` lists the projects of all your teams.
+
+### Refusals — one action each
+
+| Refusal | What it means | Do exactly this |
+|---|---|---|
+| `project_not_found` | No project of that name in the team the name points at. `init` created nothing. | Tell the user. Call `create_project` **only when the user says so**, then repeat `init`. Never create a project on your own after this refusal. |
+| `project_name_in_other_team` | The name has no project in the `Private Team`, but one or more of the user's shared teams hold a project of that name. The answer lists them in `candidates` — the full names and the name of each team. | Show `candidates` to the user and ask them to put the chosen name into `CONPORT_PROJECT_NAME`. Do not pick one yourself, do not create a second project. |
+| `team_not_found` | The team ID in the name or in `team` is not a team the user is a member of (a team that does not exist answers the same). | Ask the user to check the team ID on the team's settings page and their membership in that team. |
+| `invalid_project_name` | The name is malformed: more than one `/`, an empty part, a project name made of digits only, or a prefix that is neither `pers` nor a team ID (the prefix is case-sensitive). | Show the user the name as it is set and ask them to correct `CONPORT_PROJECT_NAME` to `<project>`, `pers/<project>` or `k7m2qx9d/<project>`. Do not retry with a name of your own. |
+| `invalid_team_id` | The team was named by something that is not a team ID: a team's display name, a wrong-case `PERS`, or any other string in the name prefix or in `team`. | Use the short team ID from the team's settings page (for example `k7m2qx9d`) or `pers`. If it came from `CONPORT_PROJECT_NAME`, ask the user to correct it. Do not retry with a name of your own. |
+| `team_context_conflict` | Two parts of one call name two different teams of the user (for example the name prefix and the `team` argument). | Name the team once and repeat the call. |
+| `cross_team_link_not_supported` | A link or a linked task was requested between projects of two different teams. | Tell the user it is not supported. Do not retry. |
+
+`create_project(name, description?)` takes the same name forms as `init` and
+creates the project in the team the name points at. It is called on the user's
+word only.
 
 **Access changes apply on the next call.** A revoked key, a removed member or a
 demoted admin loses access on the very next request — reconnecting is not
-needed and does not restore anything. Removing a member revokes their keys of
-that team.
+needed and does not restore anything. Leaving a team or being removed from it
+does not revoke the user's keys: a key keeps working in the user's other teams;
+calls that name that team answer `team_not_found`, its projects answer as if
+they did not exist, and rejoining restores access with the same key.
 
 **Team administration is REST and dashboard only — there are no MCP tools for
 it.** Do not look for one. Point the user at the dashboard
@@ -125,35 +178,38 @@ it.** Do not look for one. Point the user at the dashboard
 
 | Action | Where |
 |---|---|
-| Create a shared team | Dashboard `Create New`, or `POST /api/v1/teams` with an `Idempotency-Key` header — needs a signed-in user, not a team key. A server setting can keep shared-team creation closed until team isolation is verified: `shared_teams_not_open` (403) is that state, not an error to work around — keep working in `Private Team`, do not retry |
-| List your teams | `GET /api/v1/teams` (a team key sees only its own team) |
+| Create a shared team | Dashboard `Create New`, or `POST /api/v1/teams` with an `Idempotency-Key` header — needs a signed-in user, not an API key. A server setting can keep shared-team creation closed until team isolation is verified: `shared_teams_not_open` (403) is that state, not an error to work around — keep working in `Private Team`, do not retry |
+| List your teams | `GET /api/v1/teams` — all teams of the user, with an API key as well as signed in |
 | Members, roles, invitations | `/api/v1/teams/{team_id}/members`, `/api/v1/teams/{team_id}/invitations` — admins invite, remove and promote; `Private Team` refuses invitations |
 | Plan and billing | `GET /api/v1/teams/{team_id}/plan` — any member; `POST /api/v1/teams/{team_id}/billing/...` (checkout, cancel, resume) — admins only |
-| Your own keys | Dashboard, or `GET/POST/DELETE /api/v1/me/api-keys` — a new key is bound to the team the request acts in |
-| Move a project to another team | Dashboard, or `POST /api/v1/projects/{project_id}/transfer` made in the project's team — see below |
+| Your own keys | Dashboard, or `GET/POST/DELETE /api/v1/me/api-keys` — a key is the user's own and carries no team |
+| Move a project to another team | Dashboard, or `POST /api/v1/projects/{project_id}/transfer` — see below |
 
-From the `conport` CLI: `conport api teams <operation>`; `--team-id <id>` sets
-the team of a request made with a signed-in user's token, and a key always acts
-in its own team.
+From the `conport` CLI: `conport api teams <operation>`; `--project` takes the
+full `k7m2qx9d/<project>` name and `--team-id` takes a team ID.
 
 **Moving a project to another team.** An admin of the source team who is also a
 member of the target team (a regular member is enough) moves it from the
 dashboard, or over REST: `POST /api/v1/projects/{project_id}/transfer` with
 `{"target_team_id": "<uuid>"}` (optionally `"name"` for a new name there) and an
-`Idempotency-Key` header, made in the source team — with that user's key of the
-source team, or a signed-in token with `X-Conport-Team-Id` of the source team.
-This is the one call where a team key names another team; the server still
-checks the key owner's admin role in the source and membership in the target.
-Repeating the request with the same key returns the first receipt instead of a
-second move. Refusals move nothing: `project_name_taken` (409, send a `name`),
-`project_limit_reached` (402, the target's plan is full), `project_busy` (409,
-retry later), `transfer_source_admin_required` (403). The project keeps its
-id, items, documents and history; links to projects that stay behind in the
-source team are removed; keys, subscription and past usage stay with the source
-team. After the move the source team's keys and connections no longer reach
-the project — work on it needs a key or connection of its new team. For a
-while graph functions may answer `graph_rebuilding`; project data stays
-readable.
+`Idempotency-Key` header. The numeric `project_id` names the source team by
+itself; the server checks the caller's admin role in the source and membership
+in the target. Repeating the request with the same `Idempotency-Key` returns
+the first receipt instead of a second move. Refusals move nothing:
+`project_name_taken` (409, send a `name`), `project_limit_reached` (402, the
+target's plan is full), `project_busy` (409, retry later),
+`transfer_source_admin_required` (403). The project keeps its id, items,
+documents and history; links to projects that stay behind in the source team
+are removed; subscription and past usage stay with the source team. For a while
+graph functions may answer `graph_rebuilding`; project data stays readable.
+
+**After the move the previous name no longer finds the project.** A name
+without a team ID (`<project>` or `pers/<project>`) answers
+`project_name_in_other_team`, and `candidates` carries the new name. A name
+that carried the source team's ID answers `project_not_found` — do not create
+the project again: the new name is `<target team ID>/<project>`, and the
+transfer receipt carries the target's team ID as `target_team_handle`. Either
+way ask the user to put the new name into `CONPORT_PROJECT_NAME`.
 
 ---
 
@@ -352,9 +408,9 @@ drift. Edit the original, or author an addendum with an explicit callout
 | "Clean up the graph" | `semantic_cleanup` (one-click; runs in background — poll `semantic_pass_stats`) |
 | Manual semantic flow | `semantic_pass_run(dry_run=true)` → `semantic_proposals_list` → approve/reject/defer → `semantic_proposals_apply`; `semantic_pass_stats` |
 
-**`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-271'`,
-`'doc-76'`); type vocabulary `task` / `doc` / `decision` / `pattern` /
-`progress`. The wikilink form `'[[task-271]]'` is also accepted verbatim. Plain
+**`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-<id>'`,
+`'doc-<id>'`); type vocabulary `task` / `doc` / `decision` / `pattern` /
+`progress`. The wikilink form `'[[task-<id>]]'` is also accepted verbatim. Plain
 integers work as a legacy fallback but the prefix form gives a clean 400 on type
 mismatch.
 
@@ -402,7 +458,7 @@ routing, it does not lay out for you.
   something — keep them axis-aligned. Unknown keys are ignored.
 - `conport.scope` — non-empty subsystem tags, the tie to the decisions behind
   the picture; `conport.provenance` — component id → canonical references
-  (`decision-321`, `doc-76`, `task-5`, `pattern-4`, `progress-9`; the wikilink
+  (`decision-<id>`, `doc-<id>`, `task-<id>`, `pattern-<id>`, `progress-<id>`; the wikilink
   form accepted elsewhere is not accepted here); `conport.source_commit`.
 
 **Discipline.**
@@ -468,26 +524,27 @@ Cross-references stay `task-N` for both kinds — epic is a subtype, not a separ
 
 Every reference to another ConPort item — in `summary`, `rationale`,
 `description`, document body, commit messages — uses the canonical form
-`<type>-<number>`.
+`<type>-<number>`. In the examples below `<id>` stands for the item's own
+number — write the digits, without the angle brackets.
 
 **Type vocabulary (lowercase):** `decision`, `task`, `doc`, `pattern`,
 `progress`. No aliases (no `document`, no `tasks`, no `dec`).
 
 **Forms accepted by the parser:**
-- Plain prose: `decision-321`, `task-271`, `doc-76`.
-- Wikilink: `[[decision-321]]`, `[[task-271]]`, `[[doc-76]]` — preferred inside
+- Plain prose: `decision-<id>`, `task-<id>`, `doc-<id>`.
+- Wikilink: `[[decision-<id>]]`, `[[task-<id>]]`, `[[doc-<id>]]` — preferred inside
   document bodies; the autolinker reifies them as item-graph edges.
-- Block anchor (documents only): `[[doc-89#<block_ulid>]]` — link to a
+- Block anchor (documents only): `[[doc-<id>#<block_ulid>]]` — link to a
   specific block (Wave 6).
 
 **Anti-patterns** (silently break tag/graph navigation):
 
 | ❌ Don't write | ✅ Write |
 |---|---|
-| `decision #321` (typed legacy with `#`) | `decision-321` |
-| `Task #123, #124, #125` (untyped continuation) | `task-123, task-124, task-125` |
-| `#634` (untyped, ambiguous) | `decision-634` (or the correct type) |
-| `decision #1155` (pre-migration global id) | drop — autolinker can't resolve; cite the new per-project id |
+| `decision #<id>` (typed legacy with `#`) | `decision-<id>` |
+| `Task #<a>, #<b>, #<c>` (untyped continuation) | `task-<a>, task-<b>, task-<c>` |
+| `#<id>` (untyped, ambiguous) | `decision-<id>` (or the correct type) |
+| `decision #<old id>` (pre-migration global id) | drop — autolinker can't resolve; cite the new per-project id |
 
 **Microcheck (extends POST-WRITE VERIFICATION):**
 Before the write call, scan your `summary` / `rationale` / `description`
@@ -616,7 +673,8 @@ On an `Invalid arguments for tool` error:
 ## CHECKLIST
 
 - [ ] Has `init` been run?
-- [ ] Project missing, or `init` answered `project_name_in_other_team` → checked the connection's team instead of creating a second project?
+- [ ] `CONPORT_PROJECT_NAME` not set → stopped and showed the `settings.local.json` line instead of guessing a name?
+- [ ] `init` answered `project_not_found` → told the user and waited for their word before `create_project`? Answered `project_name_in_other_team` → showed `candidates` instead of creating a second project?
 - [ ] Question about the project → has `search` been done?
 - [ ] Starting work on a task → moved to IN_PROGRESS before the first write?
 - [ ] New work → task created/updated?
@@ -627,7 +685,7 @@ On an `Invalid arguments for tool` error:
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
-- [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #321`)?
+- [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] Deep topic (recipes / gaps / semantic pass / block model / tool params) → fetched the live-docs page before acting?
 
 ---

@@ -21,8 +21,9 @@ it leaves the machine.
 
 - A paid plan — workflows run on the Workflow tool, and the harness setting
   `disableWorkflows` turns them off.
-- A resolvable ConPort project: pass `project`, or let the run derive it from
-  `CONPORT_PROJECT_NAME`, the git remote, or the working directory name.
+- A resolvable ConPort project: pass `project`, or set `CONPORT_PROJECT_NAME`
+  (`k7m2qx9d/<project>` for a team's project). There is no other source of
+  the name.
 - A gate — the commands that must be green before a merge. Pass it as `gate`, or
   let the run read it from the Global Constraints section of the plan that
   carries the task.
@@ -36,7 +37,7 @@ it leaves the machine.
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
 | `task` | integer | yes | Id of the ConPort task to execute. |
-| `project` | string | no | ConPort project name. Omitted → derived from `CONPORT_PROJECT_NAME`, the git remote, or the directory name. |
+| `project` | string | no | ConPort project name. Omitted → taken from `CONPORT_PROJECT_NAME`. |
 | `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor comment, but only across `docs/superpowers/plans/*.md` — if your plans live anywhere else, `plan` is effectively required. |
 | `gate` | object | no | `{dir, commands}` — the directory to run in and the list of gate commands. Omitted → taken from the plan's Global Constraints. |
 | `serialChecks` | boolean | no | Worktree agents run static checks only — all tests are deferred to the merge gate, which runs alone. For projects whose gate shares one test database. |
@@ -209,7 +210,8 @@ runtimes do not have.
   `/api/v1` suffix, as in `https://api.conport.app/api/v1`. Defaults to the
   hosted API.
 - `CONPORT_PROJECT_NAME` — the project `scout` reads when the call carries no
-  `--project` flag. Without either, `scout` hands the work back.
+  `--project` flag: `<project>` for a personal project, `k7m2qx9d/<project>`
+  for a team's one. Without either, `scout` hands the work back.
 - `CONPORT_TIMEOUT_MS` — the deadline of a single REST call, 10000 by default. A
   silent server ends the call with an error the run falls back on, never a hang.
 

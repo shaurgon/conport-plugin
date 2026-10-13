@@ -6,6 +6,29 @@ Install ConPort into Claude Code via the plugin marketplace.
 
 Open https://me.conport.app/dashboard/connect, sign in, and create a key.
 The value looks like `cport_live_...` and is shown exactly once — copy it now.
+The key is yours: one key works in your `Private Team` and in every shared team
+you are a member of.
+
+## Project name (required)
+
+```text
+Set CONPORT_PROJECT_NAME.
+Personal repository: <project>.
+Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
+A bare name in a team repository sends every member to their own Private Team.
+```
+
+In Claude Code the variable lives in `.claude/settings.local.json` of the
+repository:
+
+```json
+{
+  "env": { "CONPORT_PROJECT_NAME": "<project>" }
+}
+```
+
+Without the variable the hooks stay silent and the skill stops at session start
+and asks for this line — the name is never taken from anywhere else.
 
 ## 2. Add the marketplace and install
 
@@ -41,7 +64,12 @@ In the same session:
 
 Ask Claude in the session:
 
-> Call `mcp__conport__init` with name "<your-project>".
+> Call `mcp__conport__init` with the name from `CONPORT_PROJECT_NAME`. If it
+> answers `project_not_found`, call `mcp__conport__create_project` with the
+> same name and repeat `init`.
+
+`init` only finds a project, it never creates one, and the agent calls
+`create_project` only on your word — which this request gives it.
 
 Expected: a JSON response with `project_id`, `summary`, `instructions`, and
 (if it's a known project) `recent_decisions`. If you get

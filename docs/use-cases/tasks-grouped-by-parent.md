@@ -16,20 +16,20 @@
 ## Sample output shape
 
 ```
-EPIC #88 — Phase 1 Auth
-  ├─ #94  Frontend dashboard       (P4)
-  └─ #101 ConPort plugin           (P4)
+EPIC #<epic> — Checkout redesign
+  ├─ #<id>  Cart summary component   (P4)
+  └─ #<id>  Payment form validation  (P4)
 
 Root
-  ├─ #120 Data handling statement  (P3)
-  ├─ #121 Roadmap feedback channel (P3)
-  └─ #122 Pricing tiers            (P3)
+  ├─ #<id>  Update privacy notice    (P3)
+  ├─ #<id>  Feedback form            (P3)
+  └─ #<id>  Shipping rates table     (P3)
 ```
 
 ## Variants worth knowing
 
-- "Show the IN_PROGRESS tree for epic #88" → `list_tasks` with
-  `status: "IN_PROGRESS"` and `parent_task_id: 88`.
+- "Show the IN_PROGRESS tree for epic #N" → `list_tasks` with
+  `status: "IN_PROGRESS"` and `parent_task_id: N` (the epic's number).
 - "Hide completed, show the last 7 days' activity on top" → add
   `recent_activity` before the task list.
 - "Flatten to a single priority-sorted list" → same call, different

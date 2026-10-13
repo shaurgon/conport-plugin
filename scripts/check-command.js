@@ -3,11 +3,13 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
-const { dataDir, readStdin } = require('./_common.js');
+const { detectProject, denyListPath, readStdin } = require('./_common.js');
 
 function loadConventions() {
-  const p = path.join(dataDir(), 'deny-list.json');
+  // No project in the environment: no list is this session's, nothing is blocked.
+  const project = detectProject();
+  if (!project) return [];
+  const p = denyListPath(project);
   if (!fs.existsSync(p)) return [];
   try {
     const data = JSON.parse(fs.readFileSync(p, 'utf8'));

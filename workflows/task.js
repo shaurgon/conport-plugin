@@ -215,10 +215,9 @@ carry the base's empty values forward.
 Return strict JSON per schema; minimal texts, pointers instead of copies.
 
 === BRANCH B (fallback: there is no base to build on) ===
-0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, derive it
-   yourself: env CONPORT_PROJECT_NAME -> repository name from git remote -> working
-   directory name. Load conport MCP tools via ToolSearch and resolve project_id by
-   that name (list_projects). Use this project_id for every call.
+0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, read
+   env CONPORT_PROJECT_NAME. If it is unset, stop and report: "CONPORT_PROJECT_NAME is not set". Load conport
+   MCP tools via ToolSearch and call init with that name; use the project_id it returns for every call.
 1) get_task(${taskId}): return id, kind, status, title, parent epic id if any, the
    description compressed to <=600 chars, and the acceptance criterion if the
    description carries one (an '## Acceptance' / 'Acceptance:' section or an explicit

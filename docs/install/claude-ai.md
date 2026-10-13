@@ -37,12 +37,22 @@ Upload it in Claude.ai:
 
 Claude.ai skills are per-user — every teammate uploads their own copy.
 
+## Project name (required)
+
+Claude.ai has no environment variables, so you name the project in the chat.
+Personal project: `<project>`. Team project: `k7m2qx9d/<project>` — the team ID
+is on the team's settings page. A bare name always means a project of your own
+`Private Team`.
+
 ## Verify
 
 - **Skills**: **Settings → Features → Skills** lists `conport` as enabled.
 - **Connector** (once OAuth is live): the connectors panel shows `ConPort`
-  green, and asking Claude to call `mcp__conport__init` in a new chat
-  returns a JSON response with `project_id` and `summary`.
+  green. In a new chat ask Claude to call the ConPort `init` tool with your
+  project name. `init` only finds a project, it never creates one: for a
+  project that does not exist yet it answers `project_not_found`. Ask Claude
+  to call `create_project` with the same name, then `init` again; the answer
+  is a JSON response with `project_id` and `summary`.
 
 ## Updating
 

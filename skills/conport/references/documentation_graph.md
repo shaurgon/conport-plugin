@@ -47,16 +47,16 @@ with overlapping content:
 ```markdown
 # Authentication Spec
 
-> [!supersedes] [[doc-12]]
+> [!supersedes] [[doc-<old>]]
 > Replaces the older Authentication Guidelines wholesale.
 
 ## 1. JWT Validation
 ...
 ```
 
-The old doc-12 stays untouched. When a reader opens it with stub rendering
-on, every section in doc-12 is wrapped with a "moved" stub linking to
-doc-N#section, and the original markdown is folded into a `<details>`
+The old document (`doc-<old>`) stays untouched. When a reader opens it with
+stub rendering on, every section in it is wrapped with a "moved" stub linking to
+`doc-<new>#<section>`, and the original markdown is folded into a `<details>`
 collapse for historical reference.
 
 **Resolves — answering an open question.**
@@ -64,14 +64,14 @@ collapse for historical reference.
 ```markdown
 # Stripe vs Polar — Decision
 
-> [!resolves] [[doc-12#open-questions-billing]]
-> Closes the billing-provider question raised in doc-12.
+> [!resolves] [[doc-<id>#open-questions-billing]]
+> Closes the billing-provider question raised in doc-<id>.
 
 ## Decision
 We're going with Polar.
 ```
 
-The original doc-12's "Open Questions" section gets a "resolved by" stub
+The target document's "Open Questions" section gets a "resolved by" stub
 above it, with the unmodified questions still visible inline.
 
 **Extends — adding detail to a foundation doc.**
@@ -79,12 +79,12 @@ above it, with the unmodified questions still visible inline.
 ```markdown
 # Auto-Reflection Spec
 
-> [!extends] [[doc-28]]
+> [!extends] [[doc-<base>]]
 > Adds the supersede / dedup runtime on top of Agent Memory Spec.
 ```
 
-doc-28 (Agent Memory) and this doc both stay canonical. Rendering inserts
-an "extended by" stub in doc-28 sections that this extension references,
+The base doc (Agent Memory, `doc-<base>`) and this doc both stay canonical. Rendering
+inserts an "extended by" stub in the base doc's sections that this extension references,
 without collapsing them — readers get a discovery hint, not a redirect.
 
 **Relates-to — cross-cutting concern.**
@@ -92,12 +92,12 @@ without collapsing them — readers get a discovery hint, not a redirect.
 ```markdown
 # Multi-tenancy + RLS Spec
 
-> [!relates-to] [[doc-15]]
-> Cross-cutting Security Guidelines (doc-15) detail policies; this doc
+> [!relates-to] [[doc-<id>]]
+> Cross-cutting Security Guidelines (doc-<id>) detail policies; this doc
 > details RLS implementation. Both canonical at their layer.
 ```
 
-Pure backlink — no stub injected. The Referenced-by panel in doc-15 will
+Pure backlink — no stub injected. The Referenced-by panel of the linked doc will
 show this spec as an incoming relates-to edge.
 
 ## Doc-level vs section-level callouts
@@ -194,7 +194,7 @@ is required so the call cannot wipe the whole backlog by accident.
 
 If the doc you're writing is itself documenting Wave 5 conventions, the
 parser ignores fenced code blocks when scanning for callouts and
-wikilinks. Examples like `> [!moved] [[doc-12]]` inside a ` ```markdown`
+wikilinks. Examples like `> [!moved] [[doc-<id>]]` inside a ` ```markdown`
 block won't be parsed as real edges, so they don't produce false-positive
 drift or dangling wikilink gaps.
 

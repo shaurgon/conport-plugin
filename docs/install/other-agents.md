@@ -34,8 +34,33 @@ line**. The CLI reads it from the environment:
 export CONPORT_API_KEY=cport_live_...
 ```
 
-Tenant isolation is enforced server-side, so each key only ever sees its own
-projects and memory.
+Tenant isolation is enforced server-side. The key is yours: one key works in
+your `Private Team` and in every shared team you are a member of, and sees
+nothing else.
+
+## Project name (required)
+
+```text
+Set CONPORT_PROJECT_NAME.
+Personal repository: <project>.
+Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
+A bare name in a team repository sends every member to their own Private Team.
+```
+
+The agent reads it from the environment of its own process — export it next to
+the key:
+
+```bash
+export CONPORT_PROJECT_NAME=<project>
+```
+
+A client with no environment variables (Claude.ai, for one) has the user name
+the project in the chat, in the same form.
+
+A project that does not exist yet is not created by reading it: ask the
+user, and only when they say so run
+`npx -y conport api projects create --name <project>` — for a team's project
+add `--team-id k7m2qx9d`; the name itself never contains `/`.
 
 ## 3. Use the CLI
 
@@ -50,7 +75,7 @@ npx conport docs
 npx conport api __schema
 
 # Call any operation: conport api <resource> <operation> [--flags]
-npx conport api tasks list --project_identifier <project>
+npx conport api tasks list --project_identifier "$CONPORT_PROJECT_NAME"
 npx conport api search create --query "auth flow"
 ```
 

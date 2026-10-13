@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 15.43.0
+  version: 16.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -56,24 +56,26 @@ decision was already made and simply runs the cycle against whatever
 
 ## TEAM CONTEXT
 
-A run works in the team of its connection — the team its API key is bound to,
-or the team of its MCP address (`/mcp` is the user's `Private Team`,
-`/mcp/teams/{team_id}` a shared team). See *TEAMS* in the **conport** skill.
+A run authenticates as its user and works in the team of its project. One API
+key of the user reaches every team the user is a member of; the MCP address is
+the same for all of them. See *TEAMS* in the **conport** skill.
 
-- **Run on a key of the project's team.** A scheduled run authenticates with
-  one of the user's own named keys, issued in the team that owns the project
-  (dashboard or `POST /api/v1/me/api-keys`). Name the key after the routine, so
-  it can be revoked on its own.
-- **A run never changes team.** It does not look the project up in other teams,
-  does not create or administer teams (there are no MCP tools for that), and
-  does not move projects.
-- **The project is not where the run expects it** — `init` returns a new, empty
-  project where the run expected history, a numeric `project_id` no longer
-  resolves, or a call is refused with `key_team_mismatch`, `team_not_found` or
-  an authentication error: the project was moved to another team, or the key
-  was revoked or its owner left the team. **Stop:** do not work in the empty
-  project, do not start or finish a run in it, and report that the routine
-  needs a key or connection of the project's current team.
+- **One key of the user runs the routine.** A scheduled run authenticates with
+  one of the user's own named keys (dashboard or `POST /api/v1/me/api-keys`).
+  Name the key after the routine, so it can be revoked on its own.
+- **The project is set by `CONPORT_PROJECT_NAME`, team ID included.** A team's
+  project is `k7m2qx9d/<project>`; a bare `<project>` is a project of the
+  user's own `Private Team`. A run without the variable does not start.
+- **A run never changes team.** It does not look the project up under another
+  name, does not create projects, does not create or administer teams (there
+  are no MCP tools for that), and does not move projects.
+- **Stop conditions.** `init` or any later call is refused with
+  `project_not_found`, `project_name_in_other_team`, `team_not_found` or an
+  authentication error: the project was moved to another team or deleted, the
+  user left the team, or the key was revoked. **Stop:** do not call
+  `create_project`, do not start or finish a run, and report the refusal as it
+  came — for `project_name_in_other_team` together with its `candidates`, so the
+  user can put the right name into `CONPORT_PROJECT_NAME`.
 
 ---
 

@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const {
-  dataDir, detectProjectIdentifier, readStdin,
+  dataDir, detectProject, readStdin,
 } = require('./_common.js');
 
 const MIN_PROMPTS_FOR_REFLECTION = 5;
@@ -116,7 +116,7 @@ function buildPayload(sessionId, project, parsed) {
 }
 
 async function main() {
-  const project = detectProjectIdentifier();
+  const project = detectProject();
   if (!project) { log('SKIP: no project identifier'); process.exit(0); }
 
   let input;
@@ -137,7 +137,7 @@ async function main() {
     process.exit(0);
   }
 
-  const payload = buildPayload(sessionId, project, parsed);
+  const payload = buildPayload(sessionId, project.raw, parsed);
   try {
     const safeSession = (sessionId || 'nosession').replace(/[^a-zA-Z0-9_-]/g, '_');
     const payloadFile = path.join(
