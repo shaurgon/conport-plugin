@@ -31,24 +31,36 @@ mcp__conport__<tool_name>({
 
 ### init
 
-Initialize/load a project. Project name is required.
+Load a project. Project name is required. `init` only finds a project and
+never creates one — a missing project is made with `create_project`, on the
+user's word only.
 
 ```
 mcp__conport__init({
-  name: "my-project",
-  description: "Optional description"
+  name: "my-project"
+})
+```
+
+A project of a shared team is addressed by its team id:
+
+```
+mcp__conport__init({
+  name: "k7m2qx9d/my-project"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| name | string | yes | Project name (1-50 chars, ASCII alphanumeric/hyphen/underscore) |
-| description | string | no | Project description (max 2000 chars) |
+| name | string | yes | Project name: "<project>" for your Private Team, "<team id>/<project>" for a shared team. The project part is at most 255 characters. |
+| description | string | no | Deprecated, ignored: init no longer creates projects. |
 | skill_id | string | no | Skill the client runs (`conport`, `conport-agent`) — only used to detect an available skill update |
 | skill_version | string | no | Semver of the installed SKILL.md content (independent of the plugin release tag) |
 | client_type | string | no | Calling environment: `claude-code` \| `claude-ai` \| `cursor` \| `openclaw` \| `mcporter` \| `paperclip`. Picks the install-guide URL of an update notice |
 
-**Returns:** `project_id`, `name`, `recent_decisions`, `recent_patterns`,
+**Returns:** `project_id`, `name` (the short name), `canonical_name`
+(`<team id>/<project>`; `pers/<project>` in your Private Team), `team`
+(`handle`, `name`, `kind` — `handle` is `pers` for your Private Team),
+`recent_decisions`, `recent_patterns`,
 `backlog` (`total_todo`, `total_in_progress`, `top` — up to 5 items with
 `effective_priority` and `subtask_count`), `stats`, `active_context`
 (`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
@@ -66,17 +78,67 @@ you see roots + orphans; `effective_priority` rolls up the most-important
 priority across direct children (priority is industry-standard 1-5 where
 1=critical and 5=idle, so "most important" = the smallest number).
 
-**Refusals:** `name_required` when `name` is empty — the project is never
-guessed.
+**Refusals** (a dict with `error`):
+
+- `name_required` — `name` is empty; the project is never guessed.
+- `project_not_found` (with `canonical_name` and `message`) — no such project
+  in the team the name addresses. Nothing is created. Ask the user whether to
+  create it; call `create_project` only on their word, then call `init` again.
+- `project_name_in_other_team` (with `candidates` and `message`) — a short
+  name that is not in your Private Team but is the name of a project in your
+  shared teams. Each candidate carries `canonical_name` (`<team id>/<project>`)
+  and `team_name`. Ask the user which of them they mean and to set its
+  `canonical_name` as `CONPORT_PROJECT_NAME`; do not retry `init` with
+  another name yourself.
+
+**Errors:** `invalid_project_name` — the name is digits only, has more than
+one `/`, an empty part, a project part longer than 255 characters, or a prefix
+that is neither `pers` nor a team id; `team_not_found` — the prefix names no
+team you are a member of; `team_context_conflict` — the connection's address
+pins one of your teams and the prefix names another.
+
+### create_project
+
+Create a project. Call it only when the user asks for a new project — never on
+your own after `project_not_found`.
+
+```
+mcp__conport__create_project({
+  name: "k7m2qx9d/my-project",
+  description: "Optional description"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| name | string | yes | Project name: "<project>" for your Private Team, "<team id>/<project>" for a shared team. The project part is at most 255 characters. |
+| description | string | no | Project description |
+
+**Returns:** `project_id`, `name` (the short name), `canonical_name` and `team`
+(`handle`, `name`, `kind`). Call `init` with the same name afterwards.
+
+**Refusals** (a dict with `error`):
+
+- `project_name_taken` (with `canonical_name`) — the team already has a
+  project of this name.
+- `project_limit_reached` (with `plan`, `limit`, `current`) — the team's plan
+  allows no more projects.
+
+**Errors:** `invalid_project_name`, `team_not_found` and `team_context_conflict`,
+as for `init`.
 
 ### list_projects
 
-List the projects you own — use it to discover project IDs before calling
-project-scoped tools.
+List the projects of your teams — use it to discover project IDs before
+calling project-scoped tools.
 
 ```
 mcp__conport__list_projects({
   limit: 100
+})
+
+mcp__conport__list_projects({
+  team: "k7m2qx9d"
 })
 ```
 
@@ -84,9 +146,21 @@ mcp__conport__list_projects({
 |-----------|------|----------|-------------|
 | limit | integer | no | Max projects (default: 100, clamped to 1..500) |
 | offset | integer | no | Pagination offset (default: 0) |
+| team | string | no | Team to list — `"pers"` or a shared team's ID. Omitted: every active team you are a member of |
 
-**Returns:** `projects` (`id`, `name`, `description`, `created_at`,
-`updated_at`) and `total`.
+**Returns:** `projects` (`id`, `name`, `canonical_name`, `team`,
+`description`, `created_at`, `updated_at`) and `total`. `canonical_name` is
+`<team>/<name>` and `team` is the project's team — `pers` for your Private
+Team, otherwise the shared team's ID.
+
+Without `team` the list spans all your active teams — your Private Team
+first, then the shared teams from the oldest, the projects of a team ordered
+by name — and
+`limit` / `offset` page over that merged list. A team that is being deleted
+is left out. With `team` it is that one team, and the reply names it in a
+top-level `team`.
+
+**Refusals:** `team_not_found` when `team` is not a team of yours.
 
 ---
 
@@ -639,10 +713,11 @@ task is an error.
 
 ### add_linked_task
 
-Create a task in **another** project you own without switching context, and
-record the backref in the current project. Note the parameter names here differ
-from the rest of the Tasks section: the current project is `source_project_id`
-and the target is addressed by **name**.
+Create a task in **another** project of the same team without switching
+context, and record the backref in the current project. Note the parameter
+names here differ from the rest of the Tasks section: the current project is
+`source_project_id` and the target is addressed by **name**. The team is the
+one of the source project: a linked task never crosses a team boundary.
 
 ```
 mcp__conport__add_linked_task({
@@ -656,7 +731,7 @@ mcp__conport__add_linked_task({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | source_project_id | integer | yes | ID of the project you are working in — the "from" side of the link |
-| target_project | string | yes | **Name** of the project the task is created in. Must belong to you — anything else is not found |
+| target_project | string | yes | **Name** of the project the task is created in: the short name, or `team/project` (`k7m2qx9d/other-project`) naming the team of the source project. Anything outside that team is not found |
 | title | string | yes | Task title (max 200 chars) |
 | description | string | no | Task description (max 2000 chars) |
 | priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
@@ -667,7 +742,12 @@ slimmed), `source_progress` (the log entry written in the source project),
 `link_id` and `summary`.
 
 **Errors:** passing the same project on both sides fails with 400 — use
-`add_task` for a task in the project you are already in.
+`add_task` for a task in the project you are already in. A `team/` prefix of a
+team you are not a member of fails with `team_not_found` (404), whether that
+team exists or not; a prefix of another team of yours fails with
+`cross_team_link_not_supported` (422). A malformed target fails with
+`invalid_project_name` (422): rewrite it as `<team ID>/<project>`
+(`k7m2qx9d/other-project`), `pers/<project>`, or a name without `/`.
 
 ---
 
@@ -1250,7 +1330,8 @@ client-side while `relationship` / `direction` are inert.
 
 ### link_project
 
-Create a cross-project link
+Create a cross-project link between two projects of one team. The team is the
+one of the source project (`project_id`); links never cross a team boundary.
 
 ```
 mcp__conport__link_project({
@@ -1264,7 +1345,7 @@ mcp__conport__link_project({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Source project ID |
-| target_project | integer | yes | Target project ID |
+| target_project | integer \| string | yes | Target project: its ID, its short name, or `team/project` (`k7m2qx9d/billing`) naming the team of the source project |
 | link_type | string | yes | Link type |
 | description | string | no | Link description |
 
@@ -1272,7 +1353,14 @@ mcp__conport__link_project({
 
 **Returns:** the created link — `id`, both project IDs **and names**,
 `link_type`, `description`, `metadata`, `created_by`, `created_at`. Both
-projects must be yours, and they must differ.
+projects must be in the team of the source project, and they must differ.
+
+**Errors:** a target outside that team is not found (404), by ID and by name
+alike. A `team/` prefix of a team you are not a member of fails with
+`team_not_found` (404), whether that team exists or not; a prefix of another
+team of yours fails with `cross_team_link_not_supported` (422). A malformed
+target fails with `invalid_project_name` (422): rewrite it as
+`<team ID>/<project>` (`k7m2qx9d/billing`), `pers/<project>`, or a name without `/`.
 
 ### get_project_links
 
@@ -1341,11 +1429,18 @@ mcp__conport__search({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | query | string | yes | Search query |
-| project_id | integer | no | Scope to one project. Omit to search every project you own — handy when you don't know where a fact lives |
+| project_id | integer | no | Scope to one project; the search runs in that project's team. Omit to search every project of one team (`team`, or your Private Team) — handy when you don't know where a fact lives |
 | types | array | no | Filter by item type. **Singular vocabulary**: `decision`, `task`, `pattern`, `document`, `progress_entry`, `context`, `custom_data`; the cross-reference short forms `progress` and `doc` are accepted as aliases. Values outside it are dropped, so a typo (`tasks`, `docs`) silently narrows the search to nothing |
 | limit | integer | no | Max results, capped at 100 (default: 20) |
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
-**Returns:** `results` (ranked) and `total`, plus a rendered `_summary`.
+**Returns:** `results` (ranked) and `total`, plus a rendered `_summary` and
+`team` — the team the search ran in (`pers` for your Private Team, otherwise
+the shared team's ID). A search never crosses teams: an empty result is about
+that team only, so before concluding the knowledge is missing, repeat the
+search with the `team` of the project you work in. A `project_id` that is not
+a project of the team the call names is an error (`Project '<id>' not found`),
+the same for a project of another team and for one that does not exist.
 Each hit carries:
 - `item_type`, `item_id` — the per-project ID, so pair it with `project_id`
 - `project_id` / `project_name` — which project the hit came from
@@ -1358,8 +1453,12 @@ Each hit carries:
   `covered_by_pattern` (with `_pattern_id`)
 
 An empty result set adds `_hint: "knowledge_gap_detected"` with a
-`_hint_message` telling you to save the answer once you have it — but only
-when the search itself was healthy.
+`_hint_message` that names the team searched and gives one next step. When
+nothing named the team — no `project_id`, no `team`, and a connection that is
+not a team's own address — the search ran in your Private Team by default:
+repeat it with the `team` of the project you work in if that project belongs
+to another team. Otherwise — save the answer once you have it. Only when the
+search itself was healthy.
 
 **Incomplete searches.** Search fuses several sources; if one of them cannot
 run, the rest still answer and the reply says so:
@@ -1379,8 +1478,10 @@ failed to return.
 
 ## GraphRAG & Entities
 
-> GraphRAG tools work **globally** (without `project_id`) but are scoped to
-> the current owner.
+> GraphRAG tools work **without `project_id`**: each reads the graph of one
+> team — `team`, or your Private Team when it is omitted — and names that team
+> in the reply's `team` (`pers` or the shared team's ID). The graph of a
+> project in a shared team is reached only with that team's `team`.
 
 ### entities
 
@@ -1399,9 +1500,10 @@ mcp__conport__entities({
 | query | string | no | Search query (ILIKE match on canonical_name) |
 | entity_type | string | no | Exact match on the stored type. Extraction emits: technology \| component \| service \| pattern \| standard \| person \| team |
 | limit | integer | no | Max results (default: 20) |
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `entities` (`id`, `canonical_name`, `entity_type`, `description`,
-`mention_count`, `project_count`) and `total`.
+`mention_count`, `project_count`), `total` and `team`.
 
 ### entity
 
@@ -1416,11 +1518,13 @@ mcp__conport__entity({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | entity_id | integer | yes | Canonical entity ID |
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `id`, `canonical_name`, `entity_type`, `description`,
 `mention_count`, `project_count`, `projects` (`project_id`, `project_name`,
-`decision_count`) and `related_entities` (`entity_id`, `canonical_name`,
-`entity_type`, `relation_type`, `direction`). An unknown entity is an error.
+`decision_count`), `related_entities` (`entity_id`, `canonical_name`,
+`entity_type`, `relation_type`, `direction`) and `team`. An entity unknown in
+that team is an error.
 
 ### entity_related
 
@@ -1439,9 +1543,11 @@ mcp__conport__entity_related({
 | entity_id | integer | yes | Canonical entity ID |
 | max_depth | integer | no | Traversal depth (default: 2) |
 | relation_types | string | no | Comma-separated relation types to filter |
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `entity_id`, `related_entities` (walked over the in-memory graph
-up to `max_depth`) and `total`. An entity that is not in the graph is an error.
+up to `max_depth`), `total` and `team`. An entity that is not in that team's
+graph is an error.
 
 ### communities
 
@@ -1458,10 +1564,11 @@ mcp__conport__communities({
 |-----------|------|----------|-------------|
 | min_size | integer | no | Minimum cluster size (default: 2) |
 | include_summaries | boolean | no | Include summaries (default: true) |
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `communities` (`community_id`, `level`, `entity_count`,
 `entity_names`, `keywords`, plus `summary`, `summary_generated_at` and
-`summary_stale` when summaries are asked for) and `total`. A summary is
+`summary_stale` when summaries are asked for), `total` and `team`. A summary is
 rewritten only when its cluster's membership changed or its text has aged, so
 `summary_stale: true` means the prose describes a different set of entities
 than the one listed — treat it as a hint, not as fact.
@@ -1479,25 +1586,28 @@ mcp__conport__community({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | community_id | string | yes | Community ID (string) |
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `community_id`, `level`, `summary`, `summary_generated_at`,
 `summary_stale`, `keywords`, `entities` (`entity_id`, `canonical_name`,
 `entity_type`), `relationships` (`source_id`, `target_id`, `relation_type`,
-`weight`), `entity_count` and `relationship_count`.
+`weight`), `entity_count`, `relationship_count` and `team`.
 
 ### graph_stats
 
-Knowledge-graph statistics across all your projects
+Knowledge-graph statistics across all the projects of one team
 
 ```
 mcp__conport__graph_stats()
 ```
 
-No parameters.
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `nodes_count`, `edges_count`, `density`, `is_directed`,
-`entity_type_distribution`, `relation_type_distribution`, `is_dirty` and
-`last_save` — computed over your own graph only.
+`entity_type_distribution`, `relation_type_distribution`, `is_dirty`,
+`last_save` and `team` — computed over that team's graph only.
 
 ---
 
@@ -2228,7 +2338,7 @@ mcp__conport__list_error_solutions({
 
 | Category | Tools |
 |----------|-------|
-| Session | `init`, `list_projects` |
+| Session | `init`, `create_project`, `list_projects` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task` |
 | Milestones | `add_milestone`, `update_milestone`, `list_milestones` |
