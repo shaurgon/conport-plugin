@@ -2,12 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
+import { WORKFLOWS, fencedRegion, secondMarker, source, withSecond } from './fenced-region.mjs'
 
-const WORKFLOWS = dirname(dirname(fileURLToPath(import.meta.url)))
 const HELPER = join(WORKFLOWS, 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
 const PROJECT = 42                                 // a neutral id: no real project is implied
@@ -556,15 +555,18 @@ test('an epic table whose first call fails runs every later step regardless', wi
 // a line of code alike: a word quoted inside a comment is documentation, not a
 // key of the table.
 const keysInFenced = (src, file) => {
-  const from = src.indexOf('EPIC_TABLE_KEYS_BEGIN')
-  const to = src.indexOf('EPIC_TABLE_KEYS_END')
-  assert.ok(from >= 0, 'marker EPIC_TABLE_KEYS_BEGIN missing from ' + file)
-  assert.ok(to > from, 'marker EPIC_TABLE_KEYS_END missing from ' + file + ' or out of order')
-  const region = src.slice(src.indexOf('\n', from) + 1, src.lastIndexOf('\n', to) + 1)
+  const region = fencedRegion(src, 'EPIC_TABLE_KEYS_BEGIN', 'EPIC_TABLE_KEYS_END', file)
   const code = region.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
   return [...code.matchAll(/'([a-z_]+)'/g)].map(m => m[1])
 }
-const fencedKeys = file => keysInFenced(readFileSync(join(WORKFLOWS, file), 'utf8'), file)
+const fencedKeys = file => keysInFenced(source(file), file)
+
+// A second marker would move the reading onto lines that are not the key list.
+for (const file of ['epic.js', 'wf-helper.mjs'])
+  for (const marker of ['EPIC_TABLE_KEYS_BEGIN', 'EPIC_TABLE_KEYS_END'])
+    test(`${file}: a second ${marker} fails the reading instead of moving the comparison`, () => {
+      assert.throws(() => keysInFenced(withSecond(source(file), marker), file), secondMarker(marker, file))
+    })
 
 test('the fenced key scanner reads the key list only, not the prose around it', () => {
   const src = [

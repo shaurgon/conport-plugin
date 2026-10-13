@@ -1,28 +1,25 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fencedRegion, secondMarker, source, withSecond } from './fenced-region.mjs'
 
 // The workflow runner evaluates epic.js with injected globals and gives it neither
 // import nor fs, so the parity core cannot live in a module epic.js would import.
 // It stays inline in epic.js between stable markers, and this test extracts exactly
 // that source and evaluates it — the code under test is the shipped code, verbatim.
-const EPIC = join(dirname(dirname(fileURLToPath(import.meta.url))), 'epic.js')
 const BEGIN = 'PARITY_BLOCK_BEGIN'
 const END = 'PARITY_BLOCK_END'
 
-const parityCore = () => {
-  const src = readFileSync(EPIC, 'utf8')
-  const from = src.indexOf(BEGIN)
-  const to = src.indexOf(END)
-  assert.ok(from >= 0, `marker ${BEGIN} missing from epic.js`)
-  assert.ok(to > from, `marker ${END} missing from epic.js or out of order`)
-  // whole lines only: the markers themselves live inside comments
-  const block = src.slice(src.indexOf('\n', from) + 1, src.lastIndexOf('\n', to) + 1)
+const parityCore = (src = source('epic.js')) => {
+  const block = fencedRegion(src, BEGIN, END, 'epic.js')
   return new Function(`${block}\nreturn { planOnly, titleKey, matchPlanToChildren, applyCreated, applyParity }`)()
 }
 const P = parityCore()
+
+// A second marker would hand the evaluation a region other than the shipped core.
+for (const marker of [BEGIN, END])
+  test(`a second ${marker} fails the extraction instead of evaluating another region`, () => {
+    assert.throws(() => parityCore(withSecond(source('epic.js'), marker)), secondMarker(marker, 'epic.js'))
+  })
 
 const planTask = (i, title, extra = {}) =>
   ({ plan_index: i, title, coverage: 'plan_only', conport_id: null, ...extra })

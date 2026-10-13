@@ -1,31 +1,27 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fencedRegion, secondMarker, source, withSecond } from './fenced-region.mjs'
 
 // Same extraction technique as the other parity tests: applyMerge stays inline in
 // epic.js (the workflow runner gives the script neither import nor fs) between
 // stable markers, and this test evaluates exactly that source — the code under
 // test is the shipped code, verbatim.
-const WORKFLOWS = dirname(dirname(fileURLToPath(import.meta.url)))
-const EPIC = join(WORKFLOWS, 'epic.js')
-const TASK = join(WORKFLOWS, 'task.js')
 const BEGIN = 'APPLY_MERGE_BEGIN'
 const END = 'APPLY_MERGE_END'
 
-const applyMerge = () => {
-  const src = readFileSync(EPIC, 'utf8')
-  const from = src.indexOf(BEGIN)
-  const to = src.indexOf(END)
-  assert.ok(from >= 0, `marker ${BEGIN} missing from epic.js`)
-  assert.ok(to > from, `marker ${END} missing from epic.js or out of order`)
-  const block = src.slice(src.indexOf('\n', from) + 1, src.lastIndexOf('\n', to) + 1)
+const applyMerge = (src = source('epic.js')) => {
+  const block = fencedRegion(src, BEGIN, END, 'epic.js')
   assert.match(block, /function applyMerge/, 'the marked region is not applyMerge')
   // matchId is defined outside the region; the queue rows here carry plain ids.
   return new Function(`const matchId = t => t.id\n${block}\nreturn applyMerge`)()
 }
 const A = applyMerge()
+
+// A second marker would hand the evaluation a region other than the shipped code.
+for (const marker of [BEGIN, END])
+  test(`a second ${marker} fails the extraction instead of evaluating another region`, () => {
+    assert.throws(() => applyMerge(withSecond(source('epic.js'), marker)), secondMarker(marker, 'epic.js'))
+  })
 
 // A ledger stub that records which transition each status took. The real ledger
 // helpers are exercised by the workflow itself; what this test pins is the
@@ -126,7 +122,7 @@ test('a result whose id is not in the queue is ignored', () => {
 // only — that a branch exists, not which one — so it deliberately does not
 // catch a status routed to the wrong disposition; the per-status tests above do.
 test('every status of the merge schema has a branch', () => {
-  const src = readFileSync(EPIC, 'utf8')
+  const src = source('epic.js')
   // Several schemas in the file declare a `status` enum; the merge one is the
   // enum that carries MERGED. Anchoring on content rather than on order keeps
   // this test pointed at S_MG when the schemas move.
@@ -150,7 +146,7 @@ test('every status of the merge schema has a branch', () => {
 // with the check below the retry, the aborted row is the only one left pending,
 // so it would be the one thing re-merged.
 test('the state-only survey aborts before it builds the retry queue', () => {
-  const src = readFileSync(EPIC, 'utf8')
+  const src = source('epic.js')
   const survey = src.indexOf('{ stateOnly: true }')
   const abort = src.indexOf('L.aborted', survey)
   const retry = src.indexOf('L.pendingMerge(t)', survey)
@@ -164,7 +160,7 @@ test('the state-only survey aborts before it builds the retry queue', () => {
 // flow), so the guard there is textual: the branch must exist for every status
 // that names one row, and it must fail the run rather than leave it unset.
 test('task.js dispatches NOT_MERGED to a failure', () => {
-  const src = readFileSync(TASK, 'utf8')
+  const src = source('task.js')
   assert.match(src, /res\.status === 'NOT_MERGED'\) fail\('NOT_MERGED'/,
     'task.js leaves NOT_MERGED unhandled — the run would end UNKNOWN and touch nothing in ConPort')
 })

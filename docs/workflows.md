@@ -176,7 +176,7 @@ judging a change, hunting for gaps, deciding whether the goal was reached.
 | `preflight` | State of the repository before a run: clean or dirty tree, current branch, the default branch, the head commit. Debris of an interrupted merge is aborted first. |
 | `gate` | Runs the gate commands in the gate directory and reports GREEN, or RED with the tail of the first failing command. |
 | `merge` | Merges the queued branches one at a time, the full gate after each; a conflict or a red gate aborts that merge cleanly and the batch reports it per branch. |
-| `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics. |
+| `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics, and the run's own unmerged branches are named in `kept`. |
 | `account` | Writes the run's outcome back to ConPort: closes done tasks with their resolutions, blocks failures, files deferred findings, logs the run summary, closes the epic when the run says it may. Every item is guarded by a read, so re-running the same table changes nothing. |
 | `scout` | Collects the raw material of one task: the task itself, its slice of the plan, the files it names, the Global Constraints, the gate object and the spec reference. It compresses and judges nothing. |
 | `--version` | The plugin version the helper shipped with, as `{"version": "..."}` (`null` when the manifest next to it is unreadable). |
@@ -198,8 +198,8 @@ the answer, and the plainest possible "this helper is stale".
 
 ### Environment
 
-The helper needs Node 18 or newer — it calls the global `fetch`, which older
-runtimes do not have.
+The helper is tested on Node 22. It calls the global `fetch`, so a runtime
+without one cannot run it at all; nothing older than Node 22 is tested.
 
 - `CONPORT_API_KEY` — a ConPort API key. With it, `account` and `scout` talk to
   ConPort over REST. Without it, the run does the same steps through the ConPort
@@ -268,18 +268,25 @@ the version:
 Keep the trailing ` *`: every call carries a subcommand and flags, so an exact
 command rule without it matches nothing.
 
-Without the rule, a refusal destroys nothing — but it is not reported as a
-refusal either. Every per-branch status a run is *meant* to record, `NOT_MERGED`
-and its `gate_tail` included, comes from a helper that ran; a refusal means the
-helper never ran, so by design there is nothing to report. What the run does
-then is this: the merge step's answer fails its schema, the run asks once for
-the merge state and that call is refused as well, no result survives, and the
-task ends as `UNKNOWN_MERGE` — in a task run the ConPort task is set BLOCKED
-with a reason that never mentions permissions; in an epic run the task is
-neither closed nor blocked, it stays `UNKNOWN_MERGE` in the ledger and later
-tasks that depend on it are skipped. A refused cleanup produces no report at
-all, so nothing reaches an `errors` list, and the two leftovers it should have
-handled are not the same kind of thing. Unmerged branches staying on disk is
+Without the rule, a refusal destroys nothing, and the run names it. Every
+per-branch status a run is *meant* to record, `NOT_MERGED` and its `gate_tail`
+included, comes from a helper that ran; a refusal means the helper never ran,
+so the agent answers with an error object instead — `{"error": "refused:
+..."}`, the shape of the helper's own error answers — and the run writes it
+into the ledger's notes under the label of the step: `merge error:"refused:
+..."`. A helper that crashed or printed garbage leaves no such note, which is
+how the two are told apart. The first helper call of a run is `preflight`, so
+without the rule that is usually where the refusal lands: the run ends as
+`ABORTED_PREFLIGHT` with the note `preflight error:"refused: ..."`, before any
+work is dispatched. Further into a run the outcome is the same either way: the merge step
+yields no result, the run asks once for the merge state and that call is
+refused as well, and the task ends as `UNKNOWN_MERGE` — the ConPort task is
+set BLOCKED with that reason (the permission cause is in the notes, not in the
+reason), and in an epic run later tasks that depend on it are skipped. A
+refused cleanup is noted the same way, `janitor error:"refused: ..."`, while a
+cleanup that ran and could not remove something lists it as `cleanup errors:
+...`. The two leftovers a cleanup handles are not the same kind of thing.
+Unmerged branches staying on disk is
 the policy — cleanup only ever deletes the merged ones, and forensics lives in
 the branch. Worktrees are not kept: the janitor is handed every worktree the
 run made regardless of outcome, so a worktree still on disk is debris the run

@@ -402,7 +402,7 @@ test('cleanup: removes an existing worktree and prunes', () => {
   const dir = mkRepo()
   mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
   const wt = join(dir, 'wt-child')
-  git(dir, 'worktree', 'add', wt, 'task/t1')
+  git(dir, 'worktree', 'add', '-q', wt, 'task/t1')
   assert.ok(existsSync(wt))
   const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([wt]))
   assert.deepEqual(out.worktrees_removed, [wt])
@@ -422,7 +422,115 @@ test('cleanup: a failing item lands in errors without stopping the rest', () => 
   assert.equal(out.errors.length, 1)
   assert.ok(out.errors[0].includes('task/nope'), 'errors: ' + JSON.stringify(out.errors))
   assert.deepEqual(out.worktrees_removed, [], 'a missing worktree path is skipped, not an error')
+  assert.deepEqual(out.kept, [], 'a name that is no branch of the run is not kept')
+})
+
+// `kept` names what the run leaves behind on purpose: the branch of every worktree
+// the janitor was handed that is not on the merged list. The worktree goes, the
+// branch stays for forensics, and the report says which branches those are.
+test('cleanup: kept names the unmerged branch of a removed worktree', () => {
+  const dir = mkRepo()
+  mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
+  mkBranch(dir, 'task/t2', 'b.txt', 'b\n')
+  mkBranch(dir, 'feature/unrelated', 'c.txt', 'c\n')
+  git(dir, 'merge', '--no-ff', '-m', 'm1', 'task/t1')
+  const wt1 = join(dir, 'wt-1')
+  const wt2 = join(dir, 'wt-2')
+  git(dir, 'worktree', 'add', '-q', wt1, 'task/t1')
+  git(dir, 'worktree', 'add', '-q', wt2, 'task/t2')
+  const out = runJson(dir, 'cleanup',
+    '--merged', JSON.stringify(['task/t1']), '--worktrees', JSON.stringify([wt1, wt2]))
+  assert.deepEqual(out.errors, [])
+  assert.deepEqual(out.deleted, ['task/t1'])
+  assert.deepEqual(out.kept, ['task/t2'], 'the unmerged branch of the run, and no branch the run did not make')
+  assert.deepEqual(out.worktrees_removed, [wt1, wt2])
+  const branches = git(dir, 'branch', '--format=%(refname:short)').trim().split('\n')
+  assert.deepEqual(branches.sort(), ['feature/unrelated', 'main', 'task/t2'], 'the kept branch is really there')
+})
+
+// The worktree of a failed task may be gone before the janitor runs; its stale
+// entry still names the branch until the prune, so the branch is reported anyway.
+test('cleanup: kept names the unmerged branch of a worktree whose directory vanished', () => {
+  const dir = mkRepo()
+  mkBranch(dir, 'task/t2', 'b.txt', 'b\n')
+  const wt = join(dir, 'wt-2')
+  git(dir, 'worktree', 'add', '-q', wt, 'task/t2')
+  rmSync(wt, { recursive: true, force: true })
+  const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([wt]))
+  assert.deepEqual(out.errors, [])
+  assert.deepEqual(out.kept, ['task/t2'])
+  assert.deepEqual(out.worktrees_removed, [])
+})
+
+test('cleanup: a detached worktree and a run without worktrees keep nothing', () => {
+  const dir = mkRepo()
+  mkBranch(dir, 'task/t2', 'b.txt', 'b\n')
+  const wt = join(dir, 'wt-detached')
+  git(dir, 'worktree', 'add', '-q', '--detach', wt, 'task/t2')
+  const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([wt]))
+  assert.deepEqual(out.errors, [])
+  assert.deepEqual(out.kept, [], 'no branch was checked out there')
+  assert.deepEqual(out.worktrees_removed, [wt])
+  assert.deepEqual(runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', '[]').kept, [])
+})
+
+// The main working tree is never the run's to report: handed over by mistake, its
+// removal is refused (an error) and its branch is not listed as a kept leftover.
+test('cleanup: the branch of the main working tree is never reported as kept', () => {
+  const dir = mkRepo()
+  const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([dir]))
   assert.deepEqual(out.kept, [])
+  assert.equal(out.errors.length, 1, 'errors: ' + JSON.stringify(out.errors))
+})
+
+// A merged branch of the run that survives the deletion — here its worktree is
+// locked, so neither the worktree nor the branch can go — was meant to be deleted:
+// it is reported in errors and never dressed up as a branch kept on purpose.
+test('cleanup: a merged branch that refused to go is an error, not a kept one', () => {
+  const dir = mkRepo()
+  mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
+  git(dir, 'merge', '--no-ff', '-m', 'm1', 'task/t1')
+  const wt = join(dir, 'wt-locked')
+  git(dir, 'worktree', 'add', '-q', wt, 'task/t1')
+  git(dir, 'worktree', 'lock', wt)
+  const out = runJson(dir, 'cleanup', '--merged', JSON.stringify(['task/t1']), '--worktrees', JSON.stringify([wt]))
+  assert.deepEqual(out.kept, [])
+  assert.deepEqual(out.deleted, [])
+  assert.deepEqual(out.worktrees_removed, [])
+  assert.equal(out.errors.length, 2, 'errors: ' + JSON.stringify(out.errors))
+  assert.ok(out.errors[0].startsWith('worktree remove '), out.errors[0])
+  assert.ok(out.errors[1].startsWith('branch -D task/t1'), out.errors[1])
+  assert.ok(git(dir, 'branch', '--format=%(refname:short)').includes('task/t1'), 'the branch is still there')
+})
+
+// A worktree on a branch that has no commit yet names a branch that never came to
+// exist: once the worktree is gone there is nothing left, so nothing is kept.
+// `git worktree add --orphan` exists since git 2.42; an older git cannot build the
+// fixture, so the test is skipped there with the reason named.
+const gitVersion = (/(\d+)\.(\d+)/.exec(execFileSync('git', ['--version'], { encoding: 'utf8' })) ?? [])
+  .slice(1).map(Number)
+const hasOrphanWorktree = gitVersion[0] > 2 || (gitVersion[0] === 2 && gitVersion[1] >= 42)
+const orphanSkip = hasOrphanWorktree
+  ? false
+  : 'git ' + gitVersion.join('.') + ' has no `worktree add --orphan` (needs 2.42 or newer)'
+
+test('cleanup: an unborn branch of a removed worktree is not reported as kept', { skip: orphanSkip }, () => {
+  const dir = mkRepo()
+  const wt = join(dir, 'wt-orphan')
+  git(dir, 'worktree', 'add', '-q', '--orphan', '-b', 'task/unborn', wt)
+  const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([wt]))
+  assert.deepEqual(out.errors, [])
+  assert.deepEqual(out.worktrees_removed, [wt])
+  assert.deepEqual(out.kept, [], 'no such branch exists')
+})
+
+// Without the worktree list nothing ties a path to its branch, so an empty kept
+// would read as "nothing was left behind". The failure is said out loud instead.
+test('cleanup: a failing worktree list is reported, not passed off as an empty kept', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'wfh-norepo-'))   // not a repository: every git call fails
+  const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', '[]')
+  assert.deepEqual(out.kept, [])
+  assert.ok(out.errors.some(e => e.startsWith('worktree list: ')), 'errors: ' + JSON.stringify(out.errors))
 })
 
 // The janitor step of a run hands over exactly the branches and the worktrees of
@@ -434,7 +542,7 @@ test('cleanup: deletes a branch whose worktree is removed in the same call', () 
   mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
   git(dir, 'merge', '--no-ff', '-m', 'm1', 'task/t1')
   const wt = join(dir, 'wt-child')
-  git(dir, 'worktree', 'add', wt, 'task/t1')
+  git(dir, 'worktree', 'add', '-q', wt, 'task/t1')
   const mergedFile = join(dir, 'merged.json')
   const worktreesFile = join(dir, 'worktrees.json')
   writeFileSync(mergedFile, JSON.stringify(['task/t1']))
@@ -459,7 +567,7 @@ test('cleanup: deletes a branch whose worktree directory vanished before the cal
   mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
   git(dir, 'merge', '--no-ff', '-m', 'm1', 'task/t1')
   const wt = join(dir, 'wt-child')
-  git(dir, 'worktree', 'add', wt, 'task/t1')
+  git(dir, 'worktree', 'add', '-q', wt, 'task/t1')
   rmSync(wt, { recursive: true, force: true })     // crashed run: directory gone, entry stale
   assert.equal(existsSync(wt), false)
   const mergedFile = join(dir, 'merged.json')

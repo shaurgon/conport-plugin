@@ -45,8 +45,8 @@ test('SKELETON_VERSION is bumped and identical in both workflows', () => {
     return Number(m[1])
   }
   // Equality is the invariant; the floor only proves the number moved past the
-  // skeleton these tests were written against. Pinning the exact value instead
-  // turns every later skeleton edit into a failing test that says nothing.
+  // skeleton these tests were written against. The exact value, and the bump a
+  // skeleton edit owes, are pinned in skeleton-pin.test.mjs.
   const task = version('task.js')
   assert.equal(task, version('epic.js'), 'the two workflows carry different skeleton versions')
   assert.ok(task > 7, `SKELETON_VERSION must be past 7, got ${task}`)

@@ -10,7 +10,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const TAIL_LINES = 30
@@ -295,12 +295,50 @@ const merge = flags => {
   emit({ results })
 }
 
+// A path as git prints it in `worktree list`: symlinks resolved. A directory that
+// is already gone cannot be resolved itself, so its nearest existing ancestor is.
+const canonPath = path => {
+  let head = resolve(path)
+  let rest = ''
+  for (;;) {
+    if (existsSync(head)) return join(realpathSync(head), rest)
+    const up = dirname(head)
+    if (up === head) return resolve(path)
+    rest = join(basename(head), rest)
+    head = up
+  }
+}
+
+// The branches checked out in the given linked worktrees, read from git's own
+// list — a stale entry (directory gone, not yet pruned) still names its branch.
+// The main working tree, the first entry, is never the run's. A list git refuses
+// to give is reported in `errors`: an empty answer must not read as "none".
+const worktreeBranches = (paths, errors) => {
+  const wanted = new Set(paths.map(canonPath))
+  const branches = []
+  const listed = git('worktree', 'list', '--porcelain')
+  if (!listed.ok) {
+    errors.push('worktree list: ' + mask(listed.out.trim()))
+    return branches
+  }
+  const entries = listed.stdout.trim().split(/\n\n+/).slice(1)
+  for (const entry of entries) {
+    const path = /^worktree (.+)$/m.exec(entry)
+    const branch = /^branch refs\/heads\/(.+)$/m.exec(entry)
+    if (path && branch && wanted.has(canonPath(path[1])) && !branches.includes(branch[1])) branches.push(branch[1])
+  }
+  return branches
+}
+
 const cleanup = flags => {
   const merged = listOption(flags, 'merged')
   const worktrees = listOption(flags, 'worktrees')
   if (!merged || !worktrees) return usage('cleanup requires --merged <json array> and --worktrees <json array>')
 
   const out = { deleted: [], kept: [], worktrees_removed: [], errors: [] }
+  // Read before anything is removed: once a worktree is gone, nothing ties its
+  // path to the branch it held.
+  const runBranches = worktreeBranches(worktrees, out.errors)
   // Worktrees first: a merged branch is normally still checked out in a worktree
   // of the same run, and git refuses to delete a branch a worktree holds. The
   // other order fails every deletion and leaves the branches for a second call.
@@ -317,6 +355,12 @@ const cleanup = flags => {
     if (r.ok) out.deleted.push(branch)
     else out.errors.push('branch -D ' + branch + ': ' + mask(r.out.trim()))
   }
+  // What the run leaves on purpose: its branches that were not merged. A merged
+  // branch that refused to go is an error above, not a kept one; a branch that
+  // never got a commit does not exist once its worktree is gone.
+  for (const branch of runBranches)
+    if (!merged.includes(branch) && git('show-ref', '--verify', '--quiet', 'refs/heads/' + branch).ok)
+      out.kept.push(branch)
   emit(out)
 }
 
