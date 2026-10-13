@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 16.2.0
+  version: 16.3.0
 ---
 
 # ConPort — Project Management System
@@ -363,6 +363,11 @@ return it in the `roadmap` section.
 Use `update_block` / `insert_block` / `delete_block` for surgical edits; only one
 block re-embeds and the spec append-only invariant doesn't engage.
 `update_document(content=...)` is the **wholesale-rewrite** channel.
+A block edit is refused when the body it leaves would read back as other
+blocks than the rows hold — a block set under a list that the list would take
+in, for example. The refusal names the one call to make instead: `update_block`
+on the list (`block_joins_list`) or `update_document` with the whole body
+(`block_edit_changes_blocks`).
 
 **Spec append-only invariant.** `update_document` on a `doc_type='spec'` body
 requires `change_kind`: `amend` (clarification/typo — allowed, logged with a

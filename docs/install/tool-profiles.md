@@ -61,11 +61,57 @@ rest of `tasks`.
 | `recipes` | 4 | Context assembly and architecture rendering |
 | `routine` | 6 | Periodic cycles: policy, runs, estimation statistics |
 
-The tools of `core`: `init`, `create_project`, `list_projects`, `search`,
-`add_task`, `get_task`, `list_tasks`, `update_task`, `sync_decision`,
-`get_decision`, `list_decisions`, `update_decision`, `log_progress`,
-`list_progress`, `update_progress`, `add_document`, `get_document`,
-`list_documents`, `update_document`, `update_active_context`.
+## The tools of each group
+
+To get a tool listed, find it here and add its group to the profile. A tool of
+`core` is in the row of its area as well: either group lists it.
+
+| Group | Tools |
+|---|---|
+| `core` | `init`, `create_project`, `list_projects`, `search`, `add_task`, `get_task`, `list_tasks`, `update_task`, `sync_decision`, `get_decision`, `list_decisions`, `update_decision`, `log_progress`, `list_progress`, `update_progress`, `add_document`, `get_document`, `list_documents`, `update_document`, `update_active_context` |
+| `session` | `init` |
+| `projects` | `list_projects`, `create_project` |
+| `tasks` | `add_task`, `update_task`, `list_tasks`, `get_task`, `delete_task`, `add_task_dep`, `add_linked_task` |
+| `milestones` | `add_milestone`, `update_milestone`, `list_milestones` |
+| `agenda` | `get_agenda` |
+| `documents` | `add_document`, `update_document`, `list_documents`, `get_block_backlinks`, `get_semantically_related_blocks`, `get_document`, `delete_document`, `document_versions`, `list_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
+| `diagrams` | `list_diagrams` |
+| `decisions` | `sync_decision`, `update_decision`, `deprecate_decision`, `reactivate_decision`, `list_decisions`, `get_decision`, `delete_decision` |
+| `progress` | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
+| `patterns` | `log_pattern`, `update_pattern`, `list_patterns` |
+| `context` | `update_product_context`, `update_active_context` |
+| `search` | `search` |
+| `links` | `link_items`, `get_linked`, `link_project`, `get_project_links`, `unlink_project` |
+| `graphrag` | `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats` |
+| `history` | `recent_activity`, `item_history`, `context_history` |
+| `guardrails` | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |
+| `gaps` | `gap_list`, `gap_ack`, `gap_dismiss`, `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
+| `semantic` | `semantic_pass_run`, `semantic_proposals_list`, `semantic_proposal_approve`, `semantic_proposal_reject`, `semantic_proposal_defer`, `semantic_proposals_apply`, `semantic_pass_stats`, `semantic_cleanup` |
+| `recipes` | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage`, `render_current_architecture` |
+| `routine` | `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
+
+## What each skill and workflow needs
+
+The skills, the workflows and the hooks of the plugin name tools by name. A
+connection narrowed below the groups of those tools does not list them, so
+connect with the profile of what you run:
+
+| What you run | Profile |
+|---|---|
+| Skill `conport` | `full` |
+| Skill `conport-routine` | `core,milestones,agenda,gaps,semantic,routine` |
+| Skill `superpowers-conport` | `core,links` |
+| Workflow `task` | `core` |
+| Workflow `epic` | `core` |
+| Hooks | `core,milestones` |
+
+Each profile is the fewest groups that list every tool the files of that part
+name — the tools the part names itself, not the ones a session ends up
+calling. The `conport` skill is the reference of every tool, which is why its
+row says `full`; loading the skill does not require `full`. The hooks call no
+tool themselves: their profile lists the tools they tell the agent to call. To
+run several parts on one connection, name the groups of all of them together —
+`core,milestones,links` for the `superpowers-conport` skill with the hooks.
 
 ## Example: Claude Code
 
@@ -108,7 +154,10 @@ Under a narrowed profile the `init` response carries `tool_profile`:
 | Field | Meaning |
 |---|---|
 | `active` | The groups this connection lists |
-| `available` | The groups it does not list |
-| `hint` | One sentence on how to list more |
+| `available` | The groups that have a tool this connection does not list |
+| `hint` | The one thing the agent does when it needs a tool that is not listed: tell you which group to add to the profile. It names the groups of `available` and the address of this page |
 
-With the full list the field is absent.
+A group whose tools are all listed already is not in `available`: under `core`
+that is `session`, `projects` and `search`. When the connection lists every
+tool — no profile, `full`, or groups that hold every tool between them — the
+field is absent.

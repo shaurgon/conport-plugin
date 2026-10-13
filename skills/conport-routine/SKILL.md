@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 16.2.0
+  version: 16.3.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle

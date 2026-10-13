@@ -983,6 +983,14 @@ mcp__conport__update_block({
 **Returns:** `ulid`, `type`, `content_hash` and `changed_block_ids` (the blocks
 queued for re-embedding).
 
+**Refused when it would change the blocks of the document.** The edit is checked
+against the body it would leave: if that body reads back as other blocks than
+the ones stored, nothing is written and the error names the one call to make.
+`block_joins_list` — a block set under a list that the list would take in:
+change that list with `update_block`. `block_edit_changes_blocks` — any other
+case (a block below an unclosed HTML comment, for example): write the whole body
+with `update_document`.
+
 ### insert_block
 
 Insert a new block. Pass `after=<ulid>` or `before=<ulid>` to position it; omit
@@ -1007,6 +1015,14 @@ mcp__conport__insert_block({
 
 **Returns:** `ulid`, `type`, `ord`, `content_hash` and `changed_block_ids`.
 
+**Refused when it would change the blocks of the document.** The edit is checked
+against the body it would leave: if that body reads back as other blocks than
+the ones stored, nothing is written and the error names the one call to make.
+`block_joins_list` — a block set under a list that the list would take in:
+change that list with `update_block`. `block_edit_changes_blocks` — any other
+case (a block below an unclosed HTML comment, for example): write the whole body
+with `update_document`.
+
 ### delete_block
 
 Delete one block by ULID. Its mentions go with it and the document
@@ -1027,6 +1043,14 @@ mcp__conport__delete_block({
 | block_ulid | string | yes | ULID of the block to delete |
 
 **Returns:** a confirmation `message` and `changed_block_ids`.
+
+**Refused when it would change the blocks of the document.** The edit is checked
+against the body it would leave: if that body reads back as other blocks than
+the ones stored, nothing is written and the error names the one call to make.
+`block_joins_list` — a block set under a list that the list would take in:
+change that list with `update_block`. `block_edit_changes_blocks` — any other
+case (a block below an unclosed HTML comment, for example): write the whole body
+with `update_document`.
 
 ### list_documents
 
