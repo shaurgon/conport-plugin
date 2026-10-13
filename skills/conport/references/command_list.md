@@ -424,8 +424,8 @@ For tasks with statuses, use **Tasks**.
 
 ### log_progress
 
-Create an activity log entry. Optionally links to a task/decision/pattern
-(linked target referenced by its per-project ID).
+Create an activity log entry. Optionally links to one item of the project
+(linked target referenced by its type and its per-project ID).
 
 ```
 mcp__conport__log_progress({
@@ -443,8 +443,10 @@ mcp__conport__log_progress({
 | description | string | yes | Description (max 2000 chars) |
 | title | string | no | Title (max 200 chars) |
 | parent_id | integer | no | Per-project ID of parent progress entry (threading) |
-| linked_item_type | string | no | task \| decision \| pattern |
-| linked_item_id | integer | no | Per-project ID of the linked item |
+| linked_item_type | string | no | task \| decision \| pattern \| progress \| doc (or document) \| routine_run — only together with `linked_item_id` |
+| linked_item_id | integer | no | Per-project ID of the linked item — only together with `linked_item_type` |
+
+A link is refused unless both parameters are given and name an existing item of this project: name one, or send neither.
 
 **Returns:** a slim echo — the new entry `id`. Canonical references in the text
 become graph edges on the write itself; decision extraction from the text runs

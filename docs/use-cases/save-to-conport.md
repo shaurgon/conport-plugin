@@ -14,7 +14,8 @@ picking the right tool for each piece:
   one per commit.
 - **Progress / what-was-done** → `mcp__conport__log_progress` (title +
   description, optionally `linked_item_type + linked_item_id` to tie it
-  to a task or decision).
+  to a task or decision — both together, naming an item that exists in
+  this project, or the call is refused).
 - **Reusable pattern learned** → `mcp__conport__log_pattern` (name +
   description + tags).
 - **Focus / open questions drift** → `mcp__conport__update_active_context`

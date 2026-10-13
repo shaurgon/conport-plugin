@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 16.3.0
+  version: 16.4.0
 ---
 
 # ConPort — Project Management System
@@ -342,7 +342,7 @@ return it in the `roadmap` section.
 
 | Trigger | Tool |
 |---------|------|
-| Standalone progress note (not a task close) | `log_progress` |
+| Standalone progress note (not a task close) | `log_progress` (a link is refused unless `linked_item_type` and `linked_item_id` are both given and name an existing item of this project) |
 | **Closing a task** | `update_task` with `resolution=...` (auto-creates progress; do **not** also call `log_progress`) |
 | Context has changed | `update_active_context` |
 

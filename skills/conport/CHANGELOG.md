@@ -1,5 +1,8 @@
 # conport changelog
 
+## 16.4.0
+`log_progress` refuses a link it cannot keep. `linked_item_type` and `linked_item_id` are given together or not at all, the type is one of `task`, `decision`, `pattern`, `progress`, `doc` (or `document`) and `routine_run`, and the pair names an existing item of the same project — anything else is refused, and the refusal says what to do: name an existing item, or send neither parameter. The REST routes that write a progress entry, the batch route included, hold the same rule. Entries written before it are still read and edited as they are.
+
 ## 16.3.0
 A block edit no longer leaves a document whose blocks disagree with its text. `insert_block`, `update_block` and `delete_block` refuse an edit after which the body would read back as other blocks than the ones stored — a block set under a list that the list would take in, a block below an unclosed HTML comment — and the refusal names the one call to make instead: `update_block` on the list (`block_joins_list`) or `update_document` with the whole body (`block_edit_changes_blocks`). A code block a block edit sets under a list is stored as the fence it is written as, so writing the same body back no longer reports a change. The hint `init` gives a connection with a narrowed tool profile now tells the agent the one thing it can do — tell the user which group to add to the profile — names only the groups that hold a tool not listed, and is absent when the profile already lists every tool. The page on tool profiles lists the tools of every group and the profile each skill, workflow and hook of the plugin needs.
 
