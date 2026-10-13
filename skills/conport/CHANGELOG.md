@@ -1,5 +1,8 @@
 # conport changelog
 
+## 16.2.0
+Tool profiles: a connection can name the groups of tools it wants listed — the header `X-Conport-Profile` or `?profile=` on the MCP address, for example `core` or `core,gaps` — and `tools/list` answers with those groups only. Nothing changes for a connection that names no profile, a tool outside the profile can still be called, and `init` says which groups are listed and which are not; a profile that names an unknown group is refused with the valid ones. Link types are one vocabulary of nine — `mentions`, `implements`, `derived_from`, `references`, `clarifies`, `relates_to`, `supersedes`, `blocks`, `depends_on` — the same for `link_items`, the REST routes and the links the server writes itself; a type outside it is refused. `get_linked` now filters: `direction` and `relationship` narrow the links it returns, and a value outside their lists is refused instead of ignored. `add_error_solution` keeps the `confidence` it is given and `list_error_solutions` reads it back (`null` for a solution that stores none). A task keeps its automatic link to a spec when it is closed — only a cancelled task loses it — and the task briefing names that spec, after any link a person stated on the task or its epic. A document comes back from the block tools byte for byte: the blank lines between blocks are kept as written.
+
 ## 16.1.1
 The run ledger of the task and epic workflows now names the unmerged branches a cleanup left in place, as a `cleanup kept: …` note beside the cleanup errors. The tool reference lists `diagram` among the types `add_document` takes and no longer says `update_document` raises `version` — nothing on the update path writes it.
 

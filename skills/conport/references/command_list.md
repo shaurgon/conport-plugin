@@ -1306,7 +1306,11 @@ mcp__conport__link_items({
 | relationship | string | no | Link type (default: relates_to) |
 | description | string | no | Link description |
 
-**Link types:** relates_to, implements, depends_on, supersedes, references, blocks, clarifies
+**Link types:** mentions, implements, derived_from, references, clarifies, relates_to, supersedes, blocks, depends_on
+
+These nine are the whole vocabulary: the server refuses any other value, and
+the links it creates on its own (`mentions`, `implements`, `derived_from`,
+`relates_to`) use the same types.
 
 **Returns:** the created edge — `id`, both endpoints, `link_type`,
 `description`, `weight`, the `created_by*` attribution fields and `created_at`.
@@ -1314,8 +1318,10 @@ mcp__conport__link_items({
 ### get_linked
 
 Get items linked to a specific item: the item-graph edges the item is an end
-of, authored by hand or created automatically, of any link type and in both
-directions — the 100 newest of them. When `item_type='doc'` and
+of, authored by hand or created automatically — the 100 newest of them.
+`direction` keeps the edges the item is the source of, the target of or either
+end of; `relationship` keeps one link type; the two narrow together. When
+`item_type='doc'` and
 `include_section_links=true`, the response also includes
 `section_links: { incoming, outgoing }` — the block-level document links where
 this document is either source or target. Default is `false`.
@@ -1327,6 +1333,14 @@ mcp__conport__get_linked({
   item_id: 12,
   include_section_links: true
 })
+
+mcp__conport__get_linked({
+  project_id: <project_id>,
+  item_type: "task",
+  item_id: 5,
+  direction: "incoming",
+  relationship: "blocks"
+})
 ```
 
 | Parameter | Type | Required | Description |
@@ -1334,17 +1348,20 @@ mcp__conport__get_linked({
 | project_id | integer | yes | Project ID |
 | item_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) |
 | item_id | integer | yes | Per-project ID of the item |
-| relationship | string | no | Link type from the `link_items` vocabulary. Accepted, but **not applied today** — every link type comes back |
-| direction | string | no | outgoing \| incoming \| both (default: both). Accepted, but **not applied today** — both directions come back |
+| relationship | string | no | Keep the edges of one link type: mentions \| implements \| derived_from \| references \| clarifies \| relates_to \| supersedes \| blocks \| depends_on. Left out, every link type comes back |
+| direction | string | no | outgoing (the item is the source) \| incoming (the item is the target) \| both (default: both) |
 | include_section_links | boolean | no | `item_type: "doc"` only — also return the block-level document links. Default false. |
 
 **Returns:** `links` (`id`, both endpoints, `link_type`, `description`,
 `weight`, the `created_by*` attribution fields, `created_at`) — at most 100,
-newest first — and `total`, the full number of the item's edges, so
-`total` above 100 means older ones were left out; with
-`include_section_links` also `section_links` (`incoming`, `outgoing` —
-document links with `edge_type`, `source_text`, block ULIDs). Filter
-client-side while `relationship` / `direction` are inert.
+newest first — and `total`, the full number of the edges that pass
+`direction` and `relationship`, so `total` above 100 means older ones were
+left out; with `include_section_links` also `section_links` (`incoming`,
+`outgoing` — document links with `edge_type`, `source_text`, block ULIDs),
+which `direction` and `relationship` do not narrow.
+
+**Errors:** a `direction` or a `relationship` outside its list is refused, and
+the message names the values to pass.
 
 ---
 
@@ -1402,8 +1419,7 @@ mcp__conport__get_project_links({
 
 **Returns:** `outgoing` and `incoming` (each link with `id`, both project IDs
 and names, `link_type`, `description`, `metadata`, `created_by`, `created_at`)
-plus `total` across both lists. Unlike `get_linked`, this `direction` really
-filters.
+plus `total` across both lists.
 
 ### unlink_project
 
@@ -2306,7 +2322,8 @@ Record a known fix for a recurring error signature.
 mcp__conport__add_error_solution({
   project_id: <project_id>,
   error_signature: "ModuleNotFoundError pytest",
-  solution: "Run the suite through uv run pytest"
+  solution: "Run the suite through uv run pytest",
+  confidence: 0.9
 })
 ```
 
@@ -2315,11 +2332,16 @@ mcp__conport__add_error_solution({
 | project_id | integer | yes | Project ID |
 | error_signature | string | yes | Normalized error signature |
 | solution | string | yes | How to fix it |
-| confidence | number | no | Confidence 0-1 (default: 0.8). Accepted, but **not stored today** — nothing reads it back |
+| confidence | number | no | How sure the fix is, from 0 to 1 (default: 0.8). Stored with the solution; `list_error_solutions` returns it |
 
 **Returns:** `id`, `summary` (`Error solution: <signature>`) and `status`
 (`created`). Stored as a decision tagged `error-solution`, with the solution as
-its rationale.
+its rationale and the confidence as JSON (`{"confidence": 0.9}`) in its
+implementation details. `update_decision(implementation_details=…)` on that
+decision overwrites the value, which then reads as `null`.
+
+**Errors:** a `confidence` below 0 or above 1 is refused — pass a number from
+0 to 1 — and nothing is stored.
 
 ### list_conventions
 
@@ -2354,8 +2376,10 @@ mcp__conport__list_error_solutions({
 | project_id | integer | yes | Project ID |
 | limit | integer | no | Max results (default: 20) |
 
-**Returns:** `solutions` (`id`, `error_signature`, `solution`, `tags`) and
-`total`.
+**Returns:** `solutions` (`id`, `error_signature`, `solution`, `confidence`,
+`tags`) and `total`. A solution added without `confidence` stores 0.8; `null`
+marks a solution that stores no value — one recorded before the value was
+kept, or a decision tagged `error-solution` by hand.
 
 ---
 

@@ -52,6 +52,9 @@ The plugin loads in Claude Code:
 - 4 hooks (Node.js scripts under `scripts/`) — session start, command check,
   prompt submit, session reflect
 
+The connection lists every tool of the server. To have only some groups of
+tools listed, see [tool-profiles.md](./tool-profiles.md).
+
 ## 3. Reload
 
 In the same session:

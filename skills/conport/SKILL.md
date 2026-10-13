@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 16.1.1
+  version: 16.2.0
 ---
 
 # ConPort — Project Management System
@@ -713,6 +713,7 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Roadmap milestones | `projects/roadmap` |
 | Architecture diagrams | `projects/architecture-diagrams` |
 | Full per-tool parameter reference | `projects/tool-reference` |
+| Tool profiles — a connection that lists only some tool groups | `projects/tool-profiles` |
 
 **Local references** (shipped with the skill): `references/command_list.md`
 (full MCP tool API), `references/documentation_graph.md` (long-form callout
