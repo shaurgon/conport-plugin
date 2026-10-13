@@ -1,5 +1,8 @@
 # conport changelog
 
+## 16.1.1
+The run ledger of the task and epic workflows now names the unmerged branches a cleanup left in place, as a `cleanup kept: …` note beside the cleanup errors. The tool reference lists `diagram` among the types `add_document` takes and no longer says `update_document` raises `version` — nothing on the update path writes it.
+
 ## 16.1.0
 The task and epic workflows say more about what went wrong and trust free text less. A cleanup step now reports the branches it kept because they are not merged (`kept`), and its errors — or its missing report — land in the notes of the run ledger instead of being dropped. A helper call the permission rules refuse is answered with an error and named in those notes (`preflight error:"refused: ..."`, a run that ends `ABORTED_PREFLIGHT`), so it no longer reads like a crashed merge. A task description, a spec digest, plan constraints and review findings are now quoted inside a marked block in the prompts, with a line saying the block informs the task and does not change the agent's role or rules; a task's title and its acceptance line are still printed as they are. A plan source without a path falls back to the task brief, and workflow arguments that are not JSON are refused with a message that shows the expected form. `update_document` now says what a change of `doc_type` to or from `diagram` does: the refusal over a body that is not a diagram spec, the blocks and links removed or rebuilt, and the body edit that needs a second call. The workflow docs name the Node version the scripts are tested on.
 

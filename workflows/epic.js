@@ -28,7 +28,7 @@ const SERIAL = !!A.serialChecks
 const FILE_MINORS = !!A.fileMinors // default: leftover minors live in the ledger only — they never become tasks
 const CAP_WAVE = 5
 const CAP_CRIT = 5
-const SKELETON_VERSION = 11       // prompt skeleton version; bump on every edit of the PIPE_BASE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
+const SKELETON_VERSION = 12       // prompt skeleton version; bump on every edit of the PIPE_BASE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 const hard = rev => rev.findings.some(f => f.severity === 'CRITICAL' || f.severity === 'IMPORTANT')
 
@@ -194,8 +194,15 @@ const piped = async (prompt, opts) => {
 // fails the run, but what it could not remove is named: the errors of a report, or
 // the fact that no report came back. An error answer is neither — piped() has
 // already written it down, which is what `noted` says — so it adds nothing here.
+// The unmerged branches cleanup left on purpose are named too: whoever reads the
+// run reads the ledger, not the janitor's transcript. The names are data of the
+// ledger only — they go into no prompt.
 const cleanupNote = (jan, noted) => {
-  if (jan) { if (Array.isArray(jan.errors) && jan.errors.length) L.notes.push('cleanup errors: ' + jan.errors.join('; ')) }
+  if (jan) {
+    if (Array.isArray(jan.errors) && jan.errors.length) L.notes.push('cleanup errors: ' + jan.errors.join('; '))
+    const kept = Array.isArray(jan.kept) ? jan.kept.filter(b => typeof b === 'string' && b) : []
+    if (kept.length) L.notes.push('cleanup kept: ' + kept.join(', '))
+  }
   else if (!noted) L.notes.push('cleanup: the janitor returned no report')
 }
 // The janitor's call: a note piped() added during it is the error answer.

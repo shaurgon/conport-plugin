@@ -285,7 +285,9 @@ set BLOCKED with that reason (the permission cause is in the notes, not in the
 reason), and in an epic run later tasks that depend on it are skipped. A
 refused cleanup is noted the same way, `janitor error:"refused: ..."`, while a
 cleanup that ran and could not remove something lists it as `cleanup errors:
-...`. The two leftovers a cleanup handles are not the same kind of thing.
+...`. The run's own unmerged branches that cleanup left in place are named in
+one more note, `cleanup kept: <branches, comma-separated>`; a run that kept
+none has no such note. The two leftovers a cleanup handles are not the same kind of thing.
 Unmerged branches staying on disk is
 the policy — cleanup only ever deletes the merged ones, and forensics lives in
 the branch. Worktrees are not kept: the janitor is handed every worktree the

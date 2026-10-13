@@ -42,6 +42,43 @@ for (const { file, run, green } of RUNS) {
     assert.deepEqual(cleanupNotes(await go({})), [])
   })
 
+  // The branches cleanup left on purpose — the run's own unmerged ones — are not
+  // errors, but the operator reads the ledger, not the janitor's transcript.
+  test(`${file}: the branches cleanup kept are named in one note, the run is not failed`, async () => {
+    const ledger = await go({ deleted: ['task/t1'], kept: ['task/t7', 'task/t9'],
+      worktrees_removed: [], errors: [] })
+    assert.deepEqual(cleanupNotes(ledger), ['cleanup kept: task/t7, task/t9'])
+    assert.equal(ledger.outcome, green, 'a kept branch is the policy — the outcome stands')
+  })
+
+  test(`${file}: a single kept branch is one note`, async () => {
+    assert.deepEqual(cleanupNotes(await go({ kept: ['task/t7'] })), ['cleanup kept: task/t7'])
+  })
+
+  test(`${file}: an empty kept, a missing one or one that is not a list leaves no note`, async () => {
+    assert.deepEqual(cleanupNotes(await go({ kept: [] })), [])
+    assert.deepEqual(cleanupNotes(await go({ deleted: ['task/t1'] })), [])
+    assert.deepEqual(cleanupNotes(await go({ kept: 'task/t7' })), [])
+  })
+
+  // A name is a non-empty string: anything else in the list is not a branch.
+  test(`${file}: a kept list with no branch name in it leaves no note`, async () => {
+    assert.deepEqual(cleanupNotes(await go({ kept: [''] })), [])
+    assert.deepEqual(cleanupNotes(await go({ kept: [1, null, {}] })), [])
+  })
+
+  test(`${file}: only the branch names of a kept list reach the note`, async () => {
+    assert.deepEqual(cleanupNotes(await go({ kept: ['', 1, 'task/t7', null, {}] })),
+      ['cleanup kept: task/t7'])
+  })
+
+  test(`${file}: kept branches and errors are two notes`, async () => {
+    const ledger = await go({ kept: ['task/t7'], errors: ['worktree prune: locked'] })
+    assert.deepEqual(cleanupNotes(ledger),
+      ['cleanup errors: worktree prune: locked', 'cleanup kept: task/t7'])
+    assert.equal(ledger.outcome, green)
+  })
+
   test(`${file}: a janitor that returned nothing is named in the notes`, async () => {
     const ledger = await go(null)
     assert.deepEqual(cleanupNotes(ledger), ['cleanup: the janitor returned no report'])
