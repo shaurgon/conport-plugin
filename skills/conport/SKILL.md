@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 16.4.0
+  version: 16.5.0
 ---
 
 # ConPort — Project Management System
@@ -74,7 +74,7 @@ trying another name.
 
 1. **Print summary:** `[CONPORT] {summary from response}`
 2. **Execute instructions** from the response (read files, apply rules)
-3. **Report backlog:** `N tasks in TODO, M in progress. Top 5:` — use `backlog.top` from the response. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0` and `backlog.total_in_progress == 0`.
+3. **Report backlog:** `N tasks in TODO, M in progress, K in review. Top 5:` — use `backlog.top` from the response; `K` is `backlog.total_review`, and `, K in review` is dropped when it is zero. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0`, `backlog.total_in_progress == 0` and `backlog.total_review == 0`. Tasks waiting in REVIEW need a reviewer, not more work: when the response carries `review_tasks` (`id`, `title`, `priority`; present only when some task waits), print them as `In review: #id title, …` and follow the instruction that comes with them — have them reviewed before taking new work.
 4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
 5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
 6. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
@@ -240,14 +240,88 @@ semantics of a surface, fetch the live-docs page named in the table.
 | Trigger | Tool |
 |---------|------|
 | Starting work | `update_task` → IN_PROGRESS (**before the first write on a task**) |
+| Brief for whoever executes or reviews the task | `add_task_journal_entry` with `kind='brief'` |
+| Work finished and it needs a check | `add_task_journal_entry` with `kind='report'`, then `update_task` → REVIEW |
+| Reviewing a task in REVIEW | read the round with `list_task_journal` (`include_body=true`), then `add_task_journal_entry` with `kind='review'` and `verdict='approve'` or `verdict='changes_requested'` |
+| Review approved | `update_task` → DONE **with `resolution=...`** |
+| Changes requested | `update_task` → IN_PROGRESS (the next round), fix, `add_task_journal_entry` with `kind='fix'`, then `update_task` → REVIEW |
+| "What happened on this task?" | `list_task_journal` (`round` filters one round; texts only with `include_body=true`), one entry in full with `get_task_journal_entry` |
 | Done / Finished | `update_task` → DONE **with `resolution=...`** (see below) |
-| Cancelled | `update_task` → CANCELLED **with `resolution=...`** (why dropped) |
-| Blocked | `update_task` → BLOCKED |
+| Cancelled | `update_task` → CANCELLED **with `resolution=...`** (why dropped; allowed from REVIEW too) |
+| Blocked | `update_task` → BLOCKED (never from REVIEW) |
 | Milestone finished | `update_milestone` → DONE **with `resolution=...`** (all its epics must be closed first) |
 | Milestone dropped | `update_milestone` → CANCELLED **with `resolution=...`** (why it left the roadmap) |
 
 **IN_PROGRESS gate.** Before your first ConPort write against a task, move it to
-IN_PROGRESS. This keeps `current_focus` accurate and the backlog honest.
+IN_PROGRESS. This keeps `current_focus` accurate and the backlog honest. A
+`brief` is the one write that may come first: it is written while the task is
+still TODO, before anyone starts.
+
+**The review cycle.** A task whose work must be checked goes through REVIEW,
+and every step of the way is an entry in the task's journal:
+
+```
+brief → IN_PROGRESS → work → report → REVIEW → review
+    approve           → DONE with resolution
+    changes_requested → IN_PROGRESS (round + 1) → fix → REVIEW → review → …
+```
+
+- **The reviewer is never the executor.** Whoever did the work writes the
+  `report` or `fix`; someone else reads it and writes the `review`. The two
+  sign their entries with different names in `author` (an agent role or a
+  person): a `review` signed like a `report` or `fix` of the same round —
+  ignoring case and surrounding spaces — is refused.
+- **Rounds are the server's.** Every entry gets the task's current
+  `review_round`; you never pass it. The round grows by one when the task goes
+  back from REVIEW to IN_PROGRESS and when a DONE or CANCELLED task is reopened,
+  so a verdict of an earlier round never opens REVIEW or DONE again.
+- **Which entry fits which status:**
+
+  | `kind` | Task status | What it is |
+  |---|---|---|
+  | `brief` | TODO, IN_PROGRESS, BLOCKED, REVIEW | The assignment: for the executor, or in REVIEW for the reviewer |
+  | `report` | IN_PROGRESS | The executor's report — the first round by convention |
+  | `fix` | IN_PROGRESS | The report on the fixes — the second round and later by convention |
+  | `review` | REVIEW | The verdict, `verdict` required: `approve` or `changes_requested` |
+
+- **The journal only grows.** An entry is never edited or deleted — a
+  correction is a new entry. `get_task` shows the task's `review_round` and a
+  `journal` summary (`counts` per kind, `last_verdict` and its round
+  `last_verdict_round` — a round below `review_round` is an earlier round's verdict).
+- **Review is opt-in, then binding.** A task nobody reviews still goes
+  IN_PROGRESS → DONE. Once a task has a `report`, `fix` or `review` entry, it
+  closes only through REVIEW — cancelling and reopening it, or closing it as an
+  epic and demoting it, does not get around that. A `brief` alone binds nothing.
+  An epic never enters REVIEW and takes no new journal entries, but keeps the
+  journal of the task it was promoted from; that journal binds it only when it
+  has no child tasks (it then closes only as a task) or when it is demoted.
+- **REVIEW is open work.** A task in REVIEW blocks the tasks that depend on it
+  (`ready`), keeps its epic and milestone open, and leaves REVIEW only to DONE
+  (approved), to IN_PROGRESS (changes requested) or to CANCELLED. An epic tail
+  with a child in REVIEW prescribes `Review task-N` (`review task-N` after a
+  `Finish …` step); a task left in REVIEW
+  surfaces as an `inactive_task` gap that asks for a separate reviewer's
+  `review` entry.
+
+**Review refusals — one action each.** A refused write changes nothing. The
+answer carries `error`, a `message` that prescribes the action, and `context`
+(`task_id`, `status`, `review_round`, and the last verdict where it matters).
+
+| Refusal | What it means | Do exactly this |
+|---|---|---|
+| `review_from_in_progress_only` | REVIEW was asked from a status other than IN_PROGRESS, or on a new task | Move the task to IN_PROGRESS, finish the work and the `report`, then REVIEW. Create tasks in TODO |
+| `review_on_epic` | An epic was sent to REVIEW, or a task in REVIEW was promoted to an epic | Review the epic's children; close the epic with a `resolution` once they are closed |
+| `review_needs_report` | No `report` or `fix` in the current round | Add a `report` (first round) or `fix` entry for the round in `context`, then REVIEW again |
+| `done_needs_review` | DONE was asked outside REVIEW for a task with a `report`, `fix` or `review` entry, a closed epic with one was demoted to a task, or a childless epic with one was closed | Do what the `message` names for the starting state: from IN_PROGRESS move to REVIEW; from TODO, BLOCKED or CANCELLED move to IN_PROGRESS, then REVIEW; a closed epic is demoted in the write that reopens it to IN_PROGRESS; a childless epic gets child tasks or is demoted the same way. Then get an `approve` |
+| `done_needs_approval` | The current round has no `approve` as its last verdict | A reviewer adds a `review` with `verdict='approve'` in this round, then DONE. Never write your own approval for your own work |
+| `done_needs_resolution` | REVIEW → DONE without a `resolution` | Repeat the call with `resolution` |
+| `return_needs_review` | REVIEW → IN_PROGRESS without `changes_requested` in this round | A reviewer adds a `review` with `verdict='changes_requested'` first |
+| `review_exit_not_allowed` | REVIEW → TODO, BLOCKED or PARKED | Finish the review (approve → DONE, changes requested → IN_PROGRESS) or CANCEL with a `resolution` |
+| `journal_on_epic` | A journal entry on an epic | Write it on the child task the work belongs to |
+| `journal_task_closed` | A journal entry on a DONE or CANCELLED task | Reopen the task to IN_PROGRESS only if there is new work; otherwise write nothing |
+| `journal_kind_not_allowed` | The `kind` does not fit the task's status; `context` lists the kinds that do | Write one of those kinds, or first move the task to the status the entry needs |
+| `reviewer_is_author` | A `review` signed with the `author` of a `report` or `fix` of the current round | The reviewer adds the `review` under its own name; never review your own work |
+| `invalid_verdict` (422 over REST) | `verdict` on an entry that is not `review`, or a `review` without one | Pass `verdict` on `review` only, `approve` or `changes_requested` |
 
 **An epic closes only with its children closed** — the server refuses
 `update_task(status='DONE')` on an epic that still has open children with
@@ -269,6 +343,11 @@ On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
    original spec verbatim).
 2. Auto-creates a linked `progress_entry` so the close shows up in
    `recent_activity`, `list_progress`, and search.
+
+A task in REVIEW closes as DONE only after an `approve` of its current round,
+and there `resolution` is required, not just expected (`done_needs_resolution`).
+The verdict and the reports stay in the journal; the `resolution` says what
+was delivered.
 
 **Do NOT call `log_progress` separately for task closes** — that would
 duplicate the entry. `log_progress` is for progress events that don't belong
@@ -572,6 +651,7 @@ MCP tools return JSON with a `summary` field. Use it to inform the user.
 | `init` | `[CONPORT] {summary}` |
 | `search` | `[ConPort: N results found for "query"] ...` |
 | `update_task` | `✅ {summary}` |
+| `add_task_journal_entry` | `✅ {summary}` (carries the kind, the round and the verdict) |
 | Task DONE/CANCELLED | `✅ {summary}` (progress entry was auto-logged from `resolution`) + suggest updating active_context |
 | `add_milestone` / `update_milestone` | `✅ {summary}` (carries id, title, `seq N`, `[release]`, epics-closed rollup) |
 | Any write response carrying `epic_progress` | `[EPIC] task-{epic_id}: {open_children} of {total_children} children open` — when `closable` is true, print `[EPIC] task-{epic_id} ready to close — close it with a resolution now` instead, and do it. Print this line only when the summary you already printed doesn't carry the rollup itself: `add_task` / `update_task` summaries end with either `— epic task-N: K of M children open` or, on the closable branch, `— epic task-N ready to close: update_task(...)` — either way the count/prescription is already on screen; `delete_task` and the REST responses need the explicit `[EPIC]` line |
@@ -642,6 +722,7 @@ echo against intent:
 | `priority=N` | `priority` equals `N` |
 | `parent_task_id`, links | Field is present and equal to intent |
 | `kind='epic'` / `kind='task'` | Response `kind` matches the promote/demote you asked for |
+| `kind` / `verdict` on a journal entry | Response `kind` and `verdict` match intent; `round` is the task's current round |
 | `milestone_id=N` / `milestone_id=0` on a task | Response `milestone_id` is `N` (or `null` after a detach) |
 | `sequence` / `is_release` on a milestone | Response `sequence` / `is_release` match intent — milestone writes echo `sequence`, `is_release`, `status` (not `title`), so those are the verification channel |
 
@@ -650,7 +731,7 @@ fixes the XML glitch). If a second attempt still loses it, flag the mismatch to
 the user verbatim ("graph integrity: tags lost on decision N, please re-run")
 rather than silently moving on — the damage is mute graph drift, easy to miss.
 
-Applies to: `sync_decision`, `add_task`, `update_task`, `add_milestone`,
+Applies to: `sync_decision`, `add_task`, `update_task`, `add_task_journal_entry`, `add_milestone`,
 `update_milestone`, `log_progress`,
 `log_pattern`, `add_document`, `update_document`, `update_active_context`,
 `update_product_context`, block ops (`update_block`, `insert_block`,
@@ -684,6 +765,7 @@ On an `Invalid arguments for tool` error:
 - [ ] Starting work on a task → moved to IN_PROGRESS before the first write?
 - [ ] New work → task created/updated?
 - [ ] Work finished → task = DONE **with `resolution`**?
+- [ ] Work that needs a check → `report` before REVIEW, the `review` written by someone other than the executor, DONE only after `approve`?
 - [ ] Closing a task → did NOT call `log_progress` separately (it's auto-logged)?
 - [ ] Interactive session, work from a later milestone → owner explicitly agreed to it?
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
@@ -714,7 +796,7 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Semantic pass | `projects/semantic-pass` |
 | Spec append-only invariant | `projects/spec-append-only` |
 | Block-level document model | `projects/block-model` |
-| Task hierarchy | `projects/task-hierarchy` |
+| Task hierarchy, the review cycle and the task journal | `projects/task-hierarchy` |
 | Roadmap milestones | `projects/roadmap` |
 | Architecture diagrams | `projects/architecture-diagrams` |
 | Full per-tool parameter reference | `projects/tool-reference` |

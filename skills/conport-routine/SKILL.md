@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 16.4.0
+  version: 16.5.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -33,7 +33,7 @@ structure on top.
 
 | Tool | Purpose |
 |------|---------|
-| `get_agenda(project_id, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
+| `get_agenda(project_id, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
 | `list_milestones(project_id, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
 | `update_milestone(project_id, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
 | `get_routine_config(project_id)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
@@ -44,6 +44,9 @@ structure on top.
 | `get_estimation_stats(project_id, limit=50)` | Plan/actual calibration stats — call before estimating: `sample_size`, `median_ratio`, p50/p90 actual seconds, `by_priority` breakdown, `recent` samples. |
 | `list_tasks(..., ready=true, order="priority", offset=N)` | Deep priority-ordered slice of ready tasks when `ready_top` isn't enough. Accepts a `routine_eligible` filter (true — only marked tasks). |
 | `update_task` → IN_PROGRESS | Sets a lease on the task (auto-returns to TODO if the lease expires). Close with `resolution=...` as usual. |
+| `add_task_journal_entry(project_id, task_id, kind, author, body, verdict=None)` | One entry in the task's journal: `report` (the work done), `review` (the reviewer's verdict, `approve` or `changes_requested`), `fix` (the report on the fixes), `brief` (an assignment). The server stamps the round. `author` is the role or name of who wrote the entry: the implementer and the reviewer sign with different names, and a `review` signed like a `report` or `fix` of the same round is refused with `reviewer_is_author`. |
+| `update_task` → REVIEW | Hands finished work to a reviewer. Needs a `report` or `fix` of the current round; a task in REVIEW leaves it only to DONE (approved), IN_PROGRESS (changes requested) or CANCELLED. |
+| `list_task_journal(project_id, task_id, round=None, include_body=false)` | The task's journal, oldest first — the reviewer reads the round's `brief` and `report` with `include_body=true`. |
 | `update_task(snooze_until=...)` | Defer a task until a date; empty string clears the snooze. |
 
 **Relation to `init`.** The `init` response (conport skill) may include a
@@ -122,6 +125,15 @@ task decide explicitly:
 **Nothing is dropped silently.** Every stale task gets one of the three verdicts
 and a mention in the digest.
 
+**Tasks waiting in REVIEW** (`housekeeping.stale_review` lists the ones
+nobody touched for over 24 hours; `init` lists the ones not snoozed in `review_tasks`) are
+not stale work to return: they wait for a reviewer. At autonomy 2
+they are reviewed in Phase 4 before any new work, and each review counts
+against `max_tasks_per_run` as one taken item, the same way epic tails do;
+below that, name them in the digest. Never move one to TODO or BLOCKED — the server refuses it
+(`review_exit_not_allowed`); the only ways out are the review itself or a
+cancellation with a resolution.
+
 **`woken_tasks`** need no separate handling — a woken task is simply back in
 the general ready pool and competes on priority like any other. Mention the
 wake-ups in the digest. One exception: when the snooze was set as "re-check X
@@ -151,11 +163,13 @@ roadmap only advances when epics actually close.
 
 - For each tail, do what its `suggested_action` prescribes: `closable=true` →
   `update_task` → DONE with `resolution` on the epic itself; otherwise finish
-  its `open_tasks` (each through the normal IN_PROGRESS → verify → DONE cycle),
-  then close the epic.
-- Tails count against `max_tasks_per_run` like any other taken item. When the
-  limit runs out inside a tail, stop there and name the remaining tails in the
-  digest — don't start `ready_top` work on top of it.
+  its `open_tasks` (each through the normal IN_PROGRESS → verify → DONE cycle;
+  a child in REVIEW is reviewed, as in the review step below, not worked
+  again), then close the epic.
+- Tails count against `max_tasks_per_run` like any other taken item, and so
+  does each review of a task waiting in REVIEW. When the limit runs out inside
+  a tail or the reviews, stop there and name what remains in the digest —
+  don't start `ready_top` work on top of it.
 - Closing the last epic of a milestone makes it `ready_to_close`
   (`roadmap.current.ready_to_close`). Close a non-release milestone with
   `update_milestone(status='DONE', resolution=...)`. A **release** milestone
@@ -207,7 +221,24 @@ Then the ready pool:
   1. `update_task` → IN_PROGRESS (the gate; also takes the lease).
   2. Do the work.
   3. Verify the result (run the matching validation before claiming done).
-  4. `update_task` → DONE with `resolution=...`. If it can't be finished this
+  4. **Review** — when the task needs a check, and always when its journal
+     has a `report`, `fix` or `review` entry (the server then refuses a direct
+     DONE with `done_needs_review`):
+     - `add_task_journal_entry(kind='report')` with what was done and how it
+       was verified, then `update_task` → REVIEW.
+     - A **separate** reviewer — another agent given only the task, its brief
+       and the report, never the run that did the work — reads the round
+       (`list_task_journal(include_body=true)`) and writes
+       `add_task_journal_entry(kind='review', verdict=...)` under its own
+       `author`, never the name the round's report or fix was signed with.
+     - `approve` → step 5. `changes_requested` → `update_task` → IN_PROGRESS
+       (the next round), fix, `add_task_journal_entry(kind='fix')`, REVIEW
+       again, and the reviewer looks once more.
+     - No separate reviewer can run → leave the task in REVIEW and name it in
+       the digest; a later run or the owner reviews it. A fix that does not fit
+       this run → move the task back to IN_PROGRESS (the return), then to TODO
+       with a note.
+  5. `update_task` → DONE with `resolution=...`. If it can't be finished this
      run — set BLOCKED with a note, or return to TODO; never leave it silently
      IN_PROGRESS.
 - A task that turns out bigger than one run: stop, record where you got to in
@@ -216,8 +247,9 @@ Then the ready pool:
 - A picked task that turns out to be a **body of work, not a leaf** — working it
   reveals it should be an epic: the iteration's work on that item **is the
   decomposition**. Promote it (`update_task` with `kind='epic'`), create its
-  subtasks + dependencies, and **stop there**. Decomposition *completes* the run's
-  work on that pool item — do not then also execute one of the new subtasks in
+  subtasks (`add_task`) and their dependencies (`add_task_dep`), and **stop
+  there**. Decomposition *completes* the run's work on that pool item — do not
+  then also execute one of the new subtasks in
   the same run. Executing those subtasks belongs to *later* iterations: each run
   picks up one, competing on priority like any other ready task. (This keeps
   "one item per run" honest — a single item that fans out into an epic is still
@@ -291,6 +323,7 @@ separate report entity.
 - [ ] Housekeeping done only at autonomy >= 1; execution only at autonomy == 2?
 - [ ] Execute phase worked `epic_tails` first (closable epics closed with `resolution`), and only then `ready_top`?
 - [ ] Executed at most `max_tasks_per_run` tasks, one at a time, each through IN_PROGRESS → verify → DONE with `resolution`?
+- [ ] A task that needed a check went through `report` → REVIEW → a `review` by a separate reviewer — and tasks waiting in REVIEW were reviewed or named in the digest, never moved back to TODO or BLOCKED?
 - [ ] Digest names the current milestone — and a release milestone was left for the owner to close?
 - [ ] Empty agenda → `routine_run_finish(outcome='empty')` and exit, no invented work?
 - [ ] `routine_run_finish` called exactly once — and no separate `log_progress` for the run?

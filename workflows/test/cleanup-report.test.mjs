@@ -79,6 +79,12 @@ for (const { file, run, green } of RUNS) {
     assert.equal(ledger.outcome, green)
   })
 
+  test(`${file}: a worktree the janitor refused to remove is named in the notes`, async () => {
+    const ledger = await go({ skipped: ['/tmp/run-checkout: the checkout the helper runs in'], errors: [] })
+    assert.deepEqual(cleanupNotes(ledger), ['cleanup skipped: /tmp/run-checkout: the checkout the helper runs in'])
+    assert.equal(ledger.outcome, green)
+  })
+
   test(`${file}: a janitor that returned nothing is named in the notes`, async () => {
     const ledger = await go(null)
     assert.deepEqual(cleanupNotes(ledger), ['cleanup: the janitor returned no report'])

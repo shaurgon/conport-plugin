@@ -29,7 +29,8 @@ Root
 ## Variants worth knowing
 
 - "Show the IN_PROGRESS tree for epic #N" → `list_tasks` with
-  `status: "IN_PROGRESS"` and `parent_task_id: N` (the epic's number).
+  `status: "IN_PROGRESS,REVIEW"` and `parent_task_id: N` (the epic's number) —
+  work in flight together with work waiting for a review.
 - "Hide completed, show the last 7 days' activity on top" → add
   `recent_activity` before the task list.
 - "Flatten to a single priority-sorted list" → same call, different

@@ -16,14 +16,15 @@ import { fileURLToPath } from 'node:url'
 // run this file (node --test <this file>) and copy the version and the sha256 it
 // prints in the failure message into PIN.
 const PIN = {
-  version: 12,
-  sha256: 'e777c3a57ae550cd9a3335c70453a441c4a4fa076c574b5e01d3cbfdd7bb99f9',
+  version: 15,
+  sha256: '19a3a3d5321772f10a44778d5518ec5309182e3dff7ac7c9797bf3719b83bc03',
 }
 
 const WORKFLOWS = dirname(dirname(fileURLToPath(import.meta.url)))
 const FILES = ['task.js', 'epic.js']
 const REGIONS = [
   ['PIPE_BASE_BEGIN', 'PIPE_BASE_END'],
+  ['PIPE_CYCLE_BEGIN', 'PIPE_CYCLE_END'],
   ['SCOUT_BASE_BEGIN', 'SCOUT_BASE_END'],
   ['ACCOUNT_PIPE_BEGIN', 'ACCOUNT_PIPE_END'],
 ]

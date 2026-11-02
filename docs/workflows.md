@@ -14,6 +14,18 @@ Deterministic execution of one ConPort task, end to end:
 4. merge behind the full project gate,
 5. close the task in ConPort with a resolution.
 
+The run takes the task through the review cycle of ConPort and writes it into
+the task's journal as it goes: a `brief` with the assignment before the
+implementer starts, the implementer's `report` (the task moves to REVIEW), the
+reviewer's `review` with its verdict. A serious finding is `changes_requested`:
+the task returns to IN_PROGRESS for the next round, the fix comes back as a
+`fix` entry (the task moves to REVIEW again) and the re-review is one more
+`review`. Minor findings alone are an `approve`. The task is closed from
+REVIEW after the approval, with the run's resolution. The entries are signed
+`orchestrator` (the brief), `implementer` (the report and the fix) and
+`reviewer` (the review) — the reviewer never signs as the author of the work it
+reviews.
+
 Nothing is ever pushed — every merge stays local, so you review the result before
 it leaves the machine.
 
@@ -64,7 +76,28 @@ Example:
   implementation dead-ends, the review rejects the fix, or the merge gate stays
   red, the ConPort task is set to BLOCKED and a `## Blocked: <reason>` section
   is appended to its description — the original text is kept, so the reason is
-  visible next time someone picks the task up.
+  visible next time someone picks the task up. A task waiting in REVIEW cannot
+  be blocked: the run reports the refusal and leaves the task in REVIEW for its
+  verdict.
+- **A task already in REVIEW is reviewed, not implemented again.** A run that
+  finds the task in REVIEW — an earlier run stopped after the report — skips
+  the implementation and reviews the branch that run left (`task/t<id>`, or its
+  `-r2` / `-ctx` retry). That branch has no worktree any more: an agent that
+  needs one makes it and names it, and the run removes it at cleanup. When none
+  of the branches exists the run aborts with `ABORTED_IN_REVIEW_NO_BRANCH`. If
+  the work is already merged, close the task DONE from REVIEW with a resolution
+  once a `review` entry with verdict `approve` exists; otherwise a reviewer adds
+  a `review` entry with verdict `changes_requested` and moves the task back to
+  IN_PROGRESS, then the task can be run again.
+- **The journal never decides the outcome.** Each journal step is one helper
+  command; a step that is refused or fails is named in the run ledger
+  (`journal`), and the later steps of that task are skipped, while the run
+  itself goes on — except after the brief, which a report does not need. Without an API key the run writes no journal at all, and the
+  task closes from IN_PROGRESS as it did before the review cycle existed.
+- **A report that landed only in part** (the report is written, the move to
+  REVIEW failed) leaves the task IN_PROGRESS with a report, and its close is
+  refused with `done_needs_review`: move the task to REVIEW, add the review,
+  then close it.
 - **Nothing is ever pushed.** Merges are local, on your default branch.
 
 ### Resuming an interrupted run
@@ -98,7 +131,11 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
    execution, never during),
 3. lay the tasks into waves of file-disjoint work (up to five in parallel), each
    implemented in its own worktree and reviewed by an independent agent, with one
-   fix round per task,
+   fix round per task — every child goes through REVIEW and its journal exactly
+   as in `/conport:task`, and a child already in REVIEW is reviewed on the
+   branch an earlier run left (`epic<epic id>/t<task id>`) instead of being
+   implemented again; without that branch it fails with
+   `ABORTED_IN_REVIEW_NO_BRANCH` while the rest of the epic runs,
 4. merge the approved branches strictly one at a time, the full gate after every
    merge — a red gate aborts that merge cleanly and fails the task,
 5. run ONE gap-hunt pass over the whole change, verify every finding
@@ -176,7 +213,9 @@ judging a change, hunting for gaps, deciding whether the goal was reached.
 | `preflight` | State of the repository before a run: clean or dirty tree, current branch, the default branch, the head commit. Debris of an interrupted merge is aborted first. |
 | `gate` | Runs the gate commands in the gate directory and reports GREEN, or RED with the tail of the first failing command. |
 | `merge` | Merges the queued branches one at a time, the full gate after each; a conflict or a red gate aborts that merge cleanly and the batch reports it per branch. |
-| `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics, and the run's own unmerged branches are named in `kept`. |
+| `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics, and the run's own unmerged branches are named in `kept`. The checkout the helper runs in is never removed, even when listed: it is named in `skipped` (a `cleanup skipped: …` note in the run ledger). |
+| `branch` | Names the first of the given local branches that exists, with its head commit — how a run finds the branch of a task it found in REVIEW. |
+| `cycle` | Writes one step of a task's review cycle to ConPort: the journal entry (`brief`, `report`, `fix` or `review` with its verdict) and the status change that goes with it — REVIEW after a report or a fix, IN_PROGRESS after `changes_requested`. The authors are fixed here, and an entry longer than the server takes is cut with a marker. A refusal by the review rules is reported as the task's state, not as a failed call. |
 | `account` | Writes the run's outcome back to ConPort: closes done tasks with their resolutions, blocks failures, files deferred findings, logs the run summary, closes the epic when the run says it may. Every item is guarded by a read, so re-running the same table changes nothing. |
 | `scout` | Collects the raw material of one task: the task itself, its slice of the plan, the files it names, the Global Constraints, the gate object and the spec reference. It compresses and judges nothing. |
 | `--version` | The plugin version the helper shipped with, as `{"version": "..."}` (`null` when the manifest next to it is unreadable). |
@@ -201,9 +240,11 @@ the answer, and the plainest possible "this helper is stale".
 The helper is tested on Node 22. It calls the global `fetch`, so a runtime
 without one cannot run it at all; nothing older than Node 22 is tested.
 
-- `CONPORT_API_KEY` — a ConPort API key. With it, `account` and `scout` talk to
-  ConPort over REST. Without it, the run does the same steps through the ConPort
-  MCP tools instead; the behavior is identical, only slower. An installed plugin
+- `CONPORT_API_KEY` — a ConPort API key. With it, `account`, `scout` and
+  `cycle` talk to ConPort over REST. Without it, the run does the steps of
+  `account` and `scout` through the ConPort MCP tools instead — the behavior is
+  identical, only slower — and writes no task journal: `cycle` has no MCP
+  fallback, so the task never enters REVIEW and closes from IN_PROGRESS. An installed plugin
   needs nothing here: the key configured for the plugin reaches the helper as
   `CLAUDE_PLUGIN_OPTION_API_KEY`, which is read exactly like `CONPORT_API_KEY`.
 - `CONPORT_API_URL` — the API base, for a self-hosted ConPort. Include the

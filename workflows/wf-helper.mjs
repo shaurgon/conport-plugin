@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // Deterministic mechanics of the /conport:task and /conport:epic workflows:
-// preflight, project gate, merge batch, cleanup, accounting, scouting. Every
+// preflight, project gate, merge batch, cleanup, accounting, scouting, the
+// review cycle of a task and the branch check of a task found in REVIEW. Every
 // subcommand prints exactly
 // one strict JSON object on stdout and exits 0 — a red result is data, not a
 // process error. Exit 2 is reserved for CLI misuse. No external dependencies.
 //
 // Mirror rule: the JSON shapes here are the workflow schemas S_PRE, S_BASE,
-// S_MG, S_ACC, S_JAN and the scout base S_SCOUT_RAW — edit them together.
+// S_MG, S_ACC, S_JAN, S_CYC, S_BR and the scout base S_SCOUT_RAW — edit them
+// together.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
@@ -41,6 +43,18 @@ const NO_CHILD_OUTCOME = 'no child task in ConPort'
 // quoted value is swallowed whole instead of being cut at its first space.
 const SECRET_KEY =
   /\b([A-Za-z0-9_.-]*(?:SECRET|TOKEN|KEY|PASSWORD)[A-Za-z0-9_.-]*)[ \t]*=[ \t]*("[^"\n]*"?|'[^'\n]*'?|\S+)/gi
+
+// The authors of the journal entries a workflow run writes, one per kind, held
+// here only: both workflows write the journal through this helper. The server
+// refuses a review signed by the author of the round's report or fix
+// (reviewer_is_author), so the reviewer's name differs from the implementer's by
+// construction.
+export const JOURNAL_AUTHORS = Object.freeze({
+  brief: 'orchestrator', report: 'implementer', fix: 'implementer', review: 'reviewer',
+})
+// BODY_MAX_LENGTH of the server's journal schema, in characters.
+export const JOURNAL_BODY_MAX = 200000
+const JOURNAL_VERDICTS = new Set(['approve', 'changes_requested'])
 
 // The stamp of the execution branch: every scout and account report of this
 // helper carries via:"wf-helper", so a run ledger can tell branch A (this file)
@@ -295,13 +309,15 @@ const merge = flags => {
   emit({ results })
 }
 
-// A path as git prints it in `worktree list`: symlinks resolved. A directory that
-// is already gone cannot be resolved itself, so its nearest existing ancestor is.
+// A path as git prints it in `worktree list`: symlinks resolved, and the letter
+// case as it is on disk — the native realpath, because on a case-insensitive file
+// system two spellings of one tree must compare equal. A directory that is
+// already gone cannot be resolved itself, so its nearest existing ancestor is.
 const canonPath = path => {
   let head = resolve(path)
   let rest = ''
   for (;;) {
-    if (existsSync(head)) return join(realpathSync(head), rest)
+    if (existsSync(head)) return join(realpathSync.native(head), rest)
     const up = dirname(head)
     if (up === head) return resolve(path)
     rest = join(basename(head), rest)
@@ -330,20 +346,33 @@ const worktreeBranches = (paths, errors) => {
   return branches
 }
 
+// The checkout the helper runs in — its working directory and the toplevel of
+// that checkout. It is never a worktree to remove, whatever the list says: a run
+// started from a linked worktree would destroy its own tree, uncommitted work
+// included, on one wrong path.
+const ownCheckout = () => {
+  const own = new Set([canonPath(process.cwd())])
+  const top = git('rev-parse', '--show-toplevel')
+  if (top.ok && top.stdout.trim()) own.add(canonPath(top.stdout.trim()))
+  return own
+}
+
 const cleanup = flags => {
   const merged = listOption(flags, 'merged')
   const worktrees = listOption(flags, 'worktrees')
   if (!merged || !worktrees) return usage('cleanup requires --merged <json array> and --worktrees <json array>')
 
-  const out = { deleted: [], kept: [], worktrees_removed: [], errors: [] }
+  const out = { deleted: [], kept: [], worktrees_removed: [], skipped: [], errors: [] }
   // Read before anything is removed: once a worktree is gone, nothing ties its
   // path to the branch it held.
   const runBranches = worktreeBranches(worktrees, out.errors)
+  const own = ownCheckout()
   // Worktrees first: a merged branch is normally still checked out in a worktree
   // of the same run, and git refuses to delete a branch a worktree holds. The
   // other order fails every deletion and leaves the branches for a second call.
   for (const path of worktrees) {
     if (!existsSync(path)) continue
+    if (own.has(canonPath(path))) { out.skipped.push(path + ': the checkout the helper runs in'); continue }
     const r = git('worktree', 'remove', '--force', path)
     if (r.ok) out.worktrees_removed.push(path)
     else out.errors.push('worktree remove ' + path + ': ' + mask(r.out.trim()))
@@ -362,6 +391,20 @@ const cleanup = flags => {
     if (!merged.includes(branch) && git('show-ref', '--verify', '--quiet', 'refs/heads/' + branch).ok)
       out.kept.push(branch)
   emit(out)
+}
+
+// The first of the given local branches that exists, with its head. A task found
+// in REVIEW is reviewed on the branch an earlier run left behind; the caller
+// lists the names that run may have used, most recent attempt first.
+const branch = flags => {
+  const names = listOption(flags, 'names')
+  if (!names || !names.length || names.some(n => typeof n !== 'string' || !n))
+    return usage('branch requires --names <json array of branch names>')
+  for (const name of names) {
+    const r = git('rev-parse', '--verify', '--quiet', 'refs/heads/' + name)
+    if (r.ok) emit({ exists: true, branch: name, head_sha: r.stdout.trim() })
+  }
+  emit({ exists: false, branch: null, head_sha: null })
 }
 
 // ------------------------------------------------------------------ accounting
@@ -391,7 +434,18 @@ const conport = (base, key, team) => async (method, path, body) => {
     throw e
   }
   const text = await res.text()
-  if (!res.ok) throw new Error(`${method} ${path} -> ${res.status} ${text.slice(0, ERROR_BODY_CHARS)}`)
+  if (!res.ok) {
+    // A structured refusal ({detail: {error, message}}) keeps its code and its
+    // message on the error, so a step can tell a rule of the task's state from
+    // a broken call.
+    const err = new Error(`${method} ${path} -> ${res.status} ${text.slice(0, ERROR_BODY_CHARS)}`)
+    err.status = res.status
+    try {
+      const detail = JSON.parse(text)?.detail
+      if (detail && typeof detail.error === 'string') { err.code = detail.error; err.refusal = String(detail.message ?? '') }
+    } catch { /* a body that is not JSON carries no code */ }
+    throw err
+  }
   return text ? JSON.parse(text) : null
 }
 
@@ -455,12 +509,26 @@ const accounting = (table, key) => {
     failed_calls.push({ call, error })
     return error
   }
-  return { api, project, actions, failed_calls, act, failed, taskPath: id => `/projects/${project}/tasks/${id}` }
+  return { api, project, actions, failed_calls, act, failed, scrub, taskPath: id => `/projects/${project}/tasks/${id}` }
 }
 
 // The three steps both table shapes share, written once. A task run closes one
 // task and blocks one; an epic run does the same for every child of its table —
 // the mechanics, the guard read and the wording of the actions are identical.
+
+// A refusal by the review rules is the task's state, not a broken call:
+// retrying the same close cannot succeed. The step reports the code and
+// what happened to the task, plus the server's message when it sent one, and
+// stays out of failed_calls; the task is left as it is.
+const refused = (c, step, id, e, outcome) => {
+  const message = e.refusal ? ' — ' + c.scrub(e.refusal) : ''
+  const detail = e.code + ': ' + outcome + message
+  c.act(step, id, 'failed', detail)
+  return detail
+}
+
+// The refusals of the review rules: retrying the same close cannot succeed.
+const CLOSE_REFUSALS = new Set(['done_needs_approval', 'done_needs_review', 'done_needs_resolution'])
 
 // Closes one task. Guarded by a read; the resolution is its own field, so the
 // server appends its section and the description is never rewritten from here.
@@ -474,10 +542,17 @@ const closeOne = async (c, id, resolution) => {
       c.act('close', id, 'done', 'closed with the run resolution')
     }
     return true
-  } catch (e) { c.failed('close', id, 'close task-' + id, e); return false }
+  } catch (e) {
+    if (e && CLOSE_REFUSALS.has(e.code)) refused(c, 'close', id, e, 'the task is not closed')
+    else c.failed('close', id, 'close task-' + id, e)
+    return false
+  }
 }
 
 // Blocks one task, appending the reason: the original description is kept.
+// A task in REVIEW leaves it only through a review verdict or a cancellation,
+// so the server refuses BLOCKED with review_exit_not_allowed — reported as a
+// refusal, not as a failed call.
 const blockOne = async (c, id, reason) => {
   try {
     const task = await c.api('GET', c.taskPath(id))
@@ -488,7 +563,10 @@ const blockOne = async (c, id, reason) => {
       await c.api('PATCH', c.taskPath(id), { status: 'BLOCKED', description: original ? original + '\n\n' + section : section })
       c.act('block', id, 'done', 'blocked with the run reason')
     }
-  } catch (e) { c.failed('block', id, 'block task-' + id, e) }
+  } catch (e) {
+    if (e && e.code === 'review_exit_not_allowed') refused(c, 'block', id, e, 'the task is in REVIEW and stays there')
+    else c.failed('block', id, 'block task-' + id, e)
+  }
 }
 
 // The open tails epic carrying this title, created when there is none. Returns
@@ -653,7 +731,13 @@ const accountEpic = async (table, c) => {
           act('epic_close', epicId, 'done', 'epic closed with the run resolution')
         }
       }
-    } catch (e) { out.epic_close_error = failed('epic_close', epicId, 'close epic ' + epicId, e) }
+    } catch (e) {
+      // A row that went through the review cycle as a task closes only through
+      // it, epic or not: the same refusals as a task close, reported the same way.
+      out.epic_close_error = e && CLOSE_REFUSALS.has(e.code)
+        ? refused(c, 'epic_close', epicId, e, 'the epic is not closed')
+        : failed('epic_close', epicId, 'close epic ' + epicId, e)
+    }
   }
   return out
 }
@@ -676,6 +760,137 @@ const account = async flags => {
 
   const c = accounting(table, key)
   emit(fits(TASK_TABLE_KEYS) ? await accountTask(table, c) : await accountEpic(table, c))
+}
+
+// --------------------------------------------------------------- review cycle
+
+// One step of a task's review cycle, as a run decides it: the journal entry the
+// step is about and the status change that goes with it.
+//   brief  — the assignment, signed by the orchestrator; no status change;
+//   report — a TODO or BLOCKED task is started first, then the report, then REVIEW;
+//   fix    — the fix report, then REVIEW;
+//   review — the verdict, then, for changes_requested, the return to IN_PROGRESS
+//            (the server opens the next round).
+// The step stops at the first write that does not land: what follows it would
+// only be refused in turn.
+const CYCLE_STEPS = new Set(['brief', 'report', 'fix', 'review'])
+
+// The refusals a cycle write can meet. Each is the task's state, not a broken
+// call — retrying the same write cannot succeed — so it is reported like a
+// refused close and stays out of failed_calls.
+const CYCLE_REFUSALS = new Set([
+  'review_needs_report', 'return_needs_review', 'reviewer_is_author', 'review_exit_not_allowed',
+  'review_from_in_progress_only', 'journal_kind_not_allowed', 'journal_task_closed',
+])
+
+// A body within the server's limit. Characters are counted as the server counts
+// them, never split in two; a cut body says so at its end.
+export const fitBody = text => {
+  const chars = Array.from(String(text))
+  if (chars.length <= JOURNAL_BODY_MAX) return chars.join('')
+  const marker = `\n\n[truncated by the workflow helper: the full text had ${chars.length} characters]`
+  return chars.slice(0, JOURNAL_BODY_MAX - Array.from(marker).length).join('') + marker
+}
+
+const texts = v => (Array.isArray(v) ? v.map(String) : [])
+const section = (title, items) => (items.length ? ['', title, ...items.map(i => '- ' + i)] : [])
+const findingLine = f => {
+  const at = String(f.file ?? '') + (f.line ? ':' + f.line : '')
+  const extra = [['spec', f.specRef], ['scenario', f.scenario], ['fix', f.fix]]
+    .filter(([, v]) => v).map(([k, v]) => ` ${k}: ${v}.`).join('')
+  return `[${f.severity}] ${at} — ${f.what}.${extra}`
+}
+
+// The text of an entry. The brief arrives written; the report, the fix and the
+// review are written here from the agents' structured results, the same way for
+// both workflows.
+export const journalBody = s => {
+  const r = s.result ?? {}
+  if (s.step === 'brief') return String(s.body)
+  if (s.step === 'report') return [
+    'Implementer report: ' + r.status,
+    `Branch: ${r.branch} at ${r.head_sha}`,
+    ...(texts(r.files_changed).length ? ['Files changed: ' + texts(r.files_changed).join(', ')] : []),
+    ...(r.checks_summary ? ['Checks: ' + r.checks_summary] : []),
+    ...section('Concerns:', texts(r.concerns)),
+    ...section('Questions:', texts(r.questions)),
+  ].join('\n')
+  if (s.step === 'fix') return [
+    'Fix report: ' + r.status,
+    'Head: ' + r.head_sha,
+    ...section('Per finding:', (Array.isArray(r.per_finding) ? r.per_finding : [])
+      .map(p => `#${p.idx} ${p.action}` + (p.note ? ' — ' + p.note : ''))),
+    ...(r.checks_summary ? ['', 'Checks: ' + r.checks_summary] : []),
+  ].join('\n')
+  const findings = Array.isArray(r.findings) ? r.findings : []
+  return [
+    ...(s.note ? [String(s.note)] : []),
+    `Verdict: ${s.verdict} (the reviewer answered ${r.verdict})`,
+    ...(findings.length ? section(`Findings (${findings.length}):`, findings.map(findingLine)) : ['Findings: none']),
+    ...section('Unverifiable:', texts(r.unverifiable)),
+  ].join('\n')
+}
+
+// What is wrong with a step file, or null when it is a step this command runs.
+const stepProblem = s => {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return 'the step must be a JSON object'
+  if (!Number.isInteger(s.project_id) || !Number.isInteger(s.task_id)) return 'project_id and task_id must be integers'
+  if (!CYCLE_STEPS.has(s.step)) return 'step must be one of ' + [...CYCLE_STEPS].join(', ')
+  if (s.step === 'brief') return typeof s.body === 'string' && s.body.trim() ? null : 'a brief needs a non-empty body'
+  if (!s.result || typeof s.result !== 'object' || Array.isArray(s.result)) return `a ${s.step} needs the agent's result object`
+  if (s.step === 'review' && !JOURNAL_VERDICTS.has(s.verdict)) return 'a review needs verdict approve or changes_requested'
+  return null
+}
+
+// One write of a step. Returns whether it landed.
+const cycleWrite = async (c, id, action, call, write, done, outcome) => {
+  try {
+    await write()
+    c.act(action, id, 'done', done)
+    return true
+  } catch (e) {
+    if (e && CYCLE_REFUSALS.has(e.code)) refused(c, action, id, e, outcome)
+    else c.failed(action, id, call, e)
+    return false
+  }
+}
+
+const runCycle = async (c, s) => {
+  const id = s.task_id
+  const entry = (kind, verdict) => cycleWrite(c, id, kind, `${kind} entry on task-${id}`,
+    () => c.api('POST', c.taskPath(id) + '/journal', {
+      kind, author: JOURNAL_AUTHORS[kind], body: fitBody(journalBody(s)), ...(verdict ? { verdict } : {}),
+    }),
+    `${kind} entry written as ${JOURNAL_AUTHORS[kind]}`, 'the entry is not written')
+  const move = (action, status) => cycleWrite(c, id, action, `move task-${id} to ${status}`,
+    () => c.api('PATCH', c.taskPath(id), { status }), 'moved to ' + status, 'the task keeps its status')
+
+  if (s.step === 'brief') return entry('brief')
+  if (s.step === 'review') return (await entry('review', s.verdict)) && s.verdict === 'changes_requested' && move('return', 'IN_PROGRESS')
+  if (s.step === 'report') {
+    // Read first: a closed task is never reopened by a report, and a task in
+    // REVIEW is never returned by one — those are refused at the entry instead.
+    let task
+    try { task = await c.api('GET', c.taskPath(id)) } catch (e) { c.failed('start', id, 'read task-' + id, e); return false }
+    if ((task.status === 'TODO' || task.status === 'BLOCKED') && !(await move('start', 'IN_PROGRESS'))) return false
+  }
+  return (await entry(s.step)) && move('to_review', 'REVIEW')
+}
+
+// Writes one step of the review cycle over the REST API. No key -> the sentinel:
+// the run goes on without a journal, as it did before the review cycle existed.
+const cycle = async flags => {
+  const path = typeof flags.step === 'string' ? flags.step : null
+  if (!path) return usage('cycle requires --step <path.json>')
+  const s = readJsonFile(path, '--step')
+  const problem = stepProblem(s)
+  if (problem) return usage('cycle: ' + problem)
+
+  const key = apiKey()
+  if (!key) sentinel('no api key')
+  const c = accounting({ project_id: s.project_id }, key)
+  await runCycle(c, s)
+  emit({ via: VIA, task: s.task_id, step: s.step, actions: c.actions, failed_calls: c.failed_calls })
 }
 
 // --------------------------------------------------------------------- scout
@@ -910,7 +1125,9 @@ if (invokedDirectly) {
   else if (cmd === 'gate') gate(flags)
   else if (cmd === 'merge') merge(flags)
   else if (cmd === 'cleanup') cleanup(flags)
+  else if (cmd === 'branch') branch(flags)
   else if (cmd === 'account') await account(flags)
+  else if (cmd === 'cycle') await cycle(flags)
   else if (cmd === 'scout') await scout(flags)
-  else usage('usage: wf-helper.mjs <preflight|gate|merge|cleanup|account|scout|--version> [options]')
+  else usage('usage: wf-helper.mjs <preflight|gate|merge|cleanup|branch|account|cycle|scout|--version> [options]')
 }

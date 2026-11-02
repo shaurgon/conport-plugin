@@ -1,6 +1,6 @@
 export const meta = {
   name: 'task',
-  description: 'Deterministic execution of one ConPort task: implement in a worktree, review, fix, merge behind the full gate, close',
+  description: 'Deterministic execution of one ConPort task: implement in a worktree, review through REVIEW and the task journal, fix, merge behind the full gate, close',
   phases: [
     { title: 'Preflight' }, { title: 'Scout' }, { title: 'Baseline' },
     { title: 'Execute' }, { title: 'Merge' }, { title: 'Accounting' }, { title: 'Cleanup' },
@@ -10,7 +10,7 @@ export const meta = {
 // prompts of this file — edit them together. Between task.js and epic.js the
 // mirror parity tests hold byte for byte alike exactly this: every region fenced
 // by a <NAME>_BEGIN / <NAME>_END marker pair that both files carry (PIPE_BASE,
-// FENCE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE) and the
+// FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE) and the
 // SKELETON_VERSION declaration. Everything else the two files share — the
 // judgement prompts included — is duplicated by hand and guarded by nothing.
 
@@ -25,7 +25,7 @@ const TASK = A.task
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
 const FILE_MINORS = !!A.fileMinors // default: minors live in the ledger only — they never become tasks
-const SKELETON_VERSION = 12       // prompt skeleton version; bump on every edit of the PIPE_BASE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
+const SKELETON_VERSION = 15     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 
 const L = {
@@ -33,7 +33,7 @@ const L = {
   outcome: null, abort_reason: null, abort_detail: null,
   fail_reason: null, fail_detail: null, branch: null, head_sha: null,
   merge_sha: null, review: null, rereview: null, minors: [],
-  accounting: null, pending_table: null, notes: [],
+  accounting: null, pending_table: null, notes: [], journal: [],
 }
 const abort = (reason, detail) => {
   L.outcome = 'ABORTED'; L.abort_reason = reason
@@ -98,11 +98,12 @@ const S_FIX = { type: 'object', required: ['status', 'head_sha'], properties: {
   status: { type: 'string', enum: ['DONE', 'BLOCKED'] },
   per_finding: { type: 'array', items: { type: 'object', required: ['idx', 'action'], properties: {
     idx: { type: 'integer' }, action: { type: 'string', enum: ['FIXED', 'DISPUTED'] }, note: { type: 'string' } } } },
-  head_sha: { type: 'string' }, checks_summary: { type: 'string' } } }
+  head_sha: { type: 'string' }, checks_summary: { type: 'string' }, worktree_path: { type: 'string' } } }
 
 const S_REB = { type: 'object', required: ['status', 'head_sha'], properties: {
   status: { type: 'string', enum: ['DONE', 'BLOCKED'] }, head_sha: { type: 'string' },
-  semantic_choice: { type: 'boolean' }, conflict_files: { type: 'array', items: { type: 'string' } } } }
+  semantic_choice: { type: 'boolean' }, conflict_files: { type: 'array', items: { type: 'string' } },
+  worktree_path: { type: 'string' } } }
 
 const S_MG = { type: 'object', required: ['results'], properties: {
   results: { type: 'array', items: { type: 'object', required: ['id', 'status'], properties: {
@@ -122,7 +123,8 @@ const S_ACC = { type: 'object', required: ['actions', 'task_closed'], properties
 
 const S_JAN = { type: 'object', properties: {
   deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } },
-  worktrees_removed: { type: 'array', items: { type: 'string' } }, errors: { type: 'array', items: { type: 'string' } } } }
+  worktrees_removed: { type: 'array', items: { type: 'string' } }, skipped: { type: 'array', items: { type: 'string' } },
+  errors: { type: 'array', items: { type: 'string' } } } }
 
 // ---------------------------------------------------------------- prompts
 
@@ -173,6 +175,8 @@ const cleanupNote = (jan, noted) => {
     if (Array.isArray(jan.errors) && jan.errors.length) L.notes.push('cleanup errors: ' + jan.errors.join('; '))
     const kept = Array.isArray(jan.kept) ? jan.kept.filter(b => typeof b === 'string' && b) : []
     if (kept.length) L.notes.push('cleanup kept: ' + kept.join(', '))
+    // a worktree the janitor refused to remove: the checkout the helper runs in
+    if (Array.isArray(jan.skipped) && jan.skipped.length) L.notes.push('cleanup skipped: ' + jan.skipped.join('; '))
   }
   else if (!noted) L.notes.push('cleanup: the janitor returned no report')
 }
@@ -208,6 +212,74 @@ ${String(text ?? '').replaceAll('<<<END', '<<< END')}
 <<<END ${name}>>>
 `
 // FENCE_END
+
+// PIPE_CYCLE_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
+// The review cycle of every task the run executes, written to ConPort by the
+// helper's `cycle` command: the brief, the report and REVIEW, the verdict and the
+// return, the fix. Which step comes when is the run's decision; the authors, the
+// entry texts and the writes are the helper's, so both workflows sign and word
+// the journal alike. A step file carries text nobody on the run wrote — review
+// findings, a task title — so it travels quoted.
+const S_CYC = { type: 'object', required: ['actions'], properties: {
+  via: { type: 'string' }, task: { type: 'integer' }, step: { type: 'string' },
+  actions: { type: 'array', items: { type: 'object', required: ['step', 'result'], properties: {
+    step: { type: 'string' }, target: { type: 'integer' },
+    result: { type: 'string', enum: ['done', 'skipped_already', 'failed'] }, detail: { type: 'string' } } } },
+  failed_calls: { type: 'array', items: { type: 'object', properties: {
+    call: { type: 'string' }, error: { type: 'string' } } } } } }
+
+const S_BR = { type: 'object', required: ['exists'], properties: {
+  exists: { type: 'boolean' }, branch: { type: ['string', 'null'] }, head_sha: { type: ['string', 'null'] } } }
+
+const cyclePrompt = step => pipe('cycle --step <tmp>/step.json', `Prepare the arguments: create a temporary directory outside the working tree
+(mktemp -d) and write into it the file step.json holding exactly the JSON quoted
+below, byte for byte:${fenced('step.json', JSON.stringify(step))}Below, <tmp> is that directory.
+`)
+
+// The branches an earlier run may have left for a task, its latest attempt first.
+const branchPrompt = branch => pipe('branch --names ' + shq(JSON.stringify([branch + '-ctx', branch + '-r2', branch])))
+
+// The verdict the journal gets is the run's own decision: a CRITICAL or IMPORTANT
+// finding sends the work back; minors alone never block, so they are an approval
+// the fixer still polishes.
+const journalVerdict = rev => (hard(rev) ? 'changes_requested' : 'approve')
+const REVIEW_NOTES = {
+  resumed: 'Review of the branch an earlier run left',
+  rereview: 'Re-review after the fix',
+  rebase: main => 'Review after the rebase onto ' + main,
+}
+
+// One step of a task's cycle. A step that does not land in full stops the journal
+// of that task: every later step would only be refused, and each one costs an agent
+// call. The brief is the exception — the server takes a report without one — so a
+// brief that did not land is recorded and the cycle goes on. The run's outcome
+// never depends on the journal; the ledger names each step.
+const cycle = async (label, step) => {
+  if (step.task_id == null) return false
+  const stopped = L.journal.some(j => j.task === step.task_id && !j.ok && j.step !== 'brief')
+  const r = stopped ? null : await piped(cyclePrompt(step), { label, effort: 'low', schema: S_CYC })
+  const ok = !!r && r.actions.length > 0 && r.actions.every(a => a.result === 'done') && !(r.failed_calls ?? []).length
+  L.journal.push({ label, task: step.task_id, step: step.step, ...(step.verdict ? { verdict: step.verdict } : {}),
+    ok, ...(stopped ? { skipped: true } : { report: r }) })
+  return ok
+}
+const reviewStep = (label, projectId, taskId, rev, note) => cycle(label, { project_id: projectId, task_id: taskId,
+  step: 'review', verdict: journalVerdict(rev), result: rev, ...(note ? { note } : {}) })
+
+// What a task in REVIEW with no branch left is told: one action for each of the two
+// ways the branch can be gone — the run cannot tell them apart, it reads no verdict.
+const noBranchDetail = (taskId, branch) => `task-${taskId} is in REVIEW, but no branch of an earlier run (${branch}) is left, so there is nothing to review. If its work is already merged, close the task DONE from REVIEW with a resolution once a \`review\` entry with verdict \`approve\` exists; otherwise a reviewer adds a \`review\` entry with verdict \`changes_requested\` and moves the task back to IN_PROGRESS, and the workflow is run again.`
+
+// A task found in REVIEW has no worktree: the fixer or the rebaser that makes one
+// names it, later prompts work there, and the janitor removes it — or the branch
+// it holds could never be deleted. Only then is a reported path taken: a task
+// that has its worktree keeps it, so a misreported path (an agent's reset working
+// directory, the run's own checkout) can never become the tree the janitor removes.
+const adoptWorktree = (impl, r) => {
+  if (!impl.worktree_path && r && typeof r.worktree_path === 'string' && r.worktree_path.trim())
+    impl.worktree_path = r.worktree_path
+}
+// PIPE_CYCLE_END
 
 // PIPE_PRE_BEGIN — mirrored in epic.js; compared byte for byte by the mirror parity test.
 const prePrompt = () => pipe('preflight')
@@ -325,9 +397,8 @@ merge gate.`
     : ''
   return `You implement exactly ONE ConPort task task-${sc.task.id} in a dedicated git worktree.
 First actions: (1) via conport MCP tools (ToolSearch), project_id=${sc.project_id}:
-update_task(task_id=${sc.task.id}, status="IN_PROGRESS") — if already IN_PROGRESS/DONE, leave
-it; (2) git checkout -b
-${branch} (the branch is mandatory — commits must survive worktree removal).
+update_task(task_id=${sc.task.id}, status="IN_PROGRESS") — if already IN_PROGRESS, REVIEW or DONE, leave it;
+(2) git checkout -b ${branch} (the branch is mandatory — commits must survive worktree removal).
 Task: ${sc.task.title}. Files in scope: ${files}. Acceptance: ${b.acceptance}.
 ${brief}
 Requirements are literal: do not "improve" names, formats, thresholds.${gc}
@@ -345,6 +416,34 @@ Never run the full test suite — project resources may be shared; the orchestra
 runs the full gate after merge. Fix red in your own area now. Commit everything;
 return JSON per schema.${ctx}`
 }
+
+// The brief entry: the assignment the implementer is handed, by reference — the
+// plan slice or the ConPort brief, the acceptance, the scope, the gate.
+const briefBody = (sc, gate, branch) => {
+  const b = sc.brief
+  const files = b.files ? [...(b.files.modify ?? []), ...(b.files.test ?? [])] : []
+  const slice = b.lines ? `, lines ${b.lines.from}-${b.lines.to}` : ''
+  return [
+    `Implement task-${sc.task.id} "${sc.task.title}" in a dedicated worktree, on branch ${branch}.`,
+    hasPlan(b) ? `Details: ${b.plan_path}${slice}.` : 'No plan file: the brief is the task description and the spec digest.',
+    `Acceptance: ${b.acceptance.trim() || 'as the plan slice states it'}`,
+    ...(files.length ? [`Files in scope: ${files.join(', ')}.`] : []),
+    `Gate after the merge: ${gate.commands.join('; ')} (in ${gate.dir}).`,
+  ].join('\n')
+}
+
+// Where an agent works on an implemented branch. A task found in REVIEW has its
+// branch but no worktree: the earlier run removed it, so the agent makes one and
+// names it (adoptWorktree). A recorded worktree that has gone is restored at its
+// own path, so the run's record of it stays true.
+const worktreeOf = (impl, missing) => impl.worktree_path
+  ? `Work in worktree
+${impl.worktree_path} (branch ${impl.branch}). Worktree missing -> restore it at the same path:
+git worktree prune && git worktree add ${shq(impl.worktree_path)} ${impl.branch}.`
+  : `The branch
+${impl.branch} has no worktree yet -> create one and work there:
+${missing}
+Return the absolute path of that worktree as worktree_path.`
 
 const revPrompt = (sc, impl, MAIN, extra) => {
   const b = sc.brief
@@ -397,9 +496,8 @@ const fixPrompt = (sc, rev, impl, serial) => {
   const list = rev.findings
     .map((f, i) => ({ idx: i, severity: f.severity, at: f.file + (f.line ? ':' + f.line : ''), what: f.what, specRef: f.specRef, fix: f.fix }))
   const ser = serial ? '; skip tests entirely — static checks only' : ''
-  return `You fix one implemented task per the review findings list. Work in worktree
-${impl.worktree_path} (branch ${impl.branch}). Worktree missing -> restore it:
-git worktree prune && git worktree add <a sibling directory outside the primary working tree> ${impl.branch}.
+  return `You fix one implemented task per the review findings list. ${worktreeOf(impl,
+  `git worktree prune && git worktree add <a sibling directory outside the primary working tree> ${impl.branch}.`)}
 Apply EVERY finding and NOTHING else: no adjacent refactoring, do not leave the
 task's files.
 Findings (ALL severities — minors are fixed on the spot too):${fenced('findings', JSON.stringify(list))}A finding unclear or, in your view, wrong — do not invent a fix and do not skip it
@@ -431,8 +529,8 @@ const rebasePrompt = (sc, impl, serial, MAIN) => {
     ? `the plan slice ${sc.brief.plan_path}${slice}`
     : `the task brief: ${sc.brief.acceptance}`
   const ser = serial ? '; skip tests' : ''
-  return `Rebase branch ${impl.branch} onto fresh ${MAIN}. Work in ${impl.worktree_path}; missing ->
-git worktree prune && git worktree add <a sibling directory> ${impl.branch}.
+  return `Rebase branch ${impl.branch} onto fresh ${MAIN}. ${worktreeOf(impl,
+  `git worktree prune && git worktree add <a sibling directory> ${impl.branch}.`)}
 Resolve conflicts minimally, guided by ${guide}; a
 semantic choice during resolution -> set semantic_choice=true and name the files.
 git stash is forbidden. Then: focused checks only (lint/types; tests only for the
@@ -492,6 +590,11 @@ any ROOT task.
    BLOCKED -> skip; else update_task(task_id=<id>, status="BLOCKED") and APPEND to
    the description a '## Blocked: <reason>' section (keep the original text).
 ${minorsStep}
+A close refused with done_needs_approval, done_needs_review or done_needs_resolution,
+or a block refused with review_exit_not_allowed, is the task's state, not a broken
+call: do NOT retry it and do NOT work around it — report the item failed with the
+detail '<code>: the task is not closed — <message>' (a block: '<code>: the task is
+in REVIEW and stays there — <message>'), keep it out of failed_calls, and go on.
 Return a report per item: done | skipped_already | failed + details; a failed call
 goes into failed_calls while the rest continue. Stamp the report with via:"mcp" —
 branch B is the MCP path.`
@@ -531,6 +634,18 @@ const gate = A.gate ?? sc.gate
 if (!gate || !gate.commands || !gate.commands.length)
   return abort('ABORTED_NO_GATE', 'no gate resolved — pass args.gate or add a gate section to the plan Global Constraints')
 const BRANCH = 'task/t' + sc.task.id
+// A task in REVIEW was implemented and reported by an earlier run that stopped
+// before its verdict: it is reviewed on the branch that run left, never
+// implemented again — and never moved to IN_PROGRESS, which the server refuses.
+let resumed = null
+if (sc.task.status === 'REVIEW') {
+  const br = await retry('branch', l => piped(branchPrompt(BRANCH), { label: l, effort: 'low', schema: S_BR }))
+  if (!br) return abort('ABORTED_BRANCH_CHECK')
+  if (!br.exists || !br.branch) return abort('ABORTED_IN_REVIEW_NO_BRANCH', noBranchDetail(sc.task.id, BRANCH))
+  resumed = { status: 'DONE', branch: br.branch, head_sha: br.head_sha, worktree_path: null }
+}
+const cycleStep = (label, kind, fields) => cycle(label, { project_id: sc.project_id, task_id: sc.task.id, step: kind, ...fields })
+const reviewOf = (label, rev, note) => reviewStep(label, sc.project_id, sc.task.id, rev, note)
 
 phase('Baseline')
 const base = await retry('baseline', l => piped(basePrompt(gate), { label: l, effort: 'low', schema: S_BASE }))
@@ -538,28 +653,42 @@ if (!base) return abort('ABORTED_BASELINE')
 if (base.gate !== 'GREEN') return abort('ABORTED_RED_BASELINE', base.red_summary)
 
 phase('Execute')
-let impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH), { label: 'impl', isolation: 'worktree', schema: S_IMPL })
-if (impl === null)
-  impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH + '-r2'), { label: 'impl-r2', isolation: 'worktree', schema: S_IMPL })
-if (impl && impl.status === 'NEEDS_CONTEXT')
-  impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH + '-ctx', { questions: impl.questions }),
-                     { label: 'impl-ctx', isolation: 'worktree', schema: S_IMPL })
-if (!impl) fail('IMPL_DEAD')
-else if (impl.status === 'BLOCKED' || impl.status === 'NEEDS_CONTEXT') fail(impl.status, impl.questions ?? impl.concerns)
-else { L.branch = impl.branch; L.head_sha = impl.head_sha }
+let impl = resumed
+if (impl) { L.branch = impl.branch; L.head_sha = impl.head_sha }
+else {
+  await cycleStep('j-brief', 'brief', { body: briefBody(sc, gate, BRANCH) })
+  impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH), { label: 'impl', isolation: 'worktree', schema: S_IMPL })
+  if (impl === null)
+    impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH + '-r2'), { label: 'impl-r2', isolation: 'worktree', schema: S_IMPL })
+  if (impl && impl.status === 'NEEDS_CONTEXT')
+    impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH + '-ctx', { questions: impl.questions }),
+                       { label: 'impl-ctx', isolation: 'worktree', schema: S_IMPL })
+  if (!impl) fail('IMPL_DEAD')
+  else if (impl.status === 'BLOCKED' || impl.status === 'NEEDS_CONTEXT') fail(impl.status, impl.questions ?? impl.concerns)
+  else {
+    L.branch = impl.branch; L.head_sha = impl.head_sha
+    await cycleStep('j-report', 'report', { result: impl })   // the report takes the task to REVIEW
+  }
+}
 
 if (!L.outcome) {
   const rev = await retry('rev', l => agent(revPrompt(sc, impl, MAIN), { label: l, schema: S_REV }))
   if (!rev) fail('REVIEW_DEAD')
   else {
     L.review = rev
+    await reviewOf('j-review', rev, resumed ? REVIEW_NOTES.resumed : null)   // changes requested return the task
     if (rev.findings.length) {                       // minors are fixed on the spot too
       const fx = await retry('fix', l => agent(fixPrompt(sc, rev, impl, SERIAL), { label: l, schema: S_FIX }))
+      adoptWorktree(impl, fx)
       if (!fx || fx.status !== 'DONE') {
         if (hard(rev)) fail('FIX_FAILED')
         else collectMinors(rev)                      // minors alone never block the merge — leftovers go to the ledger
       } else {
+        // A returned task goes back to REVIEW with the fix report; after an
+        // approval with minors the task is still in REVIEW and takes none.
+        if (hard(rev)) await cycleStep('j-fix', 'fix', { result: fx })
         const r2 = await agent(revPrompt(sc, impl, MAIN, { rereview: rev, fixed: fx }), { label: 'rev2', schema: S_REV })
+        if (r2) await reviewOf('j-review2', r2, REVIEW_NOTES.rereview)
         if (!r2 || hard(r2)) fail('RED_AFTER_FIX')
         else { L.rereview = r2; collectMinors(r2); L.head_sha = fx.head_sha }
       }
@@ -581,9 +710,11 @@ if (!L.outcome) {
   let res = mg && mg.results[0]
   if (res && res.status === 'CONFLICT') {
     const rb = await agent(rebasePrompt(sc, impl, SERIAL, MAIN), { label: 'rebase', schema: S_REB })
+    adoptWorktree(impl, rb)
     const rr = (rb && rb.status === 'DONE')
       ? await agent(revPrompt(sc, impl, MAIN, { postRebase: true, files: rb.conflict_files }), { label: 'rev-rb', schema: S_REV })
       : null
+    if (rr) await reviewOf('j-review-rb', rr, REVIEW_NOTES.rebase(MAIN))
     if (!rb || !rr || hard(rr)) { fail('MERGE_CONFLICT'); res = null }
     else {
       L.head_sha = rb.head_sha

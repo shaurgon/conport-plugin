@@ -17,6 +17,8 @@ const region = (file, name, src = source(file)) => fencedRegion(src, `${name}_BE
 // fence what the name says.
 const MIRRORED = {
   PIPE_BASE: ['const pipe =', 'const piped =', 'const cleanupNote =', 'const cleanup =', 'const argFiles =', 'const gateFile =', 'const shq ='],
+  PIPE_CYCLE: ['const S_CYC =', 'const S_BR =', 'const cyclePrompt =', 'const branchPrompt =', 'const journalVerdict =',
+    'const REVIEW_NOTES =', 'const cycle =', 'const reviewStep =', 'const noBranchDetail =', 'const adoptWorktree ='],
   PIPE_PRE: ['const prePrompt =', 'const basePrompt ='],
   PIPE_MERGE: ['const mergeArgs =', 'const mergeCommand =', 'const mergePrompt =', 'const mergeStatePrompt ='],
   PIPE_JAN: ['const janPrompt ='],

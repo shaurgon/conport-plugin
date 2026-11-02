@@ -10,8 +10,8 @@ The `conport` skill produces a compact dashboard by chaining three MCP calls:
 
 1. `mcp__conport__init` — returns `product_context`, `active_context`,
    `recent_decisions`, stats, and active tasks.
-2. `mcp__conport__list_tasks` with `status: "IN_PROGRESS"` to surface what's
-   actually in flight.
+2. `mcp__conport__list_tasks` with `status: "IN_PROGRESS,REVIEW"` to surface
+   what's actually in flight and what waits for a reviewer.
 3. `mcp__conport__recent_activity` for the last 24–48 h — commits,
    progress entries, new decisions.
 
@@ -25,6 +25,9 @@ Focus
 
 In progress
   #<id> Payment form validation
+
+In review
+  #<id> Cart summary component (round 2)
 
 Last 48h
   progress  "Cart summary component merged"

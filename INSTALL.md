@@ -188,7 +188,7 @@ Notes:
      `create_project` with the same name, then call `init` again.
    - **CLI host:** run `npx -y conport api projects list`, then list this
      project's tasks with
-     `npx -y conport api tasks list --project_identifier "$CONPORT_PROJECT_NAME" --status TODO,IN_PROGRESS`
+     `npx -y conport api tasks list --project_identifier "$CONPORT_PROJECT_NAME" --status TODO,IN_PROGRESS,REVIEW`
      — the flag takes the name as it is set, `k7m2qx9d/<project>` included.
      A project that does not exist yet is not created by reading it: ask the
      user, and only when they say so run

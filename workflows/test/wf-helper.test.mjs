@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, existsSync, mkdirSync, chmodSync, symlinkSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { basename, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseStatusPaths, timeoutMs } from '../wf-helper.mjs'
 
@@ -411,6 +411,64 @@ test('cleanup: removes an existing worktree and prunes', () => {
   assert.ok(!git(dir, 'worktree', 'list').includes('wt-child'))
 })
 
+// The checkout the helper runs in is never a worktree to remove: a run started
+// from a linked worktree, handed that path by mistake, would destroy its own
+// tree with whatever is uncommitted in it.
+test('cleanup: the worktree the helper runs in is skipped with a reason, never removed', () => {
+  const dir = mkRepo()
+  mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
+  const wt = join(dir, 'wt-self')
+  git(dir, 'worktree', 'add', '-q', wt, 'task/t1')
+  writeFileSync(join(wt, 'uncommitted.txt'), 'work in progress\n')
+  const out = runJson(wt, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([wt]))
+  assert.deepEqual(out.worktrees_removed, [])
+  assert.deepEqual(out.skipped, [`${wt}: the checkout the helper runs in`])
+  assert.ok(existsSync(join(wt, 'uncommitted.txt')), 'the tree and its uncommitted work are untouched')
+  assert.deepEqual(out.errors, [])
+})
+
+// On a case-insensitive file system (macOS by default) a path that differs from
+// the checkout only in letter case names the same tree, and git removes it all
+// the same: the guard compares the case as it is on disk.
+const caseInsensitiveTmp = (() => {
+  const probe = mkdtempSync(join(tmpdir(), 'wfh-case-'))
+  return existsSync(join(dirname(probe), basename(probe).toUpperCase()))
+})()
+
+test('cleanup: the helper\'s own worktree named in another letter case is still skipped',
+  { skip: !caseInsensitiveTmp && 'the temp directory is on a case-sensitive file system' }, () => {
+    const dir = mkRepo()
+    mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
+    const wt = join(dir, 'wt-self')
+    git(dir, 'worktree', 'add', '-q', wt, 'task/t1')
+    const variant = join(dir, 'WT-SELF')
+    const out = runJson(wt, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([variant]))
+    assert.deepEqual(out.worktrees_removed, [])
+    assert.deepEqual(out.skipped, [`${variant}: the checkout the helper runs in`])
+    assert.ok(existsSync(wt))
+  })
+
+test('cleanup: from a subdirectory, the toplevel of the checkout is still skipped; another worktree is removed', () => {
+  const dir = mkRepo()
+  mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
+  mkBranch(dir, 'task/t2', 'b.txt', 'b\n')
+  const self = join(dir, 'wt-self')
+  const other = join(dir, 'wt-other')
+  git(dir, 'worktree', 'add', '-q', self, 'task/t1')
+  git(dir, 'worktree', 'add', '-q', other, 'task/t2')
+  mkdirSync(join(self, 'sub'))
+  const out = runJson(join(self, 'sub'), 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([self, other]))
+  assert.deepEqual(out.worktrees_removed, [other])
+  assert.deepEqual(out.skipped, [`${self}: the checkout the helper runs in`])
+  assert.ok(existsSync(self))
+})
+
+test('cleanup: nothing to protect -> skipped is an empty list', () => {
+  const dir = mkRepo()
+  const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', '[]')
+  assert.deepEqual(out.skipped, [])
+})
+
 test('cleanup: a failing item lands in errors without stopping the rest', () => {
   const dir = mkRepo()
   mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
@@ -480,7 +538,9 @@ test('cleanup: the branch of the main working tree is never reported as kept', (
   const dir = mkRepo()
   const out = runJson(dir, 'cleanup', '--merged', '[]', '--worktrees', JSON.stringify([dir]))
   assert.deepEqual(out.kept, [])
-  assert.equal(out.errors.length, 1, 'errors: ' + JSON.stringify(out.errors))
+  // the main checkout is the one the helper runs in: not even attempted
+  assert.deepEqual(out.skipped, [`${dir}: the checkout the helper runs in`])
+  assert.deepEqual(out.errors, [])
 })
 
 // A merged branch of the run that survives the deletion — here its worktree is
@@ -581,6 +641,41 @@ test('cleanup: deletes a branch whose worktree directory vanished before the cal
   assert.deepEqual(out.worktrees_removed, [], 'the path is gone: nothing to remove')
   const branches = git(dir, 'branch', '--format=%(refname:short)').trim().split('\n')
   assert.deepEqual(branches.sort(), ['main'])
+})
+
+// ------------------------------------------------------------------- branch
+
+// A task found in REVIEW is reviewed on the branch an earlier run left: the
+// command names the first of the given branches that exists, with its head.
+test('branch: the first existing name in the given order wins, with its head sha', () => {
+  const dir = mkRepo()
+  const base = mkBranch(dir, 'task/t7', 'a.txt', 'a\n')
+  const retried = mkBranch(dir, 'task/t7-r2', 'b.txt', 'b\n')
+  assert.deepEqual(runJson(dir, 'branch', '--names', JSON.stringify(['task/t7-ctx', 'task/t7-r2', 'task/t7'])),
+    { exists: true, branch: 'task/t7-r2', head_sha: retried })
+  assert.deepEqual(runJson(dir, 'branch', '--names', JSON.stringify(['task/t7-ctx', 'task/t7'])),
+    { exists: true, branch: 'task/t7', head_sha: base })
+})
+
+test('branch: none of the names exists -> exists false, no branch, no head', () => {
+  const dir = mkRepo()
+  assert.deepEqual(runJson(dir, 'branch', '--names', JSON.stringify(['task/t7'])),
+    { exists: false, branch: null, head_sha: null })
+})
+
+test('branch: a tag or a remote name of the same spelling is not a branch', () => {
+  const dir = mkRepo()
+  git(dir, 'tag', 'task/t7')
+  assert.equal(runJson(dir, 'branch', '--names', JSON.stringify(['task/t7'])).exists, false)
+})
+
+test('branch: no names, an empty list or a non-string name is CLI misuse', () => {
+  const dir = mkRepo()
+  for (const argv of [['branch'], ['branch', '--names', '[]'], ['branch', '--names', '[7]'], ['branch', '--names', '[""]']]) {
+    const r = run(dir, ...argv)
+    assert.equal(r.code, 2, argv.join(' '))
+    assert.equal(r.stdout, '')
+  }
 })
 
 // ------------------------------------------------------------------ dispatch

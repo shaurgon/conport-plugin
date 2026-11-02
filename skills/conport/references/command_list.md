@@ -66,8 +66,10 @@ mcp__conport__init({
 (`<team id>/<project>`; `pers/<project>` in your Private Team), `team`
 (`handle`, `name`, `kind` — `handle` is `pers` for your Private Team),
 `recent_decisions`, `recent_patterns`,
-`backlog` (`total_todo`, `total_in_progress`, `top` — up to 5 items with
-`effective_priority` and `subtask_count`), `stats`, `active_context`
+`backlog` (`total_todo`, `total_in_progress`, `total_review`, `top` — up to 5
+items with `effective_priority` and `subtask_count`; built over TODO,
+IN_PROGRESS and REVIEW), `stats` (`tasks_todo`, `tasks_in_progress`,
+`tasks_review` among them), `active_context`
 (`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
 entries), `gaps` (`fresh` + `chronic`), `instructions` and `summary`.
 Conditional sections: `reconciliation` when stale IN_PROGRESS tasks are
@@ -75,8 +77,13 @@ detected, `cleanup_hint` when the graph is worth a `semantic_cleanup`,
 `routine_suggestion` for a routine-ripe project with no policy yet,
 `skill_update_available` when the caller passed skill metadata and a newer
 version exists, and `roadmap` (current milestone with its epics + `next`) /
-`epic_tails` (epics near closing, each with a prescribed `suggested_action`)
-only when the project has them; `backlog.top` rows carry `milestone_id` and the
+`epic_tails` (epics near closing, each with a prescribed `suggested_action` —
+`Review task-N` for a child in REVIEW, `review task-N` after a `Finish …`
+step) only when the project has them;
+`review_tasks` (`id`, `title`, `priority` of the tasks waiting in REVIEW, most
+recently updated first, snoozed ones left out) only when some task waits — and
+then `instructions` carries "Review: N task(s) await a reviewer — have them
+reviewed before taking new work"; `backlog.top` rows carry `milestone_id` and the
 current milestone's rows float up.
 Top-5 excludes subtasks of active epics so
 you see roots + orphans; `effective_priority` rolls up the most-important
@@ -195,7 +202,7 @@ mcp__conport__update_product_context({
 
 Update a single active context field. `current_focus` is usually managed
 automatically — it snaps to the task you move to IN_PROGRESS and clears when
-that task leaves IN_PROGRESS, so manual writes are rarely needed.
+that task leaves IN_PROGRESS (for REVIEW too), so manual writes are rarely needed.
 `open_questions` is the free-form human field for pending questions.
 
 ```
@@ -538,7 +545,7 @@ mcp__conport__add_task({
 | project_id | integer | yes | Project ID |
 | title | string | yes | Title (max 200 chars) |
 | description | string | no | Description (max 2000 chars) |
-| status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| DONE \| CANCELLED (default: TODO) |
+| status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED (default: TODO). A new task is never created in REVIEW (`review_from_in_progress_only`): a task enters REVIEW from IN_PROGRESS |
 | priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
 | parent_task_id | integer | no | Per-project ID of parent task. The parent must be `kind='epic'` |
 | kind | string | no | `task` (default, leaf) or `epic` (root container). Tasks attach under epics; an epic can never have a parent |
@@ -558,7 +565,8 @@ created at root level carries no `epic_progress`.
 **Refusals:** the hierarchy invariants come back as structured errors:
 `parent_not_epic` (with `suggestions` naming the promote / attach call to make
 next), `epic_with_parent`, `epic_does_not_carry_time_fields`,
-`milestone_on_non_epic`, `milestone_not_found`.
+`milestone_on_non_epic`, `milestone_not_found`; `status: "REVIEW"` on create
+comes back as `review_from_in_progress_only`.
 
 ### update_task
 
@@ -580,10 +588,10 @@ mcp__conport__update_task({
 | task_id | integer | yes | Per-project task ID |
 | title | string | no | New title |
 | description | string | no | New description |
-| status | string | no | New status. On an epic, `DONE` requires every child to be closed first (`epic_not_ready`); `CANCELLED` is allowed in any state |
+| status | string | no | New status: TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED. On an epic, `DONE` requires every child to be closed first (`epic_not_ready`) and `REVIEW` is refused; `CANCELLED` is allowed in any state. The review cycle gates REVIEW, DONE and the way back to IN_PROGRESS — see *Review cycle* below |
 | priority | integer | no | New priority 1-5 (1=critical, 5=idle) |
 | parent_task_id | integer | no | Re-parent the task. Positive per-project task id attaches under that parent (must be `kind='epic'`), `0` detaches to root level, omit to leave unchanged. A parent from another project is rejected as not-found, and so is any move that would attach the task under one of its own descendants (cycle) |
-| resolution | string | no | Verdict recorded on close — applied only when `status` moves to DONE or CANCELLED, ignored otherwise. Upserted as a `## Resolution` section of the description (the original body is preserved) and logged as a linked progress entry |
+| resolution | string | no | Verdict recorded on close — applied only when `status` moves to DONE or CANCELLED, ignored otherwise. Upserted as a `## Resolution` section of the description (the original body is preserved) and logged as a linked progress entry. Required on REVIEW → DONE (`done_needs_resolution`) |
 | kind | string | no | Promote `task` → `epic` (the task must be root — combine with `parent_task_id: 0` to detach and promote in one call) or demote `epic` → `task` (the epic must have no children) |
 | estimated_seconds | integer | no | Estimated effort in seconds. Epic rows reject it (`epic_does_not_carry_time_fields`) |
 | snooze_until | string | no | ISO 8601 timestamp — hide the task from default listings until then (status unchanged, it wakes on its own when the time passes). A timestamp without a timezone is read as UTC. Empty string clears the snooze, omit to leave unchanged |
@@ -592,14 +600,14 @@ mcp__conport__update_task({
 
 **Returns:** a slim echo — `id`, `tags`, `summary`, `resolution_applied` (true
 when the close upserted the `## Resolution` section) and, for post-write
-verification, the applied `status`, `kind`, `estimated_seconds`,
+verification, the applied `status`, `review_round`, `kind`, `estimated_seconds`,
 `routine_eligible`, `snooze_until`, `milestone_id`. Plus the rollups that save
 a follow-up read: `parent_epic_ready_to_close` (`id` + `title` of the parent
 epic when this close left it with no open children — close it next; `null`
 otherwise), `started_at` / `completed_at` (stamped on the first entry into
 IN_PROGRESS and on DONE), `claim_expires_at` (the IN_PROGRESS lease — renewed
 on every touch while the task is IN_PROGRESS, cleared when it leaves that
-status) and `estimate_drift` (`estimated_seconds`, `actual_seconds`, `ratio`),
+status — a task in REVIEW holds no lease and is never returned to TODO by it) and `estimate_drift` (`estimated_seconds`, `actual_seconds`, `ratio`),
 present only when a task that carried an estimate actually transitions to DONE.
 A write that moves the parent epic's tail — a status change or a re-parent —
 also returns `epic_progress` (same shape as under `add_task`, without
@@ -618,9 +626,33 @@ The hierarchy invariants come back the same way: `parent_not_epic` (with
 `suggestions`), `epic_with_parent`, `task_has_parent`, `epic_has_children`,
 `milestone_on_non_epic`, `milestone_not_found`, `epic_has_milestone`.
 
+**Review cycle.** A task whose work is checked goes IN_PROGRESS → REVIEW →
+DONE, or back from REVIEW to IN_PROGRESS for another round; every step is
+gated by the task's journal (`add_task_journal_entry`). Writing the status the
+task already has is not a transition and is never refused. The refusals carry
+`error`, a `message` with one action and `context` (`task_id`, `status`,
+`review_round`, and the last verdict for `done_needs_approval` and
+`return_needs_review`); a refused write changes nothing:
+
+| Refusal | Raised when | Next call |
+|---|---|---|
+| `review_from_in_progress_only` | REVIEW from any status but IN_PROGRESS | `update_task` → IN_PROGRESS, then the `report` |
+| `review_on_epic` | REVIEW on an epic, or `kind: "epic"` on a task in REVIEW | Review the children instead |
+| `review_needs_report` | IN_PROGRESS → REVIEW with no `report` or `fix` in the current round | `add_task_journal_entry` with `kind: "report"` or `"fix"` |
+| `done_needs_review` | DONE from a status other than REVIEW on a task with a `report`, `fix` or `review` entry, a closed epic with one demoted to a task, or a childless epic with one closed | The action in `message`: IN_PROGRESS → REVIEW; from TODO, BLOCKED or CANCELLED → IN_PROGRESS, then REVIEW; demote an epic together with `status: "IN_PROGRESS"`, or give a childless epic child tasks |
+| `done_needs_approval` | REVIEW → DONE when the last `review` of the round is not `approve` | A reviewer's `review` with `verdict: "approve"` |
+| `done_needs_resolution` | REVIEW → DONE without `resolution` | Repeat with `resolution` |
+| `return_needs_review` | REVIEW → IN_PROGRESS when the last `review` of the round is not `changes_requested` | A reviewer's `review` with `verdict: "changes_requested"` |
+| `review_exit_not_allowed` | REVIEW → TODO, BLOCKED or PARKED | Finish the review, or CANCELLED with `resolution` |
+
+REVIEW → IN_PROGRESS raises `review_round` by one, and so does reopening a
+DONE or CANCELLED task, so the reports and verdicts of an earlier round never
+count again. A task without any `report`, `fix` or `review` entry (a `brief`
+alone included) still goes IN_PROGRESS → DONE directly.
+
 ### list_tasks
 
-List tasks with filters. Defaults to active tasks (TODO + IN_PROGRESS).
+List tasks with filters. Defaults to active tasks (TODO + IN_PROGRESS + REVIEW).
 Pass `status: "ALL"` for all statuses, or a comma-separated list.
 
 ```
@@ -633,14 +665,14 @@ mcp__conport__list_tasks({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project_id | integer | yes | Project ID |
-| status | string | no | Filter by status. Comma-separated or "ALL" (default: "TODO,IN_PROGRESS") |
+| status | string | no | Filter by status. Comma-separated or "ALL" (default: "TODO,IN_PROGRESS,REVIEW") |
 | priority | integer | no | Filter by priority 1-5 (1=critical, 5=idle) |
 | parent_task_id | integer | no | Filter by parent per-project ID (0 = root tasks only) |
 | kind | string | no | Filter by hierarchy role: `task` or `epic`. Omit to include both |
-| ready | boolean | no | Only tasks with no open blocking dependency — a `blocks`/`requires` dependency on a task in TODO/IN_PROGRESS/BLOCKED excludes it; `suggests` and DONE/CANCELLED targets never block (default: false) |
+| ready | boolean | no | Only tasks with no open blocking dependency — a `blocks`/`requires` dependency on a task in TODO/IN_PROGRESS/BLOCKED/REVIEW excludes it; `suggests` and DONE/CANCELLED targets never block (default: false) |
 | include_snoozed | boolean | no | Include tasks snoozed into the future (`snooze_until` > now). Default false — snoozed tasks stay hidden from the list and the count until their snooze elapses |
 | routine_eligible | boolean | no | Filter by the autonomous-cycle opt-in marker: `true` — only marked tasks, `false` — only unmarked. Omit for no filter |
-| order | string | no | `created_at` (default, newest first) or `priority` — rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS direct children; ties broken by newest first). With `priority` each task carries `effective_priority` |
+| order | string | no | `created_at` (default, newest first) or `priority` — rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS/REVIEW direct children; ties broken by newest first). With `priority` each task carries `effective_priority` |
 | limit | integer | no | Max results (default: 50) |
 | offset | integer | no | Pagination offset — page deeper than the first `limit` tasks (default: 0) |
 | include_description | boolean | no | Include task descriptions (default: false) |
@@ -667,9 +699,14 @@ mcp__conport__get_task({
 | project_id | integer | yes | Project ID |
 | task_id | integer | yes | Per-project task ID |
 
-**Returns:** the full task row (description always included) plus
-`dependencies`, `dependents` and `subtasks_count`. An epic reports the
-`estimated_seconds` / `actual_seconds` summed across its children.
+**Returns:** the full task row (description always included, with
+`review_round`) plus `dependencies`, `dependents`, `subtasks_count` and
+`journal` — the summary of the task's journal: `counts` per kind (`brief`,
+`report`, `review`, `fix`), `last_verdict` and `last_verdict_round` — the
+round of that verdict (both `null` before the first review; a round below
+`review_round` means the verdict belongs to an earlier round). The entries themselves come
+from `list_task_journal`. An epic reports the `estimated_seconds` /
+`actual_seconds` summed across its children.
 
 ### add_task_dep
 
@@ -742,7 +779,7 @@ mcp__conport__add_linked_task({
 | title | string | yes | Task title (max 200 chars) |
 | description | string | no | Task description (max 2000 chars) |
 | priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
-| status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| DONE \| CANCELLED (default: TODO) |
+| status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED (default: TODO). A new task is never created in REVIEW (`review_from_in_progress_only`): a task enters REVIEW from IN_PROGRESS |
 
 **Returns:** `target_task` (the created task, full body — this one is not
 slimmed), `source_progress` (the log entry written in the source project),
@@ -755,6 +792,108 @@ team exists or not; a prefix of another team of yours fails with
 `cross_team_link_not_supported` (422). A malformed target fails with
 `invalid_project_name` (422): rewrite it as `<team ID>/<project>`
 (`k7m2qx9d/other-project`), `pers/<project>`, or a name without `/`.
+
+### add_task_journal_entry
+
+Add an entry to a task's journal — the history of its review cycle: the
+assignments, the reports, the verdicts and the reports on fixes, by round. The
+journal only grows: an entry is never edited or deleted.
+
+```
+mcp__conport__add_task_journal_entry({
+  project_id: <project_id>,
+  task_id: <task_id>,
+  kind: "report",
+  author: "implementer",
+  body: "Implemented the endpoint; tests: 12 passed."
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| task_id | integer | yes | Per-project task ID (a task, never an epic) |
+| kind | string | yes | `brief` \| `report` \| `review` \| `fix` — which one fits depends on the task's status (table below) |
+| author | string | yes | Who writes the entry: a role or an agent name, 1-100 chars |
+| body | string | yes | The text, Markdown, up to 200000 chars |
+| verdict | string | no | `approve` \| `changes_requested` — required on `review`, refused on every other kind |
+
+| `kind` | Task status | What it is |
+|---|---|---|
+| `brief` | TODO, IN_PROGRESS, BLOCKED, REVIEW | The assignment: for the executor, or in REVIEW for the reviewer |
+| `report` | IN_PROGRESS | The executor's report — the first round by convention |
+| `fix` | IN_PROGRESS | The report on the fixes — the second round and later by convention |
+| `review` | REVIEW | The reviewer's verdict |
+
+The server stamps the entry with the task's current `review_round`, its own
+`id` and `created_at`; a round is never passed.
+
+**Returns:** a slim echo — `id`, `task_id`, `kind`, `round`, `verdict` and
+`summary`.
+
+**Refusals** (a dict with `error`, `message`, `context`):
+`journal_on_epic` (write on the child task instead), `journal_task_closed`
+(the task is DONE or CANCELLED — reopen it only for new work),
+`journal_kind_not_allowed` (`context` carries `kind`, `status` and the kinds
+that fit), `invalid_verdict` (`verdict` missing on `review` or present on
+another kind; 422 over REST) and `not_found` (`context.task_id` — the task is
+not in the project, a task of another team included; check the id with
+`list_tasks`).
+
+### list_task_journal
+
+The journal of one task, oldest entry first. Texts are left out unless asked
+for, so a long history stays cheap to scan.
+
+```
+mcp__conport__list_task_journal({
+  project_id: <project_id>,
+  task_id: <task_id>,
+  round: 2,
+  include_body: true
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| task_id | integer | yes | Per-project task ID |
+| round | integer | no | Only the entries of this review round |
+| include_body | boolean | no | Include each entry's text (default: false) |
+| limit | integer | no | Max entries (default: 50, at most 200) |
+| offset | integer | no | Pagination offset (default: 0) |
+
+**Returns:** `entries` — `id`, `task_id`, `kind`, `round`, `verdict`,
+`author`, `created_at` and `body_length`, plus `body` with
+`include_body: true` — and `total`.
+
+**Refusals:** `not_found` (`context.task_id`) when the task is not in the
+project.
+
+### get_task_journal_entry
+
+One journal entry with its text.
+
+```
+mcp__conport__get_task_journal_entry({
+  project_id: <project_id>,
+  task_id: <task_id>,
+  entry_id: <entry_id>
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project_id | integer | yes | Project ID |
+| task_id | integer | yes | Per-project task ID |
+| entry_id | integer | yes | Per-project ID of the journal entry |
+
+**Returns:** the entry — `id`, `task_id`, `kind`, `round`, `verdict`,
+`author`, `body`, `created_at`.
+
+**Refusals:** `not_found` — for a task not in the project (`context.task_id`)
+and for an entry that is not in this task's journal (`context.task_id`,
+`context.entry_id`; `list_task_journal` shows the entries).
 
 ---
 
@@ -2174,8 +2313,10 @@ mcp__conport__get_agenda({
 
 **Returns:** `woken_tasks`, `roadmap` (current / next milestone), `epic_tails`
 (epics near closing), `ready_top`, `housekeeping` (`stale_in_progress`,
-`blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta` and a
-one-line `summary`.
+`stale_review` — tasks in REVIEW untouched for over 24 hours, each with `id`,
+`title`, `hours_in_review` (hours since the task in REVIEW was last touched, by a journal entry or an edit) — `blocked_too_long`, `fresh_gaps`,
+`cleanup_hint`), `activity_delta` and a one-line `summary` (which counts
+"N stale in review").
 
 ### get_routine_config
 
@@ -2415,7 +2556,7 @@ kept, or a decision tagged `error-solution` by hand.
 |----------|-------|
 | Session | `init`, `create_project`, `list_projects` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
-| Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task` |
+| Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
 | Milestones | `add_milestone`, `update_milestone`, `list_milestones` |
 | Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `document_versions`, `get_block_backlinks`, `get_semantically_related_blocks`, `list_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
 | Decisions | `sync_decision`, `list_decisions`, `get_decision`, `update_decision`, `deprecate_decision`, `reactivate_decision`, `delete_decision` |

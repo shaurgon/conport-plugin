@@ -34,15 +34,15 @@ connect at all. Reconnect with a profile made of those names only.
 
 `core` is the set every session needs. Every other group is one area of the
 server; each tool belongs to exactly one area, and the tools of `core` stay in
-their areas too — `core,tasks` lists the four task tools of `core` plus the
+their areas too — `core,tasks` lists the five task tools of `core` plus the
 rest of `tasks`.
 
 | Group | Tools | What it holds |
 |---|---|---|
-| `core` | 20 | The entry points, search, create / get / list / update of tasks, decisions, progress and documents, and the update of the active context |
+| `core` | 21 | The entry points, search, create / get / list / update of tasks, decisions, progress and documents, the journal entry of a task, and the update of the active context |
 | `session` | 1 | `init` |
 | `projects` | 2 | Listing and creating projects |
-| `tasks` | 7 | Tasks, their dependencies, deleting, tasks in a linked project |
+| `tasks` | 10 | Tasks, their dependencies, deleting, tasks in a linked project, the task journal |
 | `milestones` | 3 | Roadmap milestones |
 | `agenda` | 1 | The single-call briefing of a routine run |
 | `documents` | 13 | Documents, their versions and block-level editing |
@@ -68,10 +68,10 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 
 | Group | Tools |
 |---|---|
-| `core` | `init`, `create_project`, `list_projects`, `search`, `add_task`, `get_task`, `list_tasks`, `update_task`, `sync_decision`, `get_decision`, `list_decisions`, `update_decision`, `log_progress`, `list_progress`, `update_progress`, `add_document`, `get_document`, `list_documents`, `update_document`, `update_active_context` |
+| `core` | `init`, `create_project`, `list_projects`, `search`, `add_task`, `get_task`, `list_tasks`, `update_task`, `add_task_journal_entry`, `sync_decision`, `get_decision`, `list_decisions`, `update_decision`, `log_progress`, `list_progress`, `update_progress`, `add_document`, `get_document`, `list_documents`, `update_document`, `update_active_context` |
 | `session` | `init` |
 | `projects` | `list_projects`, `create_project` |
-| `tasks` | `add_task`, `update_task`, `list_tasks`, `get_task`, `delete_task`, `add_task_dep`, `add_linked_task` |
+| `tasks` | `add_task`, `update_task`, `list_tasks`, `get_task`, `delete_task`, `add_task_dep`, `add_linked_task`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
 | `milestones` | `add_milestone`, `update_milestone`, `list_milestones` |
 | `agenda` | `get_agenda` |
 | `documents` | `add_document`, `update_document`, `list_documents`, `get_block_backlinks`, `get_semantically_related_blocks`, `get_document`, `delete_document`, `document_versions`, `list_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
@@ -99,7 +99,7 @@ connect with the profile of what you run:
 | What you run | Profile |
 |---|---|
 | Skill `conport` | `full` |
-| Skill `conport-routine` | `core,milestones,agenda,gaps,semantic,routine` |
+| Skill `conport-routine` | `core,tasks,milestones,agenda,gaps,semantic,routine` |
 | Skill `superpowers-conport` | `core,links` |
 | Workflow `task` | `core` |
 | Workflow `epic` | `core` |

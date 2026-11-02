@@ -163,6 +163,56 @@ test('close: a task already DONE is skipped, with no write at all', withMock({ t
   assert.deepEqual(writes(mock), [])
 }))
 
+// A task that went through review closes only after an approval with a
+// resolution: the server refuses DONE with one of three codes. A retry cannot
+// succeed — the task needs a review entry first — so each refusal is reported
+// with the server's message, stays out of failed_calls, and the run goes on.
+const closeRefusal = (code, message) => rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/5'))
+  ? { status: 409, body: { detail: { error: code, message, context: { task_id: 5, status: 'REVIEW', review_round: 2 } } } } : null
+
+for (const code of ['done_needs_approval', 'done_needs_review', 'done_needs_resolution']) {
+  test(`close: a ${code} refusal is reported, not a failed call, and the run goes on`, withMock({
+    tasks: [{ id: 5, title: 'T', status: 'REVIEW', description: 'spec body' }, { id: 7, title: 'B', status: 'TODO', description: 'keep me' }],
+    fail: closeRefusal(code, 'Do the one prescribed thing.'),
+  }, async mock => {
+    const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+
+    const close = step(out, 'close')
+    assert.equal(close.result, 'failed')
+    assert.equal(close.target, 5)
+    assert.equal(close.detail, code + ': the task is not closed — Do the one prescribed thing.')
+    assert.equal(out.task_closed, false)
+    assert.deepEqual(out.failed_calls, [], 'a refusal by the review rules is not a failed call to retry')
+    assert.equal(writes(mock).filter(r => r.path.endsWith('/tasks/5')).length, 1, 'the refused close is not retried')
+    assert.equal(mock.tasks.get(5).status, 'REVIEW')
+    assert.equal(mock.tasks.get(5).description, 'spec body')
+    assert.equal(step(out, 'block').result, 'done', 'the later items are executed anyway')
+  }))
+}
+
+test('close: a closing refusal without a message leaves no dangling separator', withMock({
+  tasks: [{ id: 5, title: 'T', status: 'REVIEW', description: 'spec body' }],
+  fail: closeRefusal('done_needs_approval', ''),
+}, async mock => {
+  const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+
+  assert.equal(step(out, 'close').detail, 'done_needs_approval: the task is not closed')
+}))
+
+// The mechanism is the code: another 409 on close stays a failed call.
+test('close: a 409 with another code stays a failed call', withMock({
+  tasks: [{ id: 5, title: 'T', status: 'IN_PROGRESS', description: 'spec body' }],
+  fail: closeRefusal('some_other_conflict', 'other'),
+}, async mock => {
+  const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+
+  assert.equal(step(out, 'close').result, 'failed')
+  assert.equal(out.task_closed, false)
+  assert.equal(out.failed_calls.length, 1)
+  assert.equal(out.failed_calls[0].call, 'close task-5')
+  assert.ok(out.failed_calls[0].error.includes('409'), out.failed_calls[0].error)
+}))
+
 // --------------------------------------------------------------------- block
 
 test('block: the status changes and the reason is appended, keeping the description', withMock({ tasks: [{ id: 7, title: 'T', status: 'IN_PROGRESS', description: 'original spec' }] }, async mock => {
@@ -180,6 +230,63 @@ test('block: a task already BLOCKED is skipped, with no write at all', withMock(
 
   assert.equal(step(out, 'block').result, 'skipped_already')
   assert.deepEqual(writes(mock), [])
+}))
+
+// A task in REVIEW leaves it only through a review verdict or a cancellation:
+// the server answers BLOCKED with 409 review_exit_not_allowed. That is a rule
+// of the task's state, not a broken call — the step reports the refusal with
+// the server's message, writes nothing else, and the remaining items still run.
+const REVIEW_EXIT = {
+  status: 409,
+  body: { detail: {
+    error: 'review_exit_not_allowed',
+    message: 'A task in REVIEW leaves it through a review verdict or a cancellation.',
+    context: { task_id: 7, status: 'REVIEW', review_round: 1 },
+  } },
+}
+const refuseReviewExit = rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/7')) ? REVIEW_EXIT : null
+
+test('block: a task in REVIEW refused with review_exit_not_allowed is reported, not a failed call', withMock({
+  tasks: [{ id: 7, title: 'T', status: 'REVIEW', description: 'original spec' }],
+  fail: refuseReviewExit,
+}, async mock => {
+  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: UMBRELLA })
+
+  const block = step(out, 'block')
+  assert.equal(block.result, 'failed')
+  assert.equal(block.target, 7)
+  assert.equal(block.detail,
+    'review_exit_not_allowed: the task is in REVIEW and stays there — A task in REVIEW leaves it through a review verdict or a cancellation.')
+  assert.deepEqual(out.failed_calls, [], 'a refusal by the task state is not a failed call to retry')
+  assert.equal(writes(mock).filter(r => r.method === 'PATCH').length, 1, 'the refused write is not retried')
+  assert.equal(mock.tasks.get(7).status, 'REVIEW')
+  assert.equal(mock.tasks.get(7).description, 'original spec', 'the reason is not appended anywhere')
+  assert.equal(step(out, 'minors_child').result, 'done', 'the later items are executed anyway')
+}))
+
+test('block: a review_exit_not_allowed refusal without a message leaves no dangling separator', withMock({
+  tasks: [{ id: 7, title: 'T', status: 'REVIEW', description: 'original spec' }],
+  fail: rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/7'))
+    ? { status: 409, body: { detail: { error: 'review_exit_not_allowed', message: '', context: {} } } } : null,
+}, async mock => {
+  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+
+  assert.equal(step(out, 'block').detail, 'review_exit_not_allowed: the task is in REVIEW and stays there')
+  assert.deepEqual(out.failed_calls, [])
+}))
+
+// The mechanism is the code, not the status: any other 409 stays a failed call.
+test('block: a 409 with another code stays a failed call', withMock({
+  tasks: [{ id: 7, title: 'T', status: 'IN_PROGRESS', description: 'original spec' }],
+  fail: rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/7'))
+    ? { status: 409, body: { detail: { error: 'some_other_conflict', message: 'other', context: {} } } } : null,
+}, async mock => {
+  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+
+  assert.equal(step(out, 'block').result, 'failed')
+  assert.equal(out.failed_calls.length, 1)
+  assert.equal(out.failed_calls[0].call, 'block task-7')
+  assert.ok(out.failed_calls[0].error.includes('409'), out.failed_calls[0].error)
 }))
 
 // ------------------------------------------------------------------ umbrella
@@ -426,6 +533,21 @@ test('epic table: a rerun of the same table changes nothing', withMock({ tasks: 
   assert.equal(mock.progress.length, entriesBefore)
 }))
 
+test('epic table: a failed child in REVIEW is reported as refused and every later step still runs', withMock({
+  tasks: epicTasks([RUN_CHILDREN[0], { ...RUN_CHILDREN[1], status: 'REVIEW' }, RUN_CHILDREN[2]]),
+  fail: refuseReviewExit,
+}, async mock => {
+  const { out } = await runAccount(mock, epicTable())
+
+  assert.deepEqual(out.actions.map(a => a.step),
+    ['close', 'block', 'skipped', 'parity_progress', 'tails_epic', 'tails_child', 'run_summary'])
+  assert.equal(step(out, 'block').result, 'failed')
+  assert.ok(step(out, 'block').detail.startsWith('review_exit_not_allowed: '), step(out, 'block').detail)
+  assert.deepEqual(out.failed_calls, [])
+  assert.equal(mock.tasks.get(7).status, 'REVIEW')
+  assert.equal(mock.tasks.get(7).description, 'spec of B')
+}))
+
 // -------------------------------------------------------------- epic closing
 
 const CLOSED_CHILD = [{ id: 5, title: 'A', status: 'DONE', parent_task_id: EPIC, description: 'spec of A' }]
@@ -490,6 +612,22 @@ test('epic_not_ready from the server is a failed call, the rest of the table is 
   assert.equal(steps(out, 'epic_close')[0].result, 'failed')
   assert.equal(steps(out, 'tails_child')[0].result, 'done', 'the earlier steps ran regardless')
   assert.equal(mock.tasks.get(5).status, 'DONE')
+}))
+
+// A row that took the review cycle as a task and became an epic still closes only
+// through it: done_needs_review is the epic's state, as on a task close.
+test('a review-rule refusal of the epic close is reported, not a failed call', withMock({
+  tasks: epicTasks(CLOSED_CHILD),
+  fail: rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/' + EPIC))
+    ? { status: 409, body: { detail: { error: 'done_needs_review', message: 'Move it to REVIEW first.', context: {} } } }
+    : null,
+}, async mock => {
+  const { out } = await runAccount(mock, closingTable())
+
+  assert.equal(out.epic_closed, false)
+  assert.deepEqual(out.failed_calls, [], 'a refusal by the review rules is not a failed call to retry')
+  assert.equal(steps(out, 'epic_close')[0].detail, 'done_needs_review: the epic is not closed — Move it to REVIEW first.')
+  assert.equal(out.epic_close_error, steps(out, 'epic_close')[0].detail)
 }))
 
 // ------------------------------------------------------------ epic edge cases
