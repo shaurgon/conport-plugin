@@ -44,6 +44,19 @@ Personal project: `<project>`. Team project: `k7m2qx9d/<project>` — the team I
 is on the team's settings page. A bare name always means a project of your own
 `Private Team`.
 
+## Superpowers overlay
+
+The Superpowers overlay keeps a project's specs and plans in ConPort instead
+of `docs/superpowers/`. Its switch is `.superpowers/config.json` at the root of
+a repository holding `{"conport": {"superpowers": true}}`; the agent gets its
+rules from the **Superpowers overlay** block of the `conport` skill, with no
+session-start hook and no commit guard, and the rules call the `conport` CLI,
+which needs `CONPORT_API_KEY` in the environment or in
+`~/.config/conport/.env`. Claude.ai has no repository and no shell, so the
+overlay does not apply here: use it from Claude Code, Cursor or another agent
+that works in the repository. See the
+[README](../../README.md#superpowers-overlay).
+
 ## Verify
 
 - **Skills**: **Settings → Features → Skills** lists `conport` as enabled.

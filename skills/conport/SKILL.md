@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 16.5.0
+  version: 16.6.0
 ---
 
 # ConPort — Project Management System
@@ -163,7 +163,9 @@ in `CONPORT_PROJECT_NAME`.
 
 `create_project(name, description?)` takes the same name forms as `init` and
 creates the project in the team the name points at. It is called on the user's
-word only.
+word only. When Superpowers skills are available in the session, offer the
+Superpowers overlay once the project exists (see *Superpowers overlay* under
+*Execution*).
 
 **Access changes apply on the next call.** A revoked key, a removed member or a
 demoted admin loses access on the very next request — reconnecting is not
@@ -322,6 +324,57 @@ answer carries `error`, a `message` that prescribes the action, and `context`
 | `journal_kind_not_allowed` | The `kind` does not fit the task's status; `context` lists the kinds that do | Write one of those kinds, or first move the task to the status the entry needs |
 | `reviewer_is_author` | A `review` signed with the `author` of a `report` or `fix` of the current round | The reviewer adds the `review` under its own name; never review your own work |
 | `invalid_verdict` (422 over REST) | `verdict` on an entry that is not `review`, or a `review` without one | Pass `verdict` on `review` only, `approve` or `changes_requested` |
+
+**Epic in its own branch.** An epic whose tasks are worked in parallel, or
+whose tasks take more than one review round, gets an integration branch
+`epic-<id>` with its own git worktree (a small epic may run its tasks straight
+off main), and the agent coordinating the epic (the orchestrator) works in
+that worktree, not in the main checkout.
+
+- **A task** gets its own branch from the epic branch and merges back into the
+  epic branch only after its review is approved and its checks pass.
+- **Release:** merge the local main into the epic branch, run the checks there,
+  leave for the main checkout, merge the epic branch into main, push main.
+- **Database migrations** are applied before that push, on the owner's
+  command.
+- **No workarounds:** never push from a worktree into main, never override
+  `core.hooksPath`, never script around the sandbox.
+
+ConPort does not track git — this is a rule of the skill, not a server check.
+
+**Superpowers overlay.** In a project that works with the Superpowers skills
+(brainstorming, writing-plans, subagent-driven development), the overlay keeps
+the spec and the plan in ConPort instead of git: the spec is a `spec`
+document, the plan a `plan` document, and each task of the epic is tied to its
+section of the plan. Files on disk are drafts and caches only. Off unless the
+project turns it on.
+
+- **The switch** is `.superpowers/config.json` holding
+  `{ "conport": { "superpowers": true } }`. It is looked up at the root of the
+  current worktree (`git rev-parse --show-toplevel`); only when that worktree
+  has no such file, at the root of the main worktree (the parent of
+  `git rev-parse --git-common-dir`); outside git, in the current directory
+  only. A file in the current worktree decides on its own: `false` or
+  unreadable JSON there means off even if the main worktree says `true`. A
+  missing file, any other value or unreadable JSON means the overlay is off —
+  say nothing about it.
+- **Turning it on takes two writes, each only with the user's consent:** write
+  that file at the root of the main worktree (the parent of
+  `git rev-parse --git-common-dir`), and add one line to the project's
+  instructions (`CLAUDE.md` or `AGENTS.md`):
+  `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
+  The line is needed because Superpowers ranks the user's instructions above
+  its own skills, and text injected by a plugin hook is not one of them.
+  Turning it off: remove the key; the `plan` documents stay in ConPort.
+- **The rules** are `references/superpowers-overlay.md` of this skill — the
+  only text of them. Claude Code's session-start hook injects them. An agent
+  without hooks checks the switch at the start of the session and, when it is
+  on, reads that file before any spec or plan work.
+- **Visibility.** When the overlay is on, print one line at the start of the
+  session: `[CONPORT] Superpowers overlay: on`.
+- **On `create_project`.** When Superpowers skills are available in the
+  session, offer the overlay once the project exists; on the user's yes, make
+  the two writes above.
 
 **An epic closes only with its children closed** — the server refuses
 `update_task(status='DONE')` on an epic that still has open children with

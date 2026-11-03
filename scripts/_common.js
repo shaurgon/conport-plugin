@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execFileSync } = require('child_process');
 
 const CONPORT_URL = process.env.CONPORT_URL || 'https://api.conport.app';
 
@@ -139,6 +140,71 @@ function fingerprintChanged(name, sessionId, fingerprint) {
   return true;
 }
 
+// One git query run in `dir`: its trimmed stdout, or null when git is
+// missing, `dir` is not in a repository or does not exist. Never throws.
+function gitIn(dir, args) {
+  try {
+    const out = execFileSync('git', ['-C', dir, ...args], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+    }).trim();
+    return out || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Root of the git worktree that holds `dir`, or null outside git.
+function worktreeRoot(dir) {
+  return gitIn(dir, ['rev-parse', '--show-toplevel']);
+}
+
+// Root of the main worktree of the repository holding `dir`: the parent of
+// the common git directory, which every linked worktree shares. git may print
+// that directory relative to where it ran (`.git`, `../.git`), so it is
+// resolved against `dir` here rather than by `--path-format`, which older git
+// does not know.
+function mainWorktreeRoot(dir) {
+  const common = gitIn(dir, ['rev-parse', '--git-common-dir']);
+  return common ? path.dirname(path.resolve(dir, common)) : null;
+}
+
+const OVERLAY_CONFIG = path.join('.superpowers', 'config.json');
+
+// Whether the Superpowers overlay is switched on for `dir`: the file
+// `.superpowers/config.json` holding {"conport": {"superpowers": true}}. The
+// file is looked up in the current worktree root, then in the main worktree
+// root — `.superpowers/` is usually ignored, so a linked worktree has no copy
+// of its own — and outside git in `dir` only. The first file found decides.
+// A missing file, any other value or unreadable JSON is off. Never throws.
+function overlayEnabled(dir) {
+  try {
+    const root = worktreeRoot(dir);
+    let raw = readOverlayConfig(root || dir);
+    if (raw === null && root) {
+      // Asked only when the current worktree has no file of its own.
+      const main = mainWorktreeRoot(dir);
+      if (main && path.resolve(main) !== path.resolve(root)) raw = readOverlayConfig(main);
+    }
+    if (raw === null) return false;
+    const config = JSON.parse(raw);
+    return Boolean(config && config.conport && config.conport.superpowers === true);
+  } catch (_) {
+    return false;
+  }
+}
+
+// The overlay config text under `root`, or null when there is no file there.
+// A file that exists but cannot be read (EACCES, a directory) still decides:
+// the error propagates and overlayEnabled answers off.
+function readOverlayConfig(root) {
+  try {
+    return fs.readFileSync(path.join(root, OVERLAY_CONFIG), 'utf8');
+  } catch (err) {
+    if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return null;
+    throw err;
+  }
+}
+
 function readStdin() {
   return new Promise((resolve) => {
     let raw = '';
@@ -152,5 +218,5 @@ function readStdin() {
 module.exports = {
   CONPORT_URL, dataDir, parseProject, detectProject, projectRoute, denyListPath,
   authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
-  fingerprintChanged,
+  fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot, overlayEnabled,
 };

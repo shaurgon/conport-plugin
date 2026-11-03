@@ -1007,7 +1007,7 @@ mcp__conport__add_document({
 | project_id | integer | yes | Project ID |
 | title | string | yes | Title (max 200 chars) |
 | content | string | yes | Content (max 50000 chars) |
-| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| other. For `diagram`, `content` is the JSON spec |
+| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| plan \| other. For `diagram`, `content` is the JSON spec |
 | author | string | no | Author (max 100 chars) |
 | tags | array | no | Tags |
 | parent_document_id | integer | no | Per-project ID of parent document |
@@ -1043,7 +1043,7 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 | document_id | integer | yes | Per-project document ID |
 | content | string | no | Full markdown body. Omit for metadata-only update. |
 | title | string | no | New title |
-| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| other. A change to or from `diagram` is more than metadata — see above |
+| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| plan \| other. A change to or from `diagram` is more than metadata — see above |
 | tags | array | no | New tag list |
 | author | string | no | New author |
 | status | string | no | Lifecycle status — `active` (default) or `archived`. Archived documents drop out of default listings and search but stay readable by id. |

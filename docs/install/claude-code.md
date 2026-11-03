@@ -49,8 +49,8 @@ The plugin loads in Claude Code:
   discipline (init, search, tasks, decisions), one iteration of a periodic backlog
   routine, and the superpowers→ConPort spec/epic flow with its `finish` release verdict
 - MCP server `conport` pointing at `https://api.conport.app/mcp/` (Bearer auth)
-- 4 hooks (Node.js scripts under `scripts/`) — session start, command check,
-  prompt submit, session reflect
+- 6 hooks (Node.js scripts under `scripts/`) — session start, command check,
+  epic tracking, prompt submit, epic tails at the end of a turn, session reflect
 
 The connection lists every tool of the server. To have only some groups of
 tools listed, see [tool-profiles.md](./tool-profiles.md).
@@ -78,6 +78,35 @@ Expected: a JSON response with `project_id`, `summary`, `instructions`, and
 (if it's a known project) `recent_decisions`. If you get
 `Missing session ID` once right after install, just reconnect `/mcp` — that is
 expected for a fresh HTTP transport.
+
+## Superpowers overlay (optional)
+
+If the project works with the Superpowers skills, specs and plans can live in
+ConPort instead of `docs/superpowers/`. Create `.superpowers/config.json` at
+the root of the repository:
+
+```json
+{ "conport": { "superpowers": true } }
+```
+
+and add one line to the project's `CLAUDE.md`:
+
+```text
+Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay
+```
+
+The file at the root of the current worktree decides on its own; a worktree
+without one (an epic branch, for example) reads the main worktree's file.
+From the next session on, the session-start hook passes the overlay rules to
+Claude, which prints `[CONPORT] Superpowers overlay: on`; the command check
+reads the file on every commit and refuses one that adds a new file under
+`docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules call the `conport` CLI through
+`npx -y conport@^0.4` (`documents get`, `plan import`, `plan pull`,
+`superpowers migrate`), so Node.js and network access are needed. The CLI does
+not see the plugin's `api_key`: put `CONPORT_API_KEY` in the environment or in
+`~/.config/conport/.env`. See the
+[README](../../README.md#superpowers-overlay). To turn the overlay off, remove
+the `conport.superpowers` key.
 
 ## Updating
 

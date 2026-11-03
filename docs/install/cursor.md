@@ -86,6 +86,19 @@ show green with ~40 tools. In Agent chat, ask:
 Expected: a JSON response with `project_id` and `summary`. Type `/conport` in
 chat — the skill should be offered as a slash completion.
 
+## Superpowers overlay (optional)
+
+If the project works with the Superpowers skills, specs and plans can live in
+ConPort instead of `docs/superpowers/`. Turn it on with
+`.superpowers/config.json` at the root of the repository holding
+`{"conport": {"superpowers": true}}`. Cursor has no session-start hook: the
+agent gets the overlay rules from the **Superpowers overlay** block of the
+`conport` skill. There is no commit guard either, so nothing refuses a commit
+of a new file under `docs/superpowers/` — the rules alone keep specs and plans
+out of git. The rules call the `conport` CLI (`npx -y conport@^0.4`), which
+needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`. See
+the [README](../../README.md#superpowers-overlay).
+
 ## Updating
 
 Cursor doesn't ship plugin auto-update for skills, so the SKILL.md files

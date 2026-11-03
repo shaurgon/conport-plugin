@@ -98,3 +98,16 @@ The exact config shape depends on your harness — see its MCP docs. The Cursor
 guide ([cursor.md](./cursor.md)) is a concrete worked example of the
 server + skill combination. For most CLI-tier agents the `npx conport` path
 above is simpler and needs no extra configuration.
+
+## Optional: Superpowers overlay
+
+If the project works with the Superpowers skills, specs and plans can live in
+ConPort instead of `docs/superpowers/`. Turn it on with
+`.superpowers/config.json` at the root of the repository holding
+`{"conport": {"superpowers": true}}`. These agents have no session-start hook:
+the agent gets the overlay rules from the **Superpowers overlay** block of the
+`conport` skill. There is no commit guard either, so nothing refuses a commit
+of a new file under `docs/superpowers/` — the rules alone keep specs and plans
+out of git. The rules call the `conport` CLI (`npx -y conport@^0.4`), which
+needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env` (the
+key from step 2). See the [README](../../README.md#superpowers-overlay).

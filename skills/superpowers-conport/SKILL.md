@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 16.5.0
+  version: 16.6.0
 ---
 
 # superpowers-conport — Bridge
@@ -41,10 +41,107 @@ early, it is left open and the controller goes on to the final whole-branch revi
 The gate has to live in the body because that body is all the controller sees — `task-brief`
 hands it the block and nothing else, and this table is not read at that moment.
 
+## Overlay mode
+
+A project may keep its specs and plans in ConPort instead of in git — the ConPort
+Superpowers overlay (see the **Superpowers overlay** block of the **conport** skill). Check
+it before anything else, in either mode. The overlay is on when `.superpowers/config.json`
+holds `{"conport": {"superpowers": true}}`, looked up as the conport skill says: first in the
+root of the current worktree (`git rev-parse --show-toplevel`), then in the root of the main
+worktree (the parent of `git rev-parse --git-common-dir`); outside git, in the current
+directory only. A file in the current worktree decides alone, whatever it holds; the main
+worktree's file is read only when the current worktree has none. A missing file, any other
+value or unreadable JSON means the overlay is off, silently — and with the overlay off every
+section of this skill applies exactly as written, untouched by this one, with one
+exception: `finish` picks its route by the input file whatever the switch says (below). The
+switch never picks `finish`'s route; it decides what `import` does and, for `finish`, which
+command the prescriptions on the anchor route name and which file is the default input (see
+`## Inputs`).
+
+**`import` with the overlay on writes nothing** — no ConPort call, no file edit, no anchor.
+The plan goes into ConPort through the CLI, which owns that step, so the bridge answers
+with that single action and stops:
+
+```
+[superpowers-conport]
+  Superpowers overlay: on — nothing written
+  Do now: npx -y conport@^0.4 plan import <plan> --spec doc-N
+```
+
+`<plan>` is the plan draft the bridge was invoked on (`<plan_path>`); `doc-N` is the
+ConPort document of the approved spec, the one `documents upload` returned. Neither is
+looked up or created here — an id the bridge does not know stays as the placeholder.
+
+**`finish` picks its route by the input file, with the overlay on or off** — never by the
+switch: a plan imported by this bridge before the overlay was turned on stays on disk while
+its epic is open, and it has no sidecar to read; a plan pulled through the CLI carries no
+anchors, and it keeps its sidecar after the overlay is turned off.
+
+| Input file | Route |
+|---|---|
+| has a sidecar `<plan_path>.conport.json`, or lies under `.superpowers/plans/` | **pulled route** — the overlay inputs below |
+| no sidecar, outside `.superpowers/plans/`, carries a `conport-epic` anchor (outside fenced code) | **anchor route** — `## Mode: finish` exactly as written, anchors and all |
+| neither | anchor route — its no-epic-anchor report |
+
+The bridge's `import` is never the answer on the pulled route, whatever the switch: the
+pulled plan's epic exists, and the bridge, finding no anchors, would start a second one. It
+is never the answer on the anchor route with the overlay on either, because it writes
+nothing then. On the anchor route the overlay changes only the prescriptions that would name
+it: the missing-tasks item (last bullet below), and the no-epic-anchor report and the
+no-project case, which both prescribe `npx -y conport@^0.4 plan import <plan_path> --spec doc-N`
+directly, then re-run `finish` on the file `plan pull` writes (see `### Sources` and
+`### Output — no epic anchor`). On the anchor route with the overlay off, the bridge's
+`import` stays the answer, as written in `## Mode: finish`.
+
+**Pulled route.** The input is the file `plan pull` wrote (by default
+`.superpowers/plans/doc-<P>.md`, where `doc-<P>` is the plan document). It is the plan body
+with a `<!-- conport-task: T -->` marker under each section heading, then a tail that starts
+at the line `<!-- conport-pull-tail -->` and holds the execution contract and the terminal
+"ConPort finish" task with `<!-- conport-finish -->`. Next to it lies the sidecar
+`<plan_path>.conport.json`. The audit differs from the one in `## Mode: finish` in these
+inputs only, taken in this order:
+
+- **The sidecar is read first** — it is local, so it is read before any ConPort call. A
+  sidecar that is missing, unreadable or carries no `epic_id` leaves the audit with no
+  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.4 plan pull …`, reported
+  by `### Output — no sidecar`, and nothing else is checked. It is never read as "nothing left
+  to close".
+- **Then the project.** `project_id` is resolved as in step 1. When `init` finds no project,
+  or finds one that is not the sidecar's `project` (neither its id nor its name), the plan
+  came from another project: RELEASE BLOCKED naming both (see the no-project case in
+  `### Sources`).
+- **Epic and spec come from the sidecar.** `epic_id` replaces the `conport-epic` anchor and
+  `spec_doc_id` replaces the `conport-spec` anchor of the paired design file; no design file
+  is read. A sidecar whose `spec_doc_id` is absent or null omits the spec header line,
+  exactly as a design file without the anchor does.
+- **Sections are matched by the markers in the pulled file.** The split, the fence masking
+  and the terminal-block exclusion are those of step 4, run over the text above
+  `<!-- conport-pull-tail -->`; nothing at or below that line is a plan section. A section's
+  marker is the `<!-- conport-task: T -->` line under its heading, with only blank lines
+  between them. A section with no marker, and a marker whose task is not on the listing,
+  are plan tasks that never reached ConPort, as in `### Sources`.
+- **Missing tasks are answered by the CLI, not by the bridge's import** — on the pulled
+  route always, and on the anchor route when the overlay is on.
+  Wherever the audit would prescribe the bridge's import for plan tasks absent from the epic
+  `<M>`, it prescribes instead: `npx -y conport@^0.4 plan import <plan_path> --epic <M>`, then
+  `npx -y conport@^0.4 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
+  the tasks on the epic being audited; without it a plan never imported through the CLI
+  would start a new epic.
+
+Everything else — the listing, the ledger, the open-task and candidate rules, the verdicts —
+is the audit of `## Mode: finish` unchanged.
+
 ## Inputs
 
 - `<spec_path>` (optional) — path to a `*-design.md`. If omitted, pick the newest file in `docs/superpowers/specs/` by mtime.
 - `<plan_path>` (optional) — path to the matching `*.md` plan. Derive from spec by replacing `/specs/` with `/plans/` and dropping the `-design` suffix. Skip the plan stage silently if the derived file does not exist.
+- Overlay on (see `## Overlay mode`): `finish` takes `<plan_path>` as given, and with no path
+  given the newest `.superpowers/plans/*.md` by mtime — never a plan derived from
+  `docs/superpowers/specs/`; with no path given and no `.superpowers/plans/*.md` on disk, ask
+  the user for the plan path. `import` with no path given prints the `<plan>` placeholder in
+  its answer.
+- On the pulled route (see `## Overlay mode`), with the overlay on or off, `<spec_path>` is
+  not used.
 
 ## Flow
 
@@ -383,7 +480,8 @@ the worst kind of disagreement.
 ### Sources
 
 The inputs are the ones named in `## Inputs` — `<plan_path>` and the paired `*-design.md`
-it derives from. `project_id` is resolved exactly as in step 1: `init` on the name from
+it derives from; with the input on the pulled route, the overlay on or off, the pulled plan
+file and its sidecar instead (see `## Overlay mode`). `project_id` is resolved exactly as in step 1: `init` on the name from
 `CONPORT_PROJECT_NAME`, which here is a lookup only — `finish` never creates a project, and never asks to.
 
 **No such project.** When `init` reports the project does not exist there is no
@@ -397,7 +495,31 @@ never read as "nothing left to close". It prints the no-epic-anchor report (see
 ```
 
 — and the same single prescription: run the bridge in `import` mode on this plan, which is
-where the question of creating the project is asked, then re-run `finish`.
+where the question of creating the project is asked, then re-run `finish`. With the overlay on
+and the input on the anchor route, the bridge's import writes nothing and asks nothing, so
+the prescription is the CLI command itself:
+
+```
+  Сделай сейчас: npx -y conport@^0.4 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
+```
+
+On the pulled route the order is fixed: the sidecar is read first, and with no usable
+sidecar the no-sidecar report is printed and no project is looked up. With a usable sidecar
+the pulled file already came from a project — the one the sidecar names in `project` — so
+the import is not the answer. When `init` finds no project, or finds one that is not the
+sidecar's `project` (neither its id nor its name), the audit would list the epic in the
+wrong place; the report names both in place of the anchor line —
+
+```
+  проект в .conport.json: <sidecar project>; CONPORT_PROJECT_NAME: <name> — <не найден | другой проект>
+```
+
+— and its single prescription is to put the sidecar's `project` into `CONPORT_PROJECT_NAME`
+and re-run `finish`:
+
+```
+  Сделай сейчас: укажи <sidecar project> в CONPORT_PROJECT_NAME, затем повтори finish.
+```
 
 1. `<plan_path>` anchors → `epic_id` (`conport-epic`), the per-task ids (`conport-task`),
    and the spec id from the paired `*-design.md` (`conport-spec`). Task anchors are used
@@ -409,6 +531,11 @@ where the question of creating the project is asked, then re-run `finish`.
    grounds for a verdict about the work. That case is RELEASE BLOCKED, and the single
    prescription is to run the bridge in `import` mode on this plan and then re-run `finish`.
    An absent epic is never read as "nothing left to close".
+   **Pulled route, the overlay on or off:** the sidecar `<plan_path>.conport.json` replaces the anchors here —
+   `epic_id` for `conport-epic`, `spec_doc_id` for `conport-spec` — and the per-task ids are
+   the `conport-task` markers of the pulled file above `<!-- conport-pull-tail -->`. No
+   sidecar, or one without `epic_id`, is the no-subject case, reported by
+   `### Output — no sidecar`. On the anchor route the anchors are read as written above.
 2. `mcp__conport__list_tasks({project_id, parent_task_id: <epic_id>, status: 'ALL',
    include_description: true, include_snoozed: true, limit: 200, offset: 0})`. The MCP
    surface takes the singular parent id only; it returns no descriptions unless
@@ -425,6 +552,9 @@ where the question of creating the project is asked, then re-run `finish`.
    Its first line reads `# SDD ledger — plan: <path>`; if that path is not `<plan_path>`,
    the ledger belongs to another plan — ignore it and report it as not found. A stray
    ledger at the older flat path `.superpowers/sdd/progress.md` is likewise not yours.
+   On the pulled route `<plan_path>` is the pulled file, so the ledger is the one SDD keeps
+   for that file (`.superpowers/sdd/doc-<P>/progress.md` for the default path) and its first
+   line names the pulled path.
 
 **An open task** = a child of the epic whose status is not `DONE` / `CANCELLED`. `BLOCKED` and
 `PARKED` count as open. The word is used in this sense for ConPort tasks only; a ledger
@@ -439,7 +569,9 @@ the second. Both mean the import is unfinished, not that the plan is finished: a
 is empty because its tasks never arrived is indistinguishable, from ConPort alone, from an
 epic that is empty because there was nothing to do. They are listed on the report's
 missing-tasks line and the verdict is RELEASE BLOCKED. An epic with zero children prints
-READY only when the plan has no task block other than the terminal one.
+READY only when the plan has no task block other than the terminal one. On the pulled route,
+"anchor" here reads as the section marker of the pulled file, and the tail below
+`<!-- conport-pull-tail -->` holds no plan task.
 
 ### Ledger line formats
 
@@ -497,7 +629,14 @@ Dropping a category drops its item too, and the numbering closes up. Plan tasks 
 ConPort are answered by the import — that is the same run of the bridge that files the plan's
 missing tasks, so the audit names it rather than leaving the agent to invent a way to create
 them by hand. Ledger candidates are answered by filing them, open children by finishing them,
-an unclosed fix round by finishing that round.
+an unclosed fix round by finishing that round. On the pulled route whatever the switch, and
+on the anchor route with the overlay on, the missing-tasks item names the CLI instead of the
+bridge's import (see `## Overlay mode`):
+
+```
+    1. npx -y conport@^0.4 plan import <plan_path> --epic <M>, затем
+       npx -y conport@^0.4 plan pull <M>, затем повтори finish на выгруженном файле
+```
 
 **The fix-round item prescribes finishing the round and nothing else.** An item that also
 offered "or write a completion line" would let the agent argue the block away instead of
@@ -529,6 +668,39 @@ count. The report says exactly that and prescribes the import:
   анкор conport-epic в плане не найден — план не импортирован
   Сделай сейчас: прогони superpowers-conport в режиме import на этом плане, затем повтори finish.
 ```
+
+With the overlay on, the prescription line is the CLI command instead of the bridge's import,
+which writes nothing then:
+
+```
+  Сделай сейчас: npx -y conport@^0.4 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
+```
+
+`doc-N` is the spec's document — the plan's paired design file's `conport-spec` anchor when it
+has one, otherwise the placeholder, as in the `import` answer of `## Overlay mode`.
+
+### Output — no sidecar
+
+Pulled route only, the overlay on or off — a plan on the anchor route never gets this report. The
+pulled plan has no usable sidecar, so there is no epic to name and no listing to count, the
+pulled-route counterpart of the missing epic anchor. No spec id is known either, so the spec
+header line is omitted. The reason line names the case actually found, one of three:
+
+```
+[superpowers-conport finish]
+  план: <plan_path> — RELEASE BLOCKED
+  файл <plan_path>.conport.json <не найден | не читается | без epic_id> — план не выгружен из ConPort
+  Сделай сейчас: npx -y conport@^0.4 plan pull <target>, затем повтори finish на выгруженном файле.
+```
+
+`<target>` is filled from the first source that has it:
+
+1. the file name — a file named `doc-<P>.md` gives `doc-<P>`, which `plan pull` accepts in
+   place of an epic;
+2. the execution contract in the tail below `<!-- conport-pull-tail -->` — its line
+   `Project … · Epic task-<M> · …` gives `<M>`;
+3. neither — the placeholder `<epic>`, the epic whose plan is being executed, left for the
+   agent to fill.
 
 ### Output — ready
 

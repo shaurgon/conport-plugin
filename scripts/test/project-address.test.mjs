@@ -47,9 +47,10 @@ async function startApi() {
 }
 
 // A working directory that is a git repository with an origin remote, and a
-// stand-in `git` first on PATH: it answers with a repository URL and leaves a
-// marker, so a hook that falls back to the repository name is caught twice —
-// by the marker and by the request the name would produce.
+// stand-in `git` first on PATH: it answers with a repository URL and logs its
+// arguments. A hook that falls back to the repository name is caught by the
+// request the name would produce, and — unless it reads the name through one
+// of the overlay's `rev-parse` queries, which the log allows — by the log too.
 function makeRepo(root) {
   const repo = join(root, 'some-repo')
   mkdirSync(join(repo, '.git'), { recursive: true })
@@ -60,9 +61,18 @@ function makeRepo(root) {
   mkdirSync(bin)
   const marker = join(root, 'git-was-run')
   writeFileSync(join(bin, 'git'),
-    `#!/bin/sh\necho run >> '${marker}'\necho https://example.com/acme/some-repo.git\n`)
+    `#!/bin/sh\necho "$*" >> '${marker}'\necho https://example.com/acme/some-repo.git\n`)
   chmodSync(join(bin, 'git'), 0o755)
   return { repo, bin, marker }
+}
+
+// The git calls a hook made other than the Superpowers overlay lookup, which
+// only asks git for the worktree roots. Anything else — a remote, a config
+// value — is a project guessed from the repository.
+const OVERLAY_GIT = /^-C .+ rev-parse (--show-toplevel|--git-common-dir)$/
+function projectGuesses(ctx) {
+  if (!existsSync(ctx.marker)) return []
+  return readFileSync(ctx.marker, 'utf8').split('\n').filter((l) => l && !OVERLAY_GIT.test(l))
 }
 
 async function withEnv(fn) {
@@ -187,7 +197,7 @@ test('without CONPORT_PROJECT_NAME no hook calls the server', () => withEnv(asyn
   assert.equal(stopped.out, '')
 
   assert.deepEqual(ctx.api.requests, [])
-  assert.equal(existsSync(ctx.marker), false, 'no hook may run git to guess a project')
+  assert.deepEqual(projectGuesses(ctx), [], 'no hook may run git to guess a project')
   assert.deepEqual(readdirSync(ctx.dataDir).filter((f) => f.startsWith('reflect-')), [],
     'no reflection is queued for a session with no project')
   assert.match(readFileSync(join(ctx.dataDir, 'session-end.log'), 'utf8'), /SKIP: no project identifier/)
@@ -291,6 +301,6 @@ for (const name of ['a/b/c', '/my-proj', 'pers/', '/']) {
     assert.equal((await prompt(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
     assert.equal((await sessionEnd(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
     assert.deepEqual(ctx.api.requests, [])
-    assert.equal(existsSync(ctx.marker), false)
+    assert.deepEqual(projectGuesses(ctx), [])
   }))
 }

@@ -10,7 +10,7 @@ and skills work across many clients.
 - **Skills** (plain `SKILL.md`, portable)
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
-  - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict.
+  - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict. With the Superpowers overlay on, `import` writes nothing and names `plan import`; `finish` audits a pulled plan through its `.conport.json`, with the overlay on or off.
 - **Workflows** (Claude Code, paid plan)
   - `/conport:task` — deterministic execution of one ConPort task (worktree, independent review through REVIEW and the task journal, gated merge, close with resolution)
   - `/conport:epic` — the same for a whole epic: the plan is sliced into tasks, they run in waves, and the epic closes on the run's verdict
@@ -18,8 +18,8 @@ and skills work across many clients.
 
   See [docs/workflows.md](./docs/workflows.md).
 - **Hooks** (Claude Code only, Node.js, zero deps)
-  - `SessionStart` — fetches the deny-list (project conventions) from ConPort
-  - `PreToolUse(Bash)` — blocks commands matching deny-list patterns
+  - `SessionStart` — fetches the deny-list (project conventions) from ConPort; with the Superpowers overlay on, passes the overlay rules to the session
+  - `PreToolUse(Bash)` — blocks commands matching deny-list patterns; with the Superpowers overlay on, refuses a commit that adds a new file under `docs/superpowers/specs/` or `docs/superpowers/plans/`
   - `PostToolUse(add_task / update_task)` — records the epics this session changed
   - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing, printed only when its composition changed
   - `Stop` — holds the end of the turn once while an epic this session changed still has open children, and lists them (epics that grew after work started first)
@@ -57,6 +57,37 @@ Pick your client and follow the per-harness guide:
 | `user_config.api_key` | Plugin userConfig (prompted on install) | Auth for MCP + hooks |
 | `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (**required**) | Project name: `<project>` for a personal repository, `k7m2qx9d/<project>` for a team's one (the team ID is on the team's settings page) |
 | `CONPORT_PROJECT_ID` | `.claude/settings.local.json` env (optional) | Override numeric project id |
+
+## Superpowers overlay
+
+In a project that works with the Superpowers skills, the overlay keeps specs
+and plans in ConPort instead of git: the spec is a `spec` document, the plan a
+`plan` document, and the epic's tasks are tied to the plan's sections. Turn it
+on with `.superpowers/config.json` at the root of the repository:
+
+```json
+{ "conport": { "superpowers": true } }
+```
+
+The file at the root of the current worktree decides on its own; the main
+worktree's file is read only when the current worktree has none. Add one line
+to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
+`Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
+The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
+they call the `conport` CLI as `npx -y conport@^0.4`. The CLI does not see the
+plugin's `api_key`: it needs `CONPORT_API_KEY` in the environment or in
+`~/.config/conport/.env`.
+
+| Command | Does |
+|---|---|
+| `documents get doc-N [-o <file>] [--force]` | Writes a document to a local file (default `.superpowers/docs/doc-N.md`) with a `<file>.conport.json` beside it |
+| `plan import <file> [--spec doc-N] [--epic N] [--milestone N]` | Stores a plan file as a `plan` document and creates or updates its epic and one task per `### Task N:` section |
+| `plan pull <epic\|doc-N> [-o <file>] [--force]` | Writes the plan with its finish tail to a local file (default `.superpowers/plans/doc-M.md`) |
+| `superpowers migrate [--apply]` | Moves the specs and plans the bridge had half-imported into ConPort documents; without `--apply` it only reports |
+
+`--force` overwrites a local file edited since it was written, discarding the
+edits. Turning the overlay off: remove the key; the `plan` documents stay in
+ConPort.
 
 ## Paths (Claude Code hooks)
 

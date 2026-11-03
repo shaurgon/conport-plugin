@@ -50,7 +50,7 @@ it leaves the machine.
 |---|---|---|---|
 | `task` | integer | yes | Id of the ConPort task to execute. |
 | `project` | string | no | ConPort project name. Omitted → taken from `CONPORT_PROJECT_NAME`. |
-| `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor comment, but only across `docs/superpowers/plans/*.md` — if your plans live anywhere else, `plan` is effectively required. |
+| `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor comment, but only across `docs/superpowers/plans/*.md` — if your plans live anywhere else, `plan` is effectively required. A plan kept in ConPort is pulled first — see [A plan kept in ConPort](#a-plan-kept-in-conport). |
 | `gate` | object | no | `{dir, commands}` — the directory to run in and the list of gate commands. Omitted → taken from the plan's Global Constraints. |
 | `serialChecks` | boolean | no | Worktree agents run static checks only — all tests are deferred to the merge gate, which runs alone. For projects whose gate shares one test database. |
 | `fileMinors` | boolean | no | Leftover minors (rare — minors are normally fixed in the run) are collected into ONE umbrella task under the "Workflow run tails" epic. Off by default: leftovers travel only in the run ledger. |
@@ -166,7 +166,7 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
 | `epic` | integer | yes | Id of the ConPort epic to execute. |
-| `plan` | string | no | Path to the plan file. Omitted → looked up by the epic's anchor under `docs/superpowers/plans/`. |
+| `plan` | string | no | Path to the plan file. Omitted → looked up by the epic's anchor under `docs/superpowers/plans/`. A plan kept in ConPort is pulled first — see [A plan kept in ConPort](#a-plan-kept-in-conport). |
 | `project` | string | no | ConPort project name. Omitted → derived as in `/conport:task`. |
 | `gate` | object | no | `{dir, commands}` — as in `/conport:task`. |
 | `allowNoPlan` | boolean | no | Without a plan file the run aborts. Set this to execute the epic's ConPort children from their own descriptions instead — strictly sequentially. |
@@ -189,6 +189,25 @@ Same as `/conport:task`: relaunch with `resumeFromRunId` — finished agents
 replay from cache, side effects are idempotent, and a full restart without the
 cache is also safe (already-merged branches and already-closed tasks are
 detected, not redone).
+
+## A plan kept in ConPort
+
+With the Superpowers overlay on (see the plugin README), a plan is not a file
+under `docs/superpowers/plans/` but a ConPort document of type `plan`, and the
+workflows do not look it up there. Take it into a local file with `plan pull`
+first, then pass that file's path as the `plan` argument — the run hands it to
+the helper as `--plan .superpowers/plans/doc-M.md`:
+
+```
+npx -y conport@^0.4 plan pull <epic id>
+/conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
+/conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
+```
+
+The JSON answer of `plan pull` names the file it wrote (`file`; `doc-M` is the
+plan document) and a `<file>.conport.json` is kept beside it. The pulled file carries a marker under each
+section that ties it to its task. Pull again after the plan changes in ConPort:
+a stale copy is the plan as it was.
 
 ## Mechanics are code, meaning is the model
 
