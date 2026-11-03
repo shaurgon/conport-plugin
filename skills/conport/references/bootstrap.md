@@ -47,7 +47,7 @@ After the user responds:
 1. **Product context** — one call, all answers at once:
    ```
    mcp__conport__update_product_context({
-     project_id: <id>,
+     project: <project>,
      content: {
        vision:       "<answer 1>",
        tech_stack:   "<answer 2>",
@@ -61,7 +61,7 @@ After the user responds:
 2. **First decision** — record the bootstrap itself so future sessions know it happened:
    ```
    mcp__conport__sync_decision({
-     project_id: <id>,
+     project: <project>,
      summary: "Project bootstrapped via conport skill",
      rationale: "Captured vision / stack / users / success metrics from the owner's answers during the first session.",
      tags: ["bootstrap", "onboarding"]

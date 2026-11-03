@@ -13,9 +13,11 @@ you are a member of.
 
 ```text
 Set CONPORT_PROJECT_NAME.
+Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
+CONPORT_PROJECT_ID is no longer read.
 ```
 
 In Claude Code the variable lives in `.claude/settings.local.json` of the
@@ -74,7 +76,7 @@ Ask Claude in the session:
 `init` only finds a project, it never creates one, and the agent calls
 `create_project` only on your word — which this request gives it.
 
-Expected: a JSON response with `project_id`, `summary`, `instructions`, and
+Expected: a JSON response with `project` (the project's handle), `summary`, `instructions`, and
 (if it's a known project) `recent_decisions`. If you get
 `Missing session ID` once right after install, just reconnect `/mcp` — that is
 expected for a fresh HTTP transport.
@@ -101,7 +103,7 @@ From the next session on, the session-start hook passes the overlay rules to
 Claude, which prints `[CONPORT] Superpowers overlay: on`; the command check
 reads the file on every commit and refuses one that adds a new file under
 `docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules call the `conport` CLI through
-`npx -y conport@^0.4` (`documents get`, `plan import`, `plan pull`,
+`npx -y conport@^0.5` (`documents get`, `plan import`, `plan pull`,
 `superpowers migrate`), so Node.js and network access are needed. The CLI does
 not see the plugin's `api_key`: put `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`. See the

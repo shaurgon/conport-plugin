@@ -44,9 +44,11 @@ async function main() {
   const match = TRACKED_TOOL.exec(toolName);
   if (!match || !toolName.includes('conport')) process.exit(0);
 
+  // The project as the call named it — a handle or a name; the Stop hook
+  // addresses it the same way.
   const toolInput = input.tool_input || {};
-  const projectId = toolInput.project_id;
-  if (projectId === undefined || projectId === null || projectId === '') process.exit(0);
+  const project = toolInput.project;
+  if (project === undefined || project === null || project === '') process.exit(0);
 
   const parseState = { sawPayload: false };
   const progress = findEpicProgress(input.tool_response, parseState);
@@ -65,7 +67,7 @@ async function main() {
   const sessionId = input.session_id || 'unknown';
   try {
     fs.appendFileSync(sessionEpicsPath(sessionId),
-      JSON.stringify({ project: String(projectId), epic_id: epicId, title }) + '\n');
+      JSON.stringify({ project: String(project), epic_id: epicId, title }) + '\n');
   } catch (_) {}
   process.exit(0);
 }

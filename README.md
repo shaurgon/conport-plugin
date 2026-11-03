@@ -55,8 +55,11 @@ Pick your client and follow the per-harness guide:
 | Variable | Where | Purpose |
 |---|---|---|
 | `user_config.api_key` | Plugin userConfig (prompted on install) | Auth for MCP + hooks |
-| `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (**required**) | Project name: `<project>` for a personal repository, `k7m2qx9d/<project>` for a team's one (the team ID is on the team's settings page) |
-| `CONPORT_PROJECT_ID` | `.claude/settings.local.json` env (optional) | Override numeric project id |
+| `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (**required**) | The project's handle (`prk7m2qx9d` — shown by `init`, `list_projects` and the projects page of the dashboard), or its name: `<project>` for a personal repository, `k7m2qx9d/<project>` for a team's one (the team ID is on the team's settings page) |
+
+`CONPORT_PROJECT_ID` is no longer read. While it is set, every session starts
+with one line saying so; move the project's handle or name into
+`CONPORT_PROJECT_NAME` and remove it.
 
 ## Superpowers overlay
 
@@ -74,7 +77,7 @@ worktree's file is read only when the current worktree has none. Add one line
 to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
-they call the `conport` CLI as `npx -y conport@^0.4`. The CLI does not see the
+they call the `conport` CLI as `npx -y conport@^0.5`. The CLI does not see the
 plugin's `api_key`: it needs `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`.
 
@@ -84,6 +87,7 @@ plugin's `api_key`: it needs `CONPORT_API_KEY` in the environment or in
 | `plan import <file> [--spec doc-N] [--epic N] [--milestone N]` | Stores a plan file as a `plan` document and creates or updates its epic and one task per `### Task N:` section |
 | `plan pull <epic\|doc-N> [-o <file>] [--force]` | Writes the plan with its finish tail to a local file (default `.superpowers/plans/doc-M.md`) |
 | `superpowers migrate [--apply]` | Moves the specs and plans the bridge had half-imported into ConPort documents; without `--apply` it only reports |
+| `superpowers relink [--apply]` | Turns the `Spec:` and `Plan:` lines earlier imports wrote into task descriptions into graph links (plan `clarifies` task, plan `derived_from` spec) and removes the lines; without `--apply` it only reports |
 
 `--force` overwrites a local file edited since it was written, discarding the
 edits. Turning the overlay off: remove the key; the `plan` documents stay in

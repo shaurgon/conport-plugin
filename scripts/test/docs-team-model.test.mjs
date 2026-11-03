@@ -176,7 +176,7 @@ test('no internal identifier leaks into the rewritten sections', () => {
 })
 
 const PROJECT_NAME_RULE =
-  "Set CONPORT_PROJECT_NAME. Personal repository: <project>. Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page. A bare name in a team repository sends every member to their own Private Team."
+  "Set CONPORT_PROJECT_NAME. Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it. Personal repository: <project>. Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page. A bare name in a team repository sends every member to their own Private Team. CONPORT_PROJECT_ID is no longer read."
 
 test('every install guide carries the project name rule word for word', () => {
   for (const name of ['INSTALL.md', 'docs/install/claude-code.md', 'docs/install/cursor.md', 'docs/install/other-agents.md']) {

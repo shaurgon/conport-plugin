@@ -15,9 +15,9 @@ function dataDir() {
   return dir;
 }
 
-// A project as a caller names it — a numeric id, a bare name or
-// `team/project` — split at its only "/": { raw, team, project }. An empty
-// value, an empty part or a second "/" is not a project: null.
+// A project as a caller names it — its handle, a bare name or `team/project`
+// — split at its only "/": { raw, team, project }. An empty value, an empty
+// part or a second "/" is not a project: null.
 function parseProject(value) {
   const raw = String(value == null ? '' : value).trim();
   if (!raw) return null;
@@ -29,15 +29,21 @@ function parseProject(value) {
 }
 
 // The project this session works in, or null when the environment names
-// none. CONPORT_PROJECT_ID comes first, then CONPORT_PROJECT_NAME; both go
-// through the same split, so a number carries no team (the server derives it
-// from the project) and a value that is not a number is read as a name and
-// never reaches a path with a "/" in it. The environment is the only source:
-// nothing is guessed from the repository or the working directory, and with
-// no project the hooks stay silent.
+// none. CONPORT_PROJECT_NAME is the only source — a handle carries no team
+// (the server finds the project's own), a `team/project` name is split — and
+// nothing is guessed from the repository or the working directory: with no
+// project the hooks stay silent. CONPORT_PROJECT_ID is not read.
 function detectProject() {
-  const id = (process.env.CONPORT_PROJECT_ID || '').trim();
-  return parseProject(id || process.env.CONPORT_PROJECT_NAME);
+  return parseProject(process.env.CONPORT_PROJECT_NAME);
+}
+
+// The one line said at session start while CONPORT_PROJECT_ID still holds a
+// value, or null. The variable addresses nothing any more, so a stale number
+// left in the environment must not pass in silence.
+const RETIRED_PROJECT_ID =
+  "CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name";
+function retiredProjectIdNotice() {
+  return (process.env.CONPORT_PROJECT_ID || '').trim() ? RETIRED_PROJECT_ID : null;
 }
 
 // How a detected project goes into a `/projects/{…}` path: `team/project`
@@ -216,7 +222,7 @@ function readStdin() {
 }
 
 module.exports = {
-  CONPORT_URL, dataDir, parseProject, detectProject, projectRoute, denyListPath,
+  CONPORT_URL, dataDir, parseProject, detectProject, retiredProjectIdNotice, projectRoute, denyListPath,
   authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
   fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot, overlayEnabled,
 };

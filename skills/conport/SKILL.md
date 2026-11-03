@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 16.6.0
+  version: 17.0.0
 ---
 
 # ConPort — Project Management System
@@ -44,13 +44,21 @@ to `.claude/settings.local.json` and ask them to restart the session:
 For a repository that a team works on, the value carries the team ID:
 `k7m2qx9d/<project>` (the team ID is on the team's settings page). A bare
 `<project>` is a project of the user's own `Private Team` — see *TEAMS* below.
+The project's handle (`prk7m2qx9d`) works as the value too, in any team.
+
+`CONPORT_PROJECT_ID` is no longer read. While it is set, the session-start hook
+shows the user the line
+`CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name`
+itself; do not repeat it. If the user asks, the fix is: the project's handle or
+name goes into `CONPORT_PROJECT_NAME` and `CONPORT_PROJECT_ID` is removed.
 
 **Cursor, Codex and other agents with a shell** — the variable is an environment
 variable of the agent's process. If it is not set — stop, do not call `init`,
 and ask the user to export `CONPORT_PROJECT_NAME` and restart the agent.
 
 **Claude.ai Chat** — there are no environment variables; the user names the
-project (`<project>`, or `k7m2qx9d/<project>` for a team's project). Ask for it.
+project (its handle, `<project>`, or `k7m2qx9d/<project>` for a team's project).
+Ask for it.
 
 ### Step 2: Call init
 
@@ -120,13 +128,19 @@ user's membership, not from the key. The MCP address is always
 `https://api.conport.app/mcp/` — the same for a key and for OAuth, for the
 `Private Team` and for every shared team.
 
-**A project is addressed as `<team ID>/<project>`.**
+**A project is addressed by its handle or as `<team ID>/<project>`.**
 
 | Name | Means |
 |---|---|
+| `prk7m2qx9d` | the project whose handle this is, in whichever of the user's teams it lives |
 | `k7m2qx9d/<project>` | the project in the shared team whose team ID is `k7m2qx9d` |
 | `pers/<project>` | the project in the user's own `Private Team` |
 | `<project>` | the same as `pers/<project>` |
+
+The handle is `pr` and eight characters, fixed for the project's life — a
+rename or a move to another team keeps it. `init`, `list_projects` and the
+projects page of the dashboard show it. A string of digits addresses no
+project: it answers like a project that does not exist.
 
 The team ID is the eight-character identifier shown on the team's settings
 page. `pers` is always the caller's own `Private Team`, so `pers/<project>` is
@@ -135,12 +149,12 @@ in `CONPORT_PROJECT_NAME`.
 
 **The team of a call comes from the project, or from the `team` argument.**
 
-- A tool that takes `project_id` works in that project's team — nothing else to
-  pass.
-- `init` returns `team` (`handle`, `name`, `kind`) next to `project_id`, and
-  `canonical_name` — the full `<team ID>/<project>` form.
+- A tool that takes `project` works in that project's team — nothing else to
+  pass. Pass the `project` that `init` returned: the project's handle.
+- `init` returns `team` (`handle`, `name`, `kind`) next to `project` (the
+  project's handle), and `canonical_name` — the full `<team ID>/<project>` form.
 - Tools that can run without a project take a `team` argument: `list_projects`,
-  `search` without `project_id`, and the graph tools (`entities`, `entity`,
+  `search` without `project`, and the graph tools (`entities`, `entity`,
   `entity_related`, `communities`, `community`, `graph_stats`). Pass the
   `handle` that `init` returned as `team`.
 - **Without `team`, `search` and the graph tools cover the `Private Team`
@@ -156,7 +170,7 @@ in `CONPORT_PROJECT_NAME`.
 | `project_not_found` | No project of that name in the team the name points at. `init` created nothing. | Tell the user. Call `create_project` **only when the user says so**, then repeat `init`. Never create a project on your own after this refusal. |
 | `project_name_in_other_team` | The name has no project in the `Private Team`, but one or more of the user's shared teams hold a project of that name. The answer lists them in `candidates` — the full names and the name of each team. | Show `candidates` to the user and ask them to put the chosen name into `CONPORT_PROJECT_NAME`. Do not pick one yourself, do not create a second project. |
 | `team_not_found` | The team ID in the name or in `team` is not a team the user is a member of (a team that does not exist answers the same). | Ask the user to check the team ID on the team's settings page and their membership in that team. |
-| `invalid_project_name` | The name is malformed: more than one `/`, an empty part, a project name made of digits only, or a prefix that is neither `pers` nor a team ID (the prefix is case-sensitive). | Show the user the name as it is set and ask them to correct `CONPORT_PROJECT_NAME` to `<project>`, `pers/<project>` or `k7m2qx9d/<project>`. Do not retry with a name of your own. |
+| `invalid_project_name` | The name is malformed: more than one `/`, an empty part, a project part made of digits only after a team prefix (`pers/11`), or a prefix that is neither `pers` nor a team ID (the prefix is case-sensitive). | Show the user the name as it is set and ask them to correct `CONPORT_PROJECT_NAME` to the project's handle, `<project>`, `pers/<project>` or `k7m2qx9d/<project>`. Do not retry with a name of your own. |
 | `invalid_team_id` | The team was named by something that is not a team ID: a team's display name, a wrong-case `PERS`, or any other string in the name prefix or in `team`. | Use the short team ID from the team's settings page (for example `k7m2qx9d`) or `pers`. If it came from `CONPORT_PROJECT_NAME`, ask the user to correct it. Do not retry with a name of your own. |
 | `team_context_conflict` | Two parts of one call name two different teams of the user (for example the name prefix and the `team` argument). | Name the team once and repeat the call. |
 | `cross_team_link_not_supported` | A link or a linked task was requested between projects of two different teams. | Tell the user it is not supported. Do not retry. |
@@ -185,18 +199,19 @@ it.** Do not look for one. Point the user at the dashboard
 | Members, roles, invitations | `/api/v1/teams/{team_id}/members`, `/api/v1/teams/{team_id}/invitations` — admins invite, remove and promote; `Private Team` refuses invitations |
 | Plan and billing | `GET /api/v1/teams/{team_id}/plan` — any member; `POST /api/v1/teams/{team_id}/billing/...` (checkout, cancel, resume) — admins only |
 | Your own keys | Dashboard, or `GET/POST/DELETE /api/v1/me/api-keys` — a key is the user's own and carries no team |
-| Move a project to another team | Dashboard, or `POST /api/v1/projects/{project_id}/transfer` — see below |
+| Move a project to another team | Dashboard, or `POST /api/v1/projects/{project}/transfer` — see below |
 
 From the `conport` CLI: `conport api teams <operation>`; `--project` takes the
 full `k7m2qx9d/<project>` name and `--team-id` takes a team ID.
 
 **Moving a project to another team.** An admin of the source team who is also a
 member of the target team (a regular member is enough) moves it from the
-dashboard, or over REST: `POST /api/v1/projects/{project_id}/transfer` with
+dashboard, or over REST: `POST /api/v1/projects/{project}/transfer` with
 `{"target_team_id": "<uuid>"}` (optionally `"name"` for a new name there) and an
-`Idempotency-Key` header. The numeric `project_id` names the source team by
-itself; the server checks the caller's admin role in the source and membership
-in the target. Repeating the request with the same `Idempotency-Key` returns
+`Idempotency-Key` header. The project's handle in the path names the source
+team by itself; the server checks the caller's admin role in the source and
+membership in the target. The answer names the project by its handle
+(`project`). Repeating the request with the same `Idempotency-Key` returns
 the first receipt instead of a second move. Refusals move nothing:
 `project_name_taken` (409, send a `name`), `project_limit_reached` (402, the
 target's plan is full), `project_busy` (409, retry later),
@@ -211,7 +226,9 @@ without a team ID (`<project>` or `pers/<project>`) answers
 that carried the source team's ID answers `project_not_found` — do not create
 the project again: the new name is `<target team ID>/<project>`, and the
 transfer receipt carries the target's team ID as `target_team_handle`. Either
-way ask the user to put the new name into `CONPORT_PROJECT_NAME`.
+way ask the user to put the new name into `CONPORT_PROJECT_NAME`. The handle
+moves with the project: a `CONPORT_PROJECT_NAME` holding the handle needs no
+change.
 
 ---
 
@@ -243,11 +260,11 @@ semantics of a surface, fetch the live-docs page named in the table.
 |---------|------|
 | Starting work | `update_task` → IN_PROGRESS (**before the first write on a task**) |
 | Brief for whoever executes or reviews the task | `add_task_journal_entry` with `kind='brief'` |
-| Work finished and it needs a check | `add_task_journal_entry` with `kind='report'`, then `update_task` → REVIEW |
-| Reviewing a task in REVIEW | read the round with `list_task_journal` (`include_body=true`), then `add_task_journal_entry` with `kind='review'` and `verdict='approve'` or `verdict='changes_requested'` |
+| Work finished and it needs a check | `add_task_journal_entry` with `kind='report'` — it moves the task to REVIEW (a TODO or BLOCKED task is started first); no `update_task` around it |
+| Reviewing a task in REVIEW | read the round with `list_task_journal` (`include_body=true`), then `add_task_journal_entry` with `kind='review'` and `verdict='approve'` or `verdict='changes_requested'` — changes requested return the task to IN_PROGRESS for the next round by themselves |
 | Review approved | `update_task` → DONE **with `resolution=...`** |
-| Changes requested | `update_task` → IN_PROGRESS (the next round), fix, `add_task_journal_entry` with `kind='fix'`, then `update_task` → REVIEW |
-| "What happened on this task?" | `list_task_journal` (`round` filters one round; texts only with `include_body=true`), one entry in full with `get_task_journal_entry` |
+| Changes requested | the task is already back in IN_PROGRESS (the next round): fix, then `add_task_journal_entry` with `kind='fix'` — it moves the task to REVIEW |
+| "What happened on this task?" | `list_task_journal` (`round` filters one round; texts only with `include_body=true`, a page carries `next_offset` while entries remain), one entry in full with `get_task_journal_entry` (`entry_id`, or `kind` for the latest of a kind) |
 | Done / Finished | `update_task` → DONE **with `resolution=...`** (see below) |
 | Cancelled | `update_task` → CANCELLED **with `resolution=...`** (why dropped; allowed from REVIEW too) |
 | Blocked | `update_task` → BLOCKED (never from REVIEW) |
@@ -268,11 +285,18 @@ brief → IN_PROGRESS → work → report → REVIEW → review
     changes_requested → IN_PROGRESS (round + 1) → fix → REVIEW → review → …
 ```
 
+- **An entry moves the task.** A `report` takes the task to REVIEW (a TODO
+  or BLOCKED task is started first), a `fix` takes it back to REVIEW, a
+  `review` with `changes_requested` returns it to IN_PROGRESS; a `brief` and an
+  approval move nothing. `update_task` is not needed around an entry — only the
+  close after an approval is one.
 - **The reviewer is never the executor.** Whoever did the work writes the
   `report` or `fix`; someone else reads it and writes the `review`. The two
   sign their entries with different names in `author` (an agent role or a
   person): a `review` signed like a `report` or `fix` of the same round —
-  ignoring case and surrounding spaces — is refused.
+  ignoring case and surrounding spaces — is refused. Without `author` an entry
+  is signed by its role — `orchestrator`, `implementer` or `reviewer` — so the
+  defaults never collide.
 - **Rounds are the server's.** Every entry gets the task's current
   `review_round`; you never pass it. The round grows by one when the task goes
   back from REVIEW to IN_PROGRESS and when a DONE or CANCELLED task is reopened,
@@ -456,7 +480,7 @@ return it in the `roadmap` section.
 |---------|------|
 | Question about the project | `search` BEFORE answering |
 | "What was decided about Y?" | `search` by topic |
-| "Which projects do I own?" / bootstrapping without a known project_id | `list_projects` |
+| "Which projects do I own?" / bootstrapping without a known project handle | `list_projects` |
 
 ### Sync
 
@@ -803,7 +827,7 @@ On an `Invalid arguments for tool` error:
 
 | `path` | Fix |
 |--------|-----|
-| `project_id` | `"4"` → `4` |
+| `task_id` | `"4"` → `4` |
 | `tags` | `"tag"` → `["tag"]` |
 | `priority` | `"3"` → `3` |
 

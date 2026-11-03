@@ -22,7 +22,8 @@ export const runWorkflow = async (file, args, answers) => {
   const agent = async (prompt, opts) => {
     const label = opts.label
     calls.push({ label, prompt, opts })
-    const a = answers[label]
+    // A cycle step ("j-" label) without its own answer takes the answer of 'j-*'.
+    const a = answers[label] ?? (label.startsWith('j-') ? answers['j-*'] : undefined)
     const out = (typeof a === 'function' ? a(prompt, opts) : a) ?? null
     const required = (opts.schema && opts.schema.required) || []
     return out !== null && required.some(k => out[k] === undefined) ? null : out
@@ -35,18 +36,23 @@ export const runWorkflow = async (file, args, answers) => {
 
 // ------------------------------------------------------------- a green run
 
-const PROJECT_ID = 42                              // a neutral id: no real project is implied
+const HANDLE = 'prk7m2qx9d'                       // a neutral handle: no real project is implied
 export const GATE = { dir: '.', commands: ['true'] }
-const PRE = { clean: true, branch: 'main', current_branch: 'main', main_sha: 'aaa0', helper_version: '0.0.0' }
+export const PRE = { clean: true, branch: 'main', current_branch: 'main', main_sha: 'aaa0', helper_version: '0.0.0', api_key: true }
 const IMPL = { status: 'DONE', branch: 'task/t7', head_sha: 'bbb1', worktree_path: '/tmp/wt-7' }
+
+// The helper's answer to a cycle step whose every write landed: every agent of a
+// run works from the brief the run wrote first, so a green run needs its briefs.
+export const LANDED = (_prompt, opts) => ({ via: 'wf-helper', failed_calls: [],
+  actions: [{ step: opts.label, result: 'done', detail: 'written' }] })
 
 // One task, implemented, reviewed clean, merged, accounted, cleaned up.
 export const taskRun = (over = {}) => ({
   args: { task: 7 },
   answers: {
-    preflight: PRE,
+    preflight: PRE, 'j-*': LANDED,
     scout: {
-      project_id: PROJECT_ID, via: 'wf-helper',
+      project: HANDLE, via: 'wf-helper',
       task: { id: 7, kind: 'task', status: 'TODO', title: 'the thing', parent_epic_id: null },
       brief: { source: 'conport', plan_path: null, lines: null, files: null,
         description: 'describe', acceptance: 'accept', spec_digest: 'digest', global_constraints: 'constrain' },
@@ -66,9 +72,9 @@ export const taskRun = (over = {}) => ({
 export const epicRun = (over = {}) => ({
   args: { epic: 500 },
   answers: {
-    preflight: PRE,
+    preflight: PRE, 'j-*': LANDED,
     scout: {
-      project_id: PROJECT_ID, plan_path: 'docs/plan.md', plan_format: 'A', via: 'wf-helper',
+      project: HANDLE, plan_path: 'docs/plan.md', plan_format: 'A', via: 'wf-helper',
       epic: { id: 500, kind: 'epic', title: 'the epic', goal: 'the goal', status: 'TODO' },
       spec: { doc_id: 1, path: 'docs/spec.md', digest: 'digest' }, global_constraints: 'constrain', gate: GATE,
       tasks: [{ conport_id: 501, plan_index: 1, kind: 'work', title: 'the thing', lines: { from: 1, to: 2 },

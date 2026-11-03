@@ -18,7 +18,7 @@ const WORKFLOWS = dirname(dirname(fileURLToPath(import.meta.url)))
 const HELPER = join(WORKFLOWS, 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
 const PROJECT = 'sample-project'
-const PROJECT_ID = 42                              // a neutral id: no real project is implied
+const HANDLE = 'prk7m2qx9d'                       // a neutral handle: no real project is implied
 
 // ------------------------------------------------------------------ REST mock
 
@@ -37,16 +37,18 @@ const startMock = async () => {
       const url = new URL(req.url, 'http://localhost')
       state.requests.push({ method: req.method, path: url.pathname })
 
-      if (url.pathname === `/api/v1/projects/${PROJECT_ID}/progress`) {
+      if (url.pathname === `/api/v1/projects/${HANDLE}/progress`) {
         if (req.method === 'GET') return send(res, 200, { entries: state.progress, total: state.progress.length })
         const entry = { id: 700 + state.progress.length, title: null, description: '' }
         state.progress.push(entry)
         return send(res, 201, entry)
       }
-      if (url.pathname === `/api/v1/projects/${PROJECT_ID}/tasks/901`)
+      if (url.pathname === `/api/v1/projects/${HANDLE}/tasks/901`)
         return send(res, 200, { id: 901, title: 'first thing', status: 'TODO', kind: 'task', parent_task_id: null, description: 'do it' })
+      // The scout reads the task's links for its plan and spec: none here.
+      if (url.pathname === `/api/v1/projects/${HANDLE}/links`) return send(res, 200, { links: [], total: 0 })
       const project = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)$/)
-      if (project) return send(res, 200, { id: PROJECT_ID, name: PROJECT })
+      if (project) return send(res, 200, { handle: HANDLE, name: PROJECT, canonical_name: 'pers/' + PROJECT })
       return send(res, 404, { detail: 'no route ' + url.pathname })
     })
   })
@@ -107,13 +109,13 @@ test('scout output is stamped via:"wf-helper"', withMock(async mock => {
 
 test('account output of a task table is stamped via:"wf-helper"', withMock(async mock => {
   const out = await runStamped(mock, 'account', '--table',
-    tableFile({ project_id: PROJECT_ID, close: null, block: null, minors_umbrella: null }))
+    tableFile({ project: HANDLE, close: null, block: null, minors_umbrella: null }))
   assert.equal(out.task_closed, false, 'the stamp rides the S_ACC report shape')
 }))
 
 test('account output of an epic table is stamped via:"wf-helper"', withMock(async mock => {
   const out = await runStamped(mock, 'account', '--table', tableFile({
-    project_id: PROJECT_ID, epic: 100, done: [], failed: [], skipped: [],
+    project: HANDLE, epic: 100, done: [], failed: [], skipped: [],
     parity_failed: [], minors: [], verdict: 'READY', may_close: false, close_resolution: 'r',
   }))
   assert.equal(out.epic_closed, false, 'the stamp rides the epic report shape')

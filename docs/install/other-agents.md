@@ -42,9 +42,11 @@ nothing else.
 
 ```text
 Set CONPORT_PROJECT_NAME.
+Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
+CONPORT_PROJECT_ID is no longer read.
 ```
 
 The agent reads it from the environment of its own process — export it next to
@@ -75,7 +77,7 @@ npx conport docs
 npx conport api __schema
 
 # Call any operation: conport api <resource> <operation> [--flags]
-npx conport api tasks list --project_identifier "$CONPORT_PROJECT_NAME"
+npx conport api tasks list --project "$CONPORT_PROJECT_NAME"
 npx conport api search create --query "auth flow"
 ```
 
@@ -108,6 +110,6 @@ ConPort instead of `docs/superpowers/`. Turn it on with
 the agent gets the overlay rules from the **Superpowers overlay** block of the
 `conport` skill. There is no commit guard either, so nothing refuses a commit
 of a new file under `docs/superpowers/` — the rules alone keep specs and plans
-out of git. The rules call the `conport` CLI (`npx -y conport@^0.4`), which
+out of git. The rules call the `conport` CLI (`npx -y conport@^0.5`), which
 needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env` (the
 key from step 2). See the [README](../../README.md#superpowers-overlay).

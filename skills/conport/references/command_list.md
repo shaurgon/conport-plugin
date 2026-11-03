@@ -23,7 +23,11 @@ mcp__conport__<tool_name>({
 
 > **Identifiers:** most items are addressed by their **per-project sequential
 > ID** (`task_id`, `decision_id`, `document_id`, `pattern_id`,
-> `progress_id`). `project_id` is still the integer project ID.
+> `progress_id`). A project is addressed by `project`: its **handle** — `pr`
+> and 8 characters, e.g. `prk7m2qx9d`, fixed for the project's life — or its
+> name (`<project>`, `pers/<project>`, `<team id>/<project>`). `init`,
+> `list_projects` and the projects page of the dashboard show the handle. A
+> string of digits addresses no project.
 
 > **Failure answers:** a section's **Refusals** are returned by a call that
 > itself succeeds — a dict with an `error` code, and whatever the section
@@ -46,26 +50,33 @@ mcp__conport__init({
 })
 ```
 
-A project of a shared team is addressed by its team id:
+A project of a shared team is addressed by its team id, and any project by its
+handle:
 
 ```
 mcp__conport__init({
   name: "k7m2qx9d/my-project"
 })
+
+mcp__conport__init({
+  name: "prk7m2qx9d"
+})
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| name | string | yes | Project name: "<project>" for your Private Team, "<team id>/<project>" for a shared team. The project part is at most 255 characters. |
+| name | string | yes | The project's handle, or its name: "<project>" for your Private Team, "<team id>/<project>" for a shared team. The project part is at most 255 characters. |
 | description | string | no | Deprecated, ignored: init no longer creates projects. |
 | skill_id | string | no | Skill the client runs (`conport`, `conport-agent`) — only used to detect an available skill update |
 | skill_version | string | no | Semver of the installed SKILL.md content (independent of the plugin release tag) |
 | client_type | string | no | Calling environment: `claude-code` \| `claude-ai` \| `cursor` \| `openclaw` \| `mcporter` \| `paperclip`. Picks the install-guide URL of an update notice |
 
-**Returns:** `project_id`, `name` (the short name), `canonical_name`
+**Returns:** `project` (the project's handle — pass it as `project` to every
+other tool), `name` (the short name), `canonical_name`
 (`<team id>/<project>`; `pers/<project>` in your Private Team), `team`
 (`handle`, `name`, `kind` — `handle` is `pers` for your Private Team),
 `recent_decisions`, `recent_patterns`,
+`summary` opens with `Project <name> (<handle>) loaded`;
 `backlog` (`total_todo`, `total_in_progress`, `total_review`, `top` — up to 5
 items with `effective_priority` and `subtask_count`; built over TODO,
 IN_PROGRESS and REVIEW), `stats` (`tasks_todo`, `tasks_in_progress`,
@@ -103,8 +114,12 @@ priority across direct children (priority is industry-standard 1-5 where
   `canonical_name` as `CONPORT_PROJECT_NAME`; do not retry `init` with
   another name yourself.
 
-**Errors:** `invalid_project_name` — the name is digits only, has more than
-one `/`, an empty part, a project part longer than 255 characters, or a prefix
+A string of digits addresses no project: it is answered `project_not_found`,
+exactly like a project that does not exist.
+
+**Errors:** `invalid_project_name` — the name has more than
+one `/`, an empty part, a project part made of digits only after a team prefix
+(`pers/11`), a project part longer than 255 characters, or a prefix
 that is neither `pers` nor a team id; `team_not_found` — the prefix names no
 team you are a member of; `team_context_conflict` — the connection's address
 pins one of your teams and the prefix names another.
@@ -126,8 +141,9 @@ mcp__conport__create_project({
 | name | string | yes | Project name: "<project>" for your Private Team, "<team id>/<project>" for a shared team. The project part is at most 255 characters. |
 | description | string | no | Project description |
 
-**Returns:** `project_id`, `name` (the short name), `canonical_name` and `team`
-(`handle`, `name`, `kind`). Call `init` with the same name afterwards.
+**Returns:** `handle` (the new project's handle), `name` (the short name),
+`canonical_name` and `team` (`handle`, `name`, `kind`). Call `init` with the
+same name or the handle afterwards.
 
 **Refusals** (a dict with `error`):
 
@@ -137,11 +153,12 @@ mcp__conport__create_project({
   allows no more projects.
 
 **Errors:** `invalid_project_name`, `team_not_found` and `team_context_conflict`,
-as for `init`.
+as for `init`; a name of digits only, or one shaped like a handle, is an
+`invalid_project_name` here.
 
 ### list_projects
 
-List the projects of your teams — use it to discover project IDs before
+List the projects of your teams — use it to discover project handles before
 calling project-scoped tools.
 
 ```
@@ -160,7 +177,7 @@ mcp__conport__list_projects({
 | offset | integer | no | Pagination offset (default: 0) |
 | team | string | no | Team to list — `"pers"` or a shared team's ID. Omitted: every active team you are a member of |
 
-**Returns:** `projects` (`id`, `name`, `canonical_name`, `team`,
+**Returns:** `projects` (`handle`, `name`, `canonical_name`, `team`,
 `description`, `created_at`, `updated_at`) and `total`. `canonical_name` is
 `<team>/<name>` and `team` is the project's team — `pers` for your Private
 Team, otherwise the shared team's ID.
@@ -184,7 +201,7 @@ Update a single product context field (vision, goals, architecture, etc.)
 
 ```
 mcp__conport__update_product_context({
-  project_id: <project_id>,
+  project: <project>,
   field: "vision",
   value: "AI-powered knowledge base"
 })
@@ -192,7 +209,7 @@ mcp__conport__update_product_context({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | field | string | yes | vision \| goals \| features \| architecture \| tech_stack \| constraints |
 | value | string/array | yes | New value |
 
@@ -207,7 +224,7 @@ that task leaves IN_PROGRESS (for REVIEW too), so manual writes are rarely neede
 
 ```
 mcp__conport__update_active_context({
-  project_id: <project_id>,
+  project: <project>,
   field: "open_questions",
   value: ["How should we handle rate limits?"]
 })
@@ -215,7 +232,7 @@ mcp__conport__update_active_context({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | field | string | yes | current_focus \| open_questions |
 | value | string/array | yes | New value |
 
@@ -227,7 +244,7 @@ Context version history
 
 ```
 mcp__conport__context_history({
-  project_id: <project_id>,
+  project: <project>,
   context_type: "product",
   limit: 10
 })
@@ -235,7 +252,7 @@ mcp__conport__context_history({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | context_type | string | yes | "product" or "active" |
 | limit | integer | no | Max versions (default: 10) |
 
@@ -253,7 +270,7 @@ background (cluster of similar decisions may auto-generate a pattern).
 
 ```
 mcp__conport__sync_decision({
-  project_id: <project_id>,
+  project: <project>,
   summary: "Use PostgreSQL",
   rationale: "ACID compliance",
   tags: ["database", "arch"]
@@ -262,7 +279,7 @@ mcp__conport__sync_decision({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | summary | string | yes | Short summary (max 200 chars) |
 | rationale | string/object | no | Rationale (max 2000 chars). JSON string or object. |
 | tags | array | no | Tags |
@@ -279,7 +296,7 @@ references in the updated text become graph edges. Read the current body with
 
 ```
 mcp__conport__update_decision({
-  project_id: <project_id>,
+  project: <project>,
   decision_id: 5,
   summary: "Use PostgreSQL with pgvector",
   tags: ["database", "arch", "search"]
@@ -288,7 +305,7 @@ mcp__conport__update_decision({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | decision_id | integer | yes | Per-project decision ID to update |
 | summary | string | no | New summary (max 200 chars) |
 | rationale | string/object | no | New rationale. JSON string or object. |
@@ -308,7 +325,7 @@ as `superseded` and keeps the trail readable.
 
 ```
 mcp__conport__deprecate_decision({
-  project_id: <project_id>,
+  project: <project>,
   decision_id: 5,
   reason: "The external tooling this assumed no longer exists"
 })
@@ -316,7 +333,7 @@ mcp__conport__deprecate_decision({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | decision_id | integer | yes | Per-project decision ID |
 | reason | string | yes | Why it is retired |
 
@@ -334,14 +351,14 @@ recomputed from scratch — the decision goes back to `current`, or to
 
 ```
 mcp__conport__reactivate_decision({
-  project_id: <project_id>,
+  project: <project>,
   decision_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | decision_id | integer | yes | Per-project decision ID |
 
 **Returns:** a slim echo — `id`, `tags`, `summary` — plus the recomputed
@@ -355,7 +372,7 @@ List architectural decisions
 
 ```
 mcp__conport__list_decisions({
-  project_id: <project_id>,
+  project: <project>,
   tags: ["database"],
   limit: 20,
   offset: 0
@@ -364,7 +381,7 @@ mcp__conport__list_decisions({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | limit | integer | no | Max results (default: 20) |
 | offset | integer | no | Pagination offset (default: 0) |
 | tags | array | no | Filter by tags |
@@ -387,14 +404,14 @@ current tags — `update_decision` replaces the tag list wholesale.
 
 ```
 mcp__conport__get_decision({
-  project_id: <project_id>,
+  project: <project>,
   decision_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | decision_id | integer | yes | Per-project decision ID |
 
 **Returns:** `summary`, `rationale`, `implementation_details`, `tags`,
@@ -408,14 +425,14 @@ Delete a decision by per-project ID
 
 ```
 mcp__conport__delete_decision({
-  project_id: <project_id>,
+  project: <project>,
   decision_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | decision_id | integer | yes | Per-project decision ID |
 
 **Returns:** `deleted: true` and the `decision_id`.
@@ -436,7 +453,7 @@ Create an activity log entry. Optionally links to one item of the project
 
 ```
 mcp__conport__log_progress({
-  project_id: <project_id>,
+  project: <project>,
   description: "Started work on auth module",
   title: "Auth update",
   linked_item_type: "task",
@@ -446,7 +463,7 @@ mcp__conport__log_progress({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | description | string | yes | Description (max 2000 chars) |
 | title | string | no | Title (max 200 chars) |
 | parent_id | integer | no | Per-project ID of parent progress entry (threading) |
@@ -465,7 +482,7 @@ Update an activity entry
 
 ```
 mcp__conport__update_progress({
-  project_id: <project_id>,
+  project: <project>,
   progress_id: 45,
   description: "Updated implementation notes"
 })
@@ -473,7 +490,7 @@ mcp__conport__update_progress({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | progress_id | integer | yes | Per-project progress entry ID |
 | title | string | no | New title |
 | description | string | no | New description |
@@ -487,7 +504,7 @@ List progress entries
 
 ```
 mcp__conport__list_progress({
-  project_id: <project_id>,
+  project: <project>,
   limit: 20,
   offset: 0
 })
@@ -495,7 +512,7 @@ mcp__conport__list_progress({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | limit | integer | no | Max results (default: 50) |
 | offset | integer | no | Pagination offset (default: 0) |
 
@@ -508,14 +525,14 @@ Delete a progress entry
 
 ```
 mcp__conport__delete_progress({
-  project_id: <project_id>,
+  project: <project>,
   progress_id: 8
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | progress_id | integer | yes | Per-project progress entry ID |
 
 **Returns:** `deleted: true` and the `progress_id`.
@@ -532,7 +549,7 @@ Create a task or an epic, with optional hierarchy and priority
 
 ```
 mcp__conport__add_task({
-  project_id: <project_id>,
+  project: <project>,
   title: "Implement auth",
   status: "TODO",
   priority: 2,
@@ -542,7 +559,7 @@ mcp__conport__add_task({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | title | string | yes | Title (max 200 chars) |
 | description | string | no | Description (max 2000 chars) |
 | status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED (default: TODO). A new task is never created in REVIEW (`review_from_in_progress_only`): a task enters REVIEW from IN_PROGRESS |
@@ -575,7 +592,7 @@ Update a task. Closing it (`status: "DONE"` / `"CANCELLED"`) always carries a
 
 ```
 mcp__conport__update_task({
-  project_id: <project_id>,
+  project: <project>,
   task_id: 5,
   status: "DONE",
   resolution: "Auth shipped behind a feature flag"
@@ -584,7 +601,7 @@ mcp__conport__update_task({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project task ID |
 | title | string | no | New title |
 | description | string | no | New description |
@@ -636,7 +653,7 @@ task already has is not a transition and is never refused. The refusals carry
 
 | Refusal | Raised when | Next call |
 |---|---|---|
-| `review_from_in_progress_only` | REVIEW from any status but IN_PROGRESS | `update_task` → IN_PROGRESS, then the `report` |
+| `review_from_in_progress_only` | REVIEW from any status but IN_PROGRESS | From TODO or BLOCKED: the `report` entry, which starts the task and moves it to REVIEW; otherwise `update_task` → IN_PROGRESS first |
 | `review_on_epic` | REVIEW on an epic, or `kind: "epic"` on a task in REVIEW | Review the children instead |
 | `review_needs_report` | IN_PROGRESS → REVIEW with no `report` or `fix` in the current round | `add_task_journal_entry` with `kind: "report"` or `"fix"` |
 | `done_needs_review` | DONE from a status other than REVIEW on a task with a `report`, `fix` or `review` entry, a closed epic with one demoted to a task, or a childless epic with one closed | The action in `message`: IN_PROGRESS → REVIEW; from TODO, BLOCKED or CANCELLED → IN_PROGRESS, then REVIEW; demote an epic together with `status: "IN_PROGRESS"`, or give a childless epic child tasks |
@@ -657,14 +674,14 @@ Pass `status: "ALL"` for all statuses, or a comma-separated list.
 
 ```
 mcp__conport__list_tasks({
-  project_id: <project_id>,
+  project: <project>,
   status: "IN_PROGRESS"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | status | string | no | Filter by status. Comma-separated or "ALL" (default: "TODO,IN_PROGRESS,REVIEW") |
 | priority | integer | no | Filter by priority 1-5 (1=critical, 5=idle) |
 | parent_task_id | integer | no | Filter by parent per-project ID (0 = root tasks only) |
@@ -689,14 +706,14 @@ Task details with dependencies and subtasks
 
 ```
 mcp__conport__get_task({
-  project_id: <project_id>,
+  project: <project>,
   task_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project task ID |
 
 **Returns:** the full task row (description always included, with
@@ -714,7 +731,7 @@ Add a dependency between two tasks
 
 ```
 mcp__conport__add_task_dep({
-  project_id: <project_id>,
+  project: <project>,
   task_id: 5,
   depends_on_task_id: 3,
   dependency_type: "blocks"
@@ -723,7 +740,7 @@ mcp__conport__add_task_dep({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project ID of the dependent task |
 | depends_on_task_id | integer | yes | Per-project ID of the task it depends on |
 | dependency_type | string | no | blocks \| requires \| suggests (default: blocks) |
@@ -738,14 +755,14 @@ Delete a task (also removes its dependencies)
 
 ```
 mcp__conport__delete_task({
-  project_id: <project_id>,
+  project: <project>,
   task_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project task ID |
 
 **Returns:** a `message` confirming the deletion plus `deleted: true` and the
@@ -758,14 +775,13 @@ task is an error.
 ### add_linked_task
 
 Create a task in **another** project of the same team without switching
-context, and record the backref in the current project. Note the parameter
-names here differ from the rest of the Tasks section: the current project is
-`source_project_id` and the target is addressed by **name**. The team is the
-one of the source project: a linked task never crosses a team boundary.
+context, and record the backref in the current project. The current project
+is `project`, as everywhere, and the target is `target_project`. The team is
+the one of the source project: a linked task never crosses a team boundary.
 
 ```
 mcp__conport__add_linked_task({
-  source_project_id: <project_id>,
+  project: <project>,
   target_project: "other-project",
   title: "Expose the new endpoint in the SDK",
   priority: 2
@@ -774,8 +790,8 @@ mcp__conport__add_linked_task({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| source_project_id | integer | yes | ID of the project you are working in — the "from" side of the link |
-| target_project | string | yes | **Name** of the project the task is created in: the short name, or `team/project` (`k7m2qx9d/other-project`) naming the team of the source project. Anything outside that team is not found |
+| project | string | yes | Handle or name of the project you are working in — the "from" side of the link |
+| target_project | string | yes | The project the task is created in: its handle, its short name, or `team/project` (`k7m2qx9d/other-project`) naming the team of the source project. Anything outside that team is not found |
 | title | string | yes | Task title (max 200 chars) |
 | description | string | no | Task description (max 2000 chars) |
 | priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
@@ -797,48 +813,55 @@ team exists or not; a prefix of another team of yours fails with
 
 Add an entry to a task's journal — the history of its review cycle: the
 assignments, the reports, the verdicts and the reports on fixes, by round. The
-journal only grows: an entry is never edited or deleted.
+journal only grows: an entry is never edited or deleted. The entry also moves
+the task's status the way the review cycle needs, so no `update_task` call
+goes before or after it (table below).
 
 ```
 mcp__conport__add_task_journal_entry({
-  project_id: <project_id>,
+  project: <project>,
   task_id: <task_id>,
   kind: "report",
-  author: "implementer",
   body: "Implemented the endpoint; tests: 12 passed."
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project task ID (a task, never an epic) |
 | kind | string | yes | `brief` \| `report` \| `review` \| `fix` — which one fits depends on the task's status (table below) |
-| author | string | yes | Who writes the entry: a role or an agent name, 1-100 chars |
 | body | string | yes | The text, Markdown, up to 200000 chars |
+| author | string | no | Who writes the entry: a role or an agent name, 1-100 chars. Default: the role of the kind — `orchestrator` for a brief, `implementer` for a report or a fix, `reviewer` for a review |
 | verdict | string | no | `approve` \| `changes_requested` — required on `review`, refused on every other kind |
 
-| `kind` | Task status | What it is |
-|---|---|---|
-| `brief` | TODO, IN_PROGRESS, BLOCKED, REVIEW | The assignment: for the executor, or in REVIEW for the reviewer |
-| `report` | IN_PROGRESS | The executor's report — the first round by convention |
-| `fix` | IN_PROGRESS | The report on the fixes — the second round and later by convention |
-| `review` | REVIEW | The reviewer's verdict |
+| `kind` | Task status | What it is | How it moves the task |
+|---|---|---|---|
+| `brief` | TODO, IN_PROGRESS, BLOCKED, REVIEW | The assignment: for the executor, or in REVIEW for the reviewer | No move |
+| `report` | IN_PROGRESS (TODO and BLOCKED are started first) | The executor's report — the first round by convention | A TODO or BLOCKED task is moved to IN_PROGRESS before the entry; after it the task goes to REVIEW |
+| `fix` | IN_PROGRESS | The report on the fixes — the second round and later by convention | To REVIEW |
+| `review` | REVIEW | The reviewer's verdict | `changes_requested`: back to IN_PROGRESS, the next round; `approve`: no move — close the task with `update_task` (DONE with a `resolution`) |
 
 The server stamps the entry with the task's current `review_round`, its own
-`id` and `created_at`; a round is never passed.
+`id` and `created_at`; a round is never passed. The implementer and the
+reviewer sign with different names: a `review` signed like a `report` or `fix`
+of the same round is refused (`reviewer_is_author`) — the default authors never
+are.
 
 **Returns:** a slim echo — `id`, `task_id`, `kind`, `round`, `verdict` and
-`summary`.
+`summary`, plus `status` (the status the task is in now) when the entry moved
+it. When the entry is written but the move after it is refused, the answer
+carries the refusal under `move_refused`, and the task keeps its status.
 
-**Refusals** (a dict with `error`, `message`, `context`):
+**Refusals** (a dict with `error`, `message`, `context`; nothing is written):
 `journal_on_epic` (write on the child task instead), `journal_task_closed`
-(the task is DONE or CANCELLED — reopen it only for new work),
+(the task is DONE or CANCELLED — reopen the task, then write the entry),
 `journal_kind_not_allowed` (`context` carries `kind`, `status` and the kinds
 that fit), `invalid_verdict` (`verdict` missing on `review` or present on
-another kind; 422 over REST) and `not_found` (`context.task_id` — the task is
-not in the project, a task of another team included; check the id with
-`list_tasks`).
+another kind; 422 over REST), `reviewer_is_author`, a refusal of the move
+before a report (the transition's own code) and `not_found`
+(`context.task_id` — the task is not in the project, a task of another team
+included; check the id with `list_tasks`).
 
 ### list_task_journal
 
@@ -847,7 +870,7 @@ for, so a long history stays cheap to scan.
 
 ```
 mcp__conport__list_task_journal({
-  project_id: <project_id>,
+  project: <project>,
   task_id: <task_id>,
   round: 2,
   include_body: true
@@ -856,44 +879,50 @@ mcp__conport__list_task_journal({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project task ID |
 | round | integer | no | Only the entries of this review round |
-| include_body | boolean | no | Include each entry's text (default: false) |
+| include_body | boolean | no | Include each entry's text (default: false). One answer holds at most 200000 characters of text: the page stops before the entry that would pass it |
 | limit | integer | no | Max entries (default: 50, at most 200) |
 | offset | integer | no | Pagination offset (default: 0) |
 
 **Returns:** `entries` — `id`, `task_id`, `kind`, `round`, `verdict`,
 `author`, `created_at` and `body_length`, plus `body` with
-`include_body: true` — and `total`.
+`include_body: true` — and `total`, plus `next_offset` whenever entries remain
+after the page: call again with `offset: next_offset` to read the journal in
+full.
 
 **Refusals:** `not_found` (`context.task_id`) when the task is not in the
 project.
 
 ### get_task_journal_entry
 
-One journal entry with its text.
+One journal entry with its text: the entry `entry_id`, or the latest entry of
+a `kind` — the brief an agent is handed, the report or the review to answer.
 
 ```
 mcp__conport__get_task_journal_entry({
-  project_id: <project_id>,
+  project: <project>,
   task_id: <task_id>,
-  entry_id: <entry_id>
+  kind: "brief"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | task_id | integer | yes | Per-project task ID |
-| entry_id | integer | yes | Per-project ID of the journal entry |
+| entry_id | integer | one of the two | Per-project ID of the journal entry |
+| kind | string | one of the two | `brief` \| `report` \| `review` \| `fix` — the latest entry of this kind |
 
 **Returns:** the entry — `id`, `task_id`, `kind`, `round`, `verdict`,
 `author`, `body`, `created_at`.
 
-**Refusals:** `not_found` — for a task not in the project (`context.task_id`)
-and for an entry that is not in this task's journal (`context.task_id`,
-`context.entry_id`; `list_task_journal` shows the entries).
+**Refusals:** `validation_error` when neither or both of `entry_id` and `kind`
+are passed; `not_found` — for a task not in the project (`context.task_id`),
+for an entry that is not in this task's journal (`context.task_id`,
+`context.entry_id`) and for a task with no entry of that kind yet
+(`context.task_id`, `context.kind`); `list_task_journal` shows the entries.
 
 ---
 
@@ -909,7 +938,7 @@ Create a milestone. Omit `sequence` to append after the last one.
 
 ```
 mcp__conport__add_milestone({
-  project_id: <project_id>,
+  project: <project>,
   title: "MVP stabilisation",
   is_release: true
 })
@@ -917,7 +946,7 @@ mcp__conport__add_milestone({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | title | string | yes | Milestone title |
 | description | string | no | What this milestone delivers |
 | sequence | integer | no | Position on the roadmap. Omitted = append after the last milestone; an explicit value inserts at that position and shifts the milestones at or after it one down. Clamped to the existing range (1 … last+1) |
@@ -933,7 +962,7 @@ Edit fields, move the milestone (`sequence`) or close it (`status` + `resolution
 
 ```
 mcp__conport__update_milestone({
-  project_id: <project_id>,
+  project: <project>,
   milestone_id: 2,
   status: "DONE",
   resolution: "v1.3 released"
@@ -942,7 +971,7 @@ mcp__conport__update_milestone({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | milestone_id | integer | yes | Per-project milestone ID |
 | title | string | no | New title |
 | description | string | no | New description |
@@ -969,13 +998,13 @@ Roadmap view: milestones by `sequence`, each with its epics.
 
 ```
 mcp__conport__list_milestones({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | include_closed | boolean | no | Include DONE/CANCELLED milestones (default: false — the roadmap shows what is still ahead) |
 
 **Returns:** `milestones` (each with `id`, `title`, `description`, `sequence`,
@@ -995,7 +1024,7 @@ Create a document
 
 ```
 mcp__conport__add_document({
-  project_id: <project_id>,
+  project: <project>,
   title: "API Spec",
   content: "# API\n...",
   doc_type: "api_docs"
@@ -1004,7 +1033,7 @@ mcp__conport__add_document({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | title | string | yes | Title (max 200 chars) |
 | content | string | yes | Content (max 50000 chars) |
 | doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| plan \| other. For `diagram`, `content` is the JSON spec |
@@ -1022,7 +1051,7 @@ Replace the document body and/or update metadata. Body changes go through the bl
 
 ```
 mcp__conport__update_document({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5,
   content: "# Auth Design\n\nFull markdown body — replaces the document content.\n\n## API\n..."
 })
@@ -1039,7 +1068,7 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 | content | string | no | Full markdown body. Omit for metadata-only update. |
 | title | string | no | New title |
@@ -1067,14 +1096,14 @@ List a document's blocks in order with their ULIDs — the discovery step before
 
 ```
 mcp__conport__list_blocks({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 
 **Returns:** `blocks` (`ulid`, `type`, `ord`, `text_preview` — truncated at 200
@@ -1086,7 +1115,7 @@ Read one block by ULID.
 
 ```
 mcp__conport__get_block({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5,
   block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
 })
@@ -1094,7 +1123,7 @@ mcp__conport__get_block({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 | block_ulid | string | yes | ULID of the block to read |
 
@@ -1107,7 +1136,7 @@ Replace one block's markdown without touching the rest of the document. Surgical
 
 ```
 mcp__conport__update_block({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5,
   block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF",
   markdown: "## API Endpoints\n\nNew content for just this heading-block."
@@ -1116,7 +1145,7 @@ mcp__conport__update_block({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 | block_ulid | string | yes | ULID of the block to update |
 | markdown | string | yes | New markdown for this block. Must parse to **exactly one** block — a multi-block payload is rejected |
@@ -1139,7 +1168,7 @@ both to append at the end. `after` wins when both are given.
 
 ```
 mcp__conport__insert_block({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5,
   markdown: "## New Section\n\nFresh paragraph.",
   after: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
@@ -1148,7 +1177,7 @@ mcp__conport__insert_block({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 | markdown | string | yes | Markdown for the new block. Must parse to **exactly one** block |
 | after | string | no | ULID to insert after (takes precedence over `before`) |
@@ -1171,7 +1200,7 @@ re-serializes; an unknown ULID is an error.
 
 ```
 mcp__conport__delete_block({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5,
   block_ulid: "01HZ8XR3VKQM6T7B9YJK5R2WPF"
 })
@@ -1179,7 +1208,7 @@ mcp__conport__delete_block({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 | block_ulid | string | yes | ULID of the block to delete |
 
@@ -1199,14 +1228,14 @@ List documents
 
 ```
 mcp__conport__list_documents({
-  project_id: <project_id>,
+  project: <project>,
   doc_type: "spec"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | doc_type | string | no | Filter by type |
 | limit | integer | no | Max results (default: 50) |
 
@@ -1225,7 +1254,7 @@ exports, and version history reads.
 
 ```
 mcp__conport__get_document({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5,
   raw: false
 })
@@ -1233,7 +1262,7 @@ mcp__conport__get_document({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 | raw | boolean | no | If true, bypass stub injection. Default false. |
 
@@ -1250,7 +1279,7 @@ that produced each edge sits in `source_text`.
 
 ```
 mcp__conport__get_block_backlinks({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 12,
   block_ulid: "01HZ...",   // omit for whole-doc + all blocks
   edge_types: ["supersedes", "resolves"]
@@ -1259,7 +1288,7 @@ mcp__conport__get_block_backlinks({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Document targeted by incoming edges |
 | block_ulid | string | no | Restrict to one block's incoming edges |
 | edge_types | string[] | no | Filter: `supersedes`, `resolves`, `relates_to`, `extends`, `wikilink`. Unknown values raise 400. |
@@ -1279,7 +1308,7 @@ already-authored ones. Companion to `get_block_backlinks`.
 
 ```
 mcp__conport__get_semantically_related_blocks({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 12,
   block_ulid: "01HZ...",
   limit: 5,
@@ -1289,7 +1318,7 @@ mcp__conport__get_semantically_related_blocks({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Source document |
 | block_ulid | string | yes | Source block ULID (must exist and have an embedding) |
 | limit | integer | no | 1..50 (default 10) |
@@ -1305,14 +1334,14 @@ Document version history
 
 ```
 mcp__conport__document_versions({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 
 **Returns:** `document_id`, `title`, `versions` (every version of that title —
@@ -1324,14 +1353,14 @@ Delete a document
 
 ```
 mcp__conport__delete_document({
-  project_id: <project_id>,
+  project: <project>,
   document_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | document_id | integer | yes | Per-project document ID |
 
 **Returns:** a confirmation `message`. An unknown document is an error.
@@ -1356,13 +1385,13 @@ List a project's diagrams with the scope each was drawn for.
 
 ```
 mcp__conport__list_diagrams({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 
 **Returns:** `diagrams` (`id`, `title`, `scope` from the stored spec,
 `version`, `updated_at`) and `total`.
@@ -1377,7 +1406,7 @@ Create a system pattern
 
 ```
 mcp__conport__log_pattern({
-  project_id: <project_id>,
+  project: <project>,
   name: "Repository Pattern",
   description: "Data access abstraction",
   tags: ["architecture", "data"]
@@ -1386,7 +1415,7 @@ mcp__conport__log_pattern({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | name | string | yes | Name (max 200 chars) |
 | description | string | yes | Description (max 2000 chars) |
 | tags | array | no | Tags |
@@ -1402,7 +1431,7 @@ wholesale, not merged.
 
 ```
 mcp__conport__update_pattern({
-  project_id: <project_id>,
+  project: <project>,
   pattern_id: 3,
   description: "Data access abstraction, one repository per aggregate",
   tags: ["architecture", "data"]
@@ -1411,7 +1440,7 @@ mcp__conport__update_pattern({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | pattern_id | integer | yes | Per-project pattern ID to update |
 | name | string | no | New name (max 200 chars) |
 | description | string | no | New description |
@@ -1425,14 +1454,14 @@ List architectural patterns
 
 ```
 mcp__conport__list_patterns({
-  project_id: <project_id>,
+  project: <project>,
   limit: 20
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | limit | integer | no | Max results (default: 20) |
 | offset | integer | no | Pagination offset (default: 0) |
 | tags | array | no | Filter by tags — a pattern matches when it carries any of them |
@@ -1451,7 +1480,7 @@ their **per-project IDs** (sequential within the project).
 
 ```
 mcp__conport__link_items({
-  project_id: <project_id>,
+  project: <project>,
   source_type: "decision",
   source_id: 7,
   target_type: "pattern",
@@ -1463,7 +1492,7 @@ mcp__conport__link_items({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | source_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) |
 | source_id | integer | yes | Per-project ID of source item |
 | target_type | string | yes | decision \| progress \| pattern \| task \| doc |
@@ -1493,14 +1522,14 @@ this document is either source or target. Default is `false`.
 
 ```
 mcp__conport__get_linked({
-  project_id: <project_id>,
+  project: <project>,
   item_type: "doc",
   item_id: 12,
   include_section_links: true
 })
 
 mcp__conport__get_linked({
-  project_id: <project_id>,
+  project: <project>,
   item_type: "task",
   item_id: 5,
   direction: "incoming",
@@ -1510,7 +1539,7 @@ mcp__conport__get_linked({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | item_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) |
 | item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Keep the edges of one link type: mentions \| implements \| derived_from \| references \| clarifies \| relates_to \| supersedes \| blocks \| depends_on. Left out, every link type comes back |
@@ -1535,12 +1564,12 @@ the message names the values to pass.
 ### link_project
 
 Create a cross-project link between two projects of one team. The team is the
-one of the source project (`project_id`); links never cross a team boundary.
+one of the source project (`project`); links never cross a team boundary.
 
 ```
 mcp__conport__link_project({
-  project_id: <project_id>,
-  target_project: 15,
+  project: <project>,
+  target_project: "billing",
   link_type: "depends_on",
   description: "Uses for authentication"
 })
@@ -1548,19 +1577,20 @@ mcp__conport__link_project({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Source project ID |
-| target_project | integer \| string | yes | Target project: its ID, its short name, or `team/project` (`k7m2qx9d/billing`) naming the team of the source project |
+| project | string | yes | Source project: its handle or name |
+| target_project | string | yes | Target project: its handle, its short name, or `team/project` (`k7m2qx9d/billing`) naming the team of the source project |
 | link_type | string | yes | Link type |
 | description | string | no | Link description |
 
 **Link types:** depends_on, part_of, calls, shares_data, extends, deployed_with, shares_database, related_to
 
-**Returns:** the created link — `id`, both project IDs **and names**,
-`link_type`, `description`, `metadata`, `created_by`, `created_at`. Both
-projects must be in the team of the source project, and they must differ.
+**Returns:** the created link — `id`, `source_project` and `target_project`
+(handles) with the `canonical_name` of both, `link_type`, `description`,
+`metadata`, `created_by`, `created_at`. Both projects must be in the team of
+the source project, and they must differ.
 
-**Errors:** a target outside that team is not found (404), by ID and by name
-alike. A `team/` prefix of a team you are not a member of fails with
+**Errors:** a target outside that team is not found (404), by handle and by
+name alike. A `team/` prefix of a team you are not a member of fails with
 `team_not_found` (404), whether that team exists or not; a prefix of another
 team of yours fails with `cross_team_link_not_supported` (422). A malformed
 target fails with `invalid_project_name` (422): rewrite it as
@@ -1572,19 +1602,20 @@ Get cross-project links
 
 ```
 mcp__conport__get_project_links({
-  project_id: <project_id>,
+  project: <project>,
   direction: "both"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | direction | string | no | outgoing \| incoming \| both (default: both) |
 
-**Returns:** `outgoing` and `incoming` (each link with `id`, both project IDs
-and names, `link_type`, `description`, `metadata`, `created_by`, `created_at`)
-plus `total` across both lists.
+**Returns:** `outgoing` and `incoming` (each link with `id`, `source_project`
+and `target_project` (handles) with the `canonical_name` of both, `link_type`,
+`description`, `metadata`, `created_by`, `created_at`) plus `total` across both
+lists.
 
 ### unlink_project
 
@@ -1592,14 +1623,14 @@ Delete a cross-project link
 
 ```
 mcp__conport__unlink_project({
-  project_id: <project_id>,
+  project: <project>,
   link_id: 5
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | link_id | integer | yes | ID of the project-link row |
 
 **Returns:** `success: true` and the `link_id`. A link that does not touch this
@@ -1622,7 +1653,7 @@ Results are merged via **Reciprocal Rank Fusion (RRF)**.
 
 ```
 mcp__conport__search({
-  project_id: <project_id>,
+  project: <project>,
   query: "caching performance",
   types: ["decision", "task"],
   limit: 10
@@ -1632,7 +1663,7 @@ mcp__conport__search({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | query | string | yes | Search query |
-| project_id | integer | no | Scope to one project; the search runs in that project's team. Omit to search every project of one team (`team`, or your Private Team) — handy when you don't know where a fact lives |
+| project | string | no | Scope to one project, by handle or name; the search runs in that project's team. Omit to search every project of one team (`team`, or your Private Team) — handy when you don't know where a fact lives |
 | types | array | no | Filter by item type. **Singular vocabulary**: `decision`, `task`, `pattern`, `document`, `progress_entry`, `context`, `custom_data`; the cross-reference short forms `progress` and `doc` are accepted as aliases. Values outside it are dropped, so a typo (`tasks`, `docs`) silently narrows the search to nothing |
 | limit | integer | no | Max results, capped at 100 (default: 20) |
 | team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
@@ -1641,12 +1672,13 @@ mcp__conport__search({
 `team` — the team the search ran in (`pers` for your Private Team, otherwise
 the shared team's ID). A search never crosses teams: an empty result is about
 that team only, so before concluding the knowledge is missing, repeat the
-search with the `team` of the project you work in. A `project_id` that is not
-a project of the team the call names is an error (`Project '<id>' not found`),
-the same for a project of another team and for one that does not exist.
+search with the `team` of the project you work in. A `project` that is not a
+project of the team the call names is an error (`Project '<project>' not
+found`), the same for a project of another team and for one that does not
+exist.
 Each hit carries:
-- `item_type`, `item_id` — the per-project ID, so pair it with `project_id`
-- `project_id` / `project_name` — which project the hit came from
+- `item_type`, `item_id` — the per-project ID, so pair it with `project`
+- `project` (the handle) / `project_name` — which project the hit came from
 - `content` — the item blob. GraphRAG hits carry `via_entity` /
   `via_community` inside it; decision hits are annotated with `currency`
   (current \| superseded \| deprecated), `superseded_by` and `age_days`
@@ -1657,7 +1689,7 @@ Each hit carries:
 
 An empty result set adds `_hint: "knowledge_gap_detected"` with a
 `_hint_message` that names the team searched and gives one next step. When
-nothing named the team — no `project_id`, no `team`, and a connection that is
+nothing named the team — no `project`, no `team`, and a connection that is
 not a team's own address — the search ran in your Private Team by default:
 repeat it with the `team` of the project you work in if that project belongs
 to another team. Otherwise — save the answer once you have it. Only when the
@@ -1681,7 +1713,7 @@ failed to return.
 
 ## GraphRAG & Entities
 
-> GraphRAG tools work **without `project_id`**: each reads the graph of one
+> GraphRAG tools work **without `project`**: each reads the graph of one
 > team — `team`, or your Private Team when it is omitted — and names that team
 > in the reply's `team` (`pers` or the shared team's ID). The graph of a
 > project in a shared team is reached only with that team's `team`.
@@ -1724,7 +1756,7 @@ mcp__conport__entity({
 | team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 
 **Returns:** `id`, `canonical_name`, `entity_type`, `description`,
-`mention_count`, `project_count`, `projects` (`project_id`, `project_name`,
+`mention_count`, `project_count`, `projects` (`project` — the handle, `project_name`,
 `decision_count`), `related_entities` (`entity_id`, `canonical_name`,
 `entity_type`, `relation_type`, `direction`) and `team`. An entity unknown in
 that team is an error.
@@ -1822,7 +1854,7 @@ Recent activity in the project
 
 ```
 mcp__conport__recent_activity({
-  project_id: <project_id>,
+  project: <project>,
   hours: 24,
   limit: 20
 })
@@ -1830,7 +1862,7 @@ mcp__conport__recent_activity({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | hours | integer | no | Over the last N hours (default: 24) |
 | limit | integer | no | Max rows **per entity type** (default: 10) — the merged list can be longer |
 
@@ -1844,7 +1876,7 @@ Version history of a specific item (by per-project ID)
 
 ```
 mcp__conport__item_history({
-  project_id: <project_id>,
+  project: <project>,
   item_type: "decision",
   item_id: 5
 })
@@ -1852,7 +1884,7 @@ mcp__conport__item_history({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | item_type | string | yes | decision \| progress \| pattern \| custom_data \| context |
 | item_id | integer | yes | Per-project item ID (for `custom_data`/`context` the raw ID is used) |
 
@@ -1874,7 +1906,7 @@ Run a registered recipe from a start node.
 
 ```
 mcp__conport__assemble_context({
-  project_id: <project_id>,
+  project: <project>,
   recipe: "task_briefing",
   start_id: "task-<id>"
 })
@@ -1882,7 +1914,7 @@ mcp__conport__assemble_context({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | recipe | string | yes | Registered recipe name — `task_briefing` (starts from a task) or `spec_implementation_status` (starts from a document). `list_context_recipes` is the live list |
 | start_id | integer/string | yes | Start node. Prefer the prefix form `"<type>-<id>"` (`"task-<id>"`, `"doc-<id>"`); the wikilink form `"[[task-<id>]]"` works too. A bare integer is the legacy fallback and is resolved as the recipe's own type. Prefixes: `task`, `doc`, `decision`, `pattern`, `progress` |
 | format | string | no | `markdown` (default) or `json` |
@@ -1919,14 +1951,14 @@ start-node-based, which is why it is not an `assemble_context` recipe.
 
 ```
 mcp__conport__render_current_architecture({
-  project_id: <project_id>,
+  project: <project>,
   scope: ["embedding", "graph"]
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | scope | array | yes | Non-empty list of subsystem tags. Order matters — the first tag is the primary bucket for items matching several |
 | format | string | no | `markdown` (default) or `json` |
 
@@ -1941,7 +1973,7 @@ promote.
 
 ```
 mcp__conport__audit_doc_l1_coverage({
-  project_id: <project_id>,
+  project: <project>,
   doc_id: 7,
   threshold: 0.7
 })
@@ -1949,7 +1981,7 @@ mcp__conport__audit_doc_l1_coverage({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | doc_id | integer | yes | Per-project document ID to audit |
 | threshold | number | no | Cosine-similarity cutoff for "covered", in [0, 1] (default: 0.7) |
 | top_k | integer | no | Matches surfaced per block (default: 3, max 20) |
@@ -1971,14 +2003,14 @@ List gaps. Defaults to the active ones (detected + acknowledged).
 
 ```
 mcp__conport__gap_list({
-  project_id: <project_id>,
+  project: <project>,
   category: "coverage"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | category | string | no | structural \| temporal \| coverage \| dependency \| doc_drift \| routine |
 | state | string | no | detected \| acknowledged \| dismissed \| resolved. Comma-separated for several (default: `detected,acknowledged`) |
 | limit | integer | no | Max results (default: 50) |
@@ -1995,14 +2027,14 @@ comes back acknowledged rather than fresh.
 
 ```
 mcp__conport__gap_ack({
-  project_id: <project_id>,
+  project: <project>,
   gap_hash: "a1b2c3d4"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | gap_hash | string | yes | Gap hash from `gap_list` |
 
 **Returns:** a one-line `summary` of the transition.
@@ -2016,7 +2048,7 @@ kept for audit; dismissal outranks acknowledgement.
 
 ```
 mcp__conport__gap_dismiss({
-  project_id: <project_id>,
+  project: <project>,
   gap_hash: "a1b2c3d4",
   reason: "Both documents are canonical on their own layer"
 })
@@ -2024,7 +2056,7 @@ mcp__conport__gap_dismiss({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | gap_hash | string | yes | Gap hash from `gap_list` |
 | reason | string | yes | Why this is not a gap |
 
@@ -2040,7 +2072,7 @@ required — a filterless call would wipe the backlog.
 
 ```
 mcp__conport__gap_dismiss_bulk({
-  project_id: <project_id>,
+  project: <project>,
   category: "doc_drift",
   reason: "Layered docs, drift is expected between them"
 })
@@ -2048,7 +2080,7 @@ mcp__conport__gap_dismiss_bulk({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | reason | string | yes | Shared dismiss reason, applied to every affected gap |
 | category | string | no | Filter by category |
 | gap_type | string | no | Filter by gap type, e.g. `unmarked_supersession`, `dangling_wikilink` |
@@ -2065,14 +2097,14 @@ Re-open a dismissed gap (`dismissed` → `detected`).
 
 ```
 mcp__conport__gap_undismiss({
-  project_id: <project_id>,
+  project: <project>,
   gap_hash: "a1b2c3d4"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | gap_hash | string | yes | Gap hash from `gap_list` |
 
 **Returns:** a one-line `summary`. The dismiss reason is cleared with the
@@ -2086,13 +2118,13 @@ Aggregated counts by state × category plus what was resolved recently.
 
 ```
 mcp__conport__gap_stats({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 
 **Returns:** `breakdown` (state → category → count), `resolved_last_30d`,
 `summary`.
@@ -2112,14 +2144,14 @@ Returns immediately and runs in the background.
 
 ```
 mcp__conport__semantic_cleanup({
-  project_id: <project_id>,
+  project: <project>,
   dry_run: false
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | confidence_threshold | number | no | Auto-approve mutations above this confidence (default: 0.85) |
 | dry_run | boolean | no | Preview only — **default true**. Pass `false` explicitly to actually apply |
 
@@ -2141,14 +2173,14 @@ Run the pass manually and inspect proposals before anything is stored.
 
 ```
 mcp__conport__semantic_pass_run({
-  project_id: <project_id>,
+  project: <project>,
   dry_run: true
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | scope | string | no | `full` (default, all communities) or `communities` |
 | community_ids | string | no | Comma-separated community IDs, used with `scope: "communities"` |
 | dry_run | boolean | no | Return proposals without saving them (default: false). Previews are not rate-limited |
@@ -2165,14 +2197,14 @@ Review queue. Defaults to what is waiting for you.
 
 ```
 mcp__conport__semantic_proposals_list({
-  project_id: <project_id>,
+  project: <project>,
   status: "pending_review"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | status | string | no | Filter by status, comma-separated for several (default: `pending_review`) |
 | proposal_type | string | no | Filter by proposal type |
 | pass_run_id | integer | no | Only proposals from one pass run |
@@ -2190,14 +2222,14 @@ Approve a proposal for later execution by `semantic_proposals_apply`.
 
 ```
 mcp__conport__semantic_proposal_approve({
-  project_id: <project_id>,
+  project: <project>,
   proposal_id: 42
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | proposal_id | integer | yes | Proposal ID |
 | reviewer_note | string | no | Note kept with the review |
 
@@ -2212,7 +2244,7 @@ Reject a proposal. The reason is mandatory — it trains later passes.
 
 ```
 mcp__conport__semantic_proposal_reject({
-  project_id: <project_id>,
+  project: <project>,
   proposal_id: 42,
   reason: "The two entities are genuinely different services"
 })
@@ -2220,7 +2252,7 @@ mcp__conport__semantic_proposal_reject({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | proposal_id | integer | yes | Proposal ID |
 | reason | string | yes | Why it is rejected |
 
@@ -2234,14 +2266,14 @@ Park a proposal for a later review round.
 
 ```
 mcp__conport__semantic_proposal_defer({
-  project_id: <project_id>,
+  project: <project>,
   proposal_id: 42
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | proposal_id | integer | yes | Proposal ID |
 | note | string | no | Note kept with the review |
 
@@ -2256,13 +2288,13 @@ Execute the approved proposals. Informational types are just marked applied.
 
 ```
 mcp__conport__semantic_proposals_apply({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | proposal_ids | string | no | Comma-separated proposal IDs. Omit to apply every approved proposal |
 
 **Returns:** `applied`, `errors`, `errors_detail`, `summary`.
@@ -2274,13 +2306,13 @@ to poll a background `semantic_cleanup`.
 
 ```
 mcp__conport__semantic_pass_stats({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 
 **Returns:** `status_counts`, `type_counts`, `total_proposals`,
 `approval_rate`, `recent_runs` (`id`, `started_at`, `completed_at`, `stats` —
@@ -2300,14 +2332,14 @@ housekeeping, what changed. Pure read. Empty sections are omitted entirely.
 
 ```
 mcp__conport__get_agenda({
-  project_id: <project_id>,
+  project: <project>,
   ready_limit: 10
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | ready_limit | integer | no | Max tasks in `ready_top` (default: 10) |
 | delta_hours | integer | no | Window for `activity_delta`, in hours (default: 24) |
 
@@ -2324,13 +2356,13 @@ Read the project's routine policy.
 
 ```
 mcp__conport__get_routine_config({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 
 **Returns:** the stored policy, or the defaults with `is_default: true` when the
 project has none yet (`enabled` true, `cadence` daily, `max_tasks_per_run` 2,
@@ -2343,7 +2375,7 @@ call they take the defaults).
 
 ```
 mcp__conport__set_routine_config({
-  project_id: <project_id>,
+  project: <project>,
   cadence: "weekly",
   autonomy_level: 2
 })
@@ -2351,7 +2383,7 @@ mcp__conport__set_routine_config({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | enabled | boolean | no | Whether the periodic cycle runs at all |
 | cadence | string | no | `daily` or `weekly` |
 | max_tasks_per_run | integer | no | Backlog tasks one run may execute (1-20) |
@@ -2359,7 +2391,7 @@ mcp__conport__set_routine_config({
 | autonomy_level | integer | no | `0` agenda + report only, `1` plus housekeeping and briefings, `2` plus executing backlog tasks up to `priority_threshold` |
 | selection | string | no | `threshold` (default — any ready task within the priority threshold) or `tagged` (only tasks marked `routine_eligible`, still within the threshold) |
 
-**Returns:** `project_id` plus an echo of exactly the fields you passed — the
+**Returns:** `project` (the handle) plus an echo of exactly the fields you passed — the
 post-write verification channel.
 
 ### routine_run_start
@@ -2369,13 +2401,13 @@ Open the run journal entry — once, at the start of every cycle, right before
 
 ```
 mcp__conport__routine_run_start({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 
 **Returns:** `id` (pass it to `routine_run_finish`), `started_at` and
 `already_open`. An open run from a crashed cycle is returned with
@@ -2389,7 +2421,7 @@ progress entry, so do **not** call `log_progress` separately for the finish.
 
 ```
 mcp__conport__routine_run_finish({
-  project_id: <project_id>,
+  project: <project>,
   run_id: 7,
   outcome: "completed",
   summary: "Closed two tail epics, acknowledged three gaps",
@@ -2399,7 +2431,7 @@ mcp__conport__routine_run_finish({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | run_id | integer | yes | Run id from `routine_run_start` |
 | outcome | string | yes | `completed` (did work) \| `empty` (nothing to do) \| `aborted` (stopped early / recovered crash) |
 | summary | string | no | One-paragraph summary of the run |
@@ -2415,14 +2447,14 @@ The run journal, newest first. An open (running or crashed) run has
 
 ```
 mcp__conport__list_routine_runs({
-  project_id: <project_id>,
+  project: <project>,
   limit: 10
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | limit | integer | no | Max runs (default: 10) |
 
 **Returns:** `runs` (`id`, `started_at`, `finished_at`, `outcome`, `summary`,
@@ -2435,13 +2467,13 @@ gut estimate by the project's historical drift.
 
 ```
 mcp__conport__get_estimation_stats({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | limit | integer | no | Closed tasks in the sample, freshest first (default: 50) |
 
 **Returns:** `sample_size`, `median_ratio` (actual/plan), `p50_actual_seconds`,
@@ -2463,7 +2495,7 @@ Record a deny-list rule: this command shape is wrong, use that one instead.
 
 ```
 mcp__conport__add_convention({
-  project_id: <project_id>,
+  project: <project>,
   pattern: "^pytest",
   replacement: "uv run pytest",
   reason: "The project runs Python through uv"
@@ -2472,7 +2504,7 @@ mcp__conport__add_convention({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | pattern | string | yes | Regex matched against commands |
 | replacement | string | yes | The command to use instead |
 | reason | string | yes | Why the convention exists |
@@ -2487,7 +2519,7 @@ Record a known fix for a recurring error signature.
 
 ```
 mcp__conport__add_error_solution({
-  project_id: <project_id>,
+  project: <project>,
   error_signature: "ModuleNotFoundError pytest",
   solution: "Run the suite through uv run pytest",
   confidence: 0.9
@@ -2496,7 +2528,7 @@ mcp__conport__add_error_solution({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | error_signature | string | yes | Normalized error signature |
 | solution | string | yes | How to fix it |
 | confidence | number | no | How sure the fix is, from 0 to 1 (default: 0.8). Stored with the solution; `list_error_solutions` returns it |
@@ -2516,13 +2548,13 @@ List the project's conventions.
 
 ```
 mcp__conport__list_conventions({
-  project_id: <project_id>
+  project: <project>
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 
 **Returns:** `conventions` (`pattern`, `replacement`, `reason`, `decision_id`)
 and `total`.
@@ -2533,14 +2565,14 @@ List the known error solutions, newest first.
 
 ```
 mcp__conport__list_error_solutions({
-  project_id: <project_id>,
+  project: <project>,
   limit: 20
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project_id | integer | yes | Project ID |
+| project | string | yes | Project handle or name |
 | limit | integer | no | Max results (default: 20) |
 
 **Returns:** `solutions` (`id`, `error_signature`, `solution`, `confidence`,

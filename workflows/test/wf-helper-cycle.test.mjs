@@ -17,7 +17,7 @@ import { JOURNAL_AUTHORS, JOURNAL_BODY_MAX, fitBody, journalBody } from '../wf-h
 
 const HELPER = join(WORKFLOWS, 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
-const PROJECT = 42                                 // a neutral id: no real project is implied
+const PROJECT = 'prk7m2qx9d'                       // a neutral handle: no real project is implied
 
 // ------------------------------------------------------------------ REST mock
 
@@ -118,7 +118,7 @@ const runHelper = (env, ...argv) => new Promise((resolve, reject) => {
 
 const runStep = async (mock, step) => {
   const env = { ...process.env, CONPORT_API_URL: mock.url, CONPORT_API_KEY: KEY }
-  const r = await runHelper(env, 'cycle', '--step', jsonFile('step.json', { project_id: PROJECT, task_id: 7, ...step }))
+  const r = await runHelper(env, 'cycle', '--step', jsonFile('step.json', { project: PROJECT, task_id: 7, ...step }))
   assert.equal(r.code, 0, 'exit 0 expected, stderr: ' + r.stderr)
   assert.ok(!r.stdout.includes(KEY), 'the api key must never reach stdout')
   return JSON.parse(r.stdout)
@@ -138,7 +138,7 @@ const IMPL = { status: 'DONE', branch: 'task/t7', head_sha: 'bbb1', worktree_pat
 const HARD = { verdict: 'NEEDS_FIXES', findings: [{ severity: 'IMPORTANT', file: 'a.js', line: 3, what: 'drops the guard', fix: 'restore it' }] }
 const CLEAN = { verdict: 'APPROVED', findings: [] }
 const FIXED = { status: 'DONE', head_sha: 'eee4', per_finding: [{ idx: 0, action: 'FIXED', note: 'restored' }], checks_summary: 'green' }
-const CLOSE = { project_id: PROJECT, close: { id: 7, resolution: 'merged as ccc2' }, block: null, minors_umbrella: null }
+const CLOSE = { project: PROJECT, close: { id: 7, resolution: 'merged as ccc2' }, block: null, minors_umbrella: null }
 
 // ------------------------------------------------------------------ authors and bodies
 
@@ -181,6 +181,14 @@ test('journalBody: the report, the review and the fix are written from the agent
   const fix = journalBody({ step: 'fix', result: FIXED })
   for (const part of ['DONE', 'eee4', '#0 FIXED', 'restored', 'green']) assert.ok(fix.includes(part), part)
   assert.equal(journalBody({ step: 'brief', body: 'the assignment' }), 'the assignment')
+})
+
+test('journalBody: a full text in body is the entry of every step, ahead of the structured result', () => {
+  const text = '# Report\n\nWritten by the agent itself.'
+  assert.equal(journalBody({ step: 'report', body: text }), text)
+  assert.equal(journalBody({ step: 'report', body: text, result: IMPL }), text)
+  assert.equal(journalBody({ step: 'fix', body: text, result: FIXED }), text)
+  assert.equal(journalBody({ step: 'review', verdict: 'approve', body: text, result: CLEAN, note: 'n' }), text)
 })
 
 // ------------------------------------------------------------------ the steps
@@ -256,6 +264,31 @@ test('fix: the fix report is written by the implementer and the task moved back 
   assert.equal(mock.tasks.get(7).status, 'REVIEW')
 }))
 
+test('full text: a report, a review and a fix given as body alone are written as that text, with the same moves', withMock({
+  tasks: [{ id: 7, status: 'TODO' }],
+}, async mock => {
+  const steps = [
+    [{ step: 'report', body: 'Report in full.' }, ['start:done', 'report:done', 'to_review:done']],
+    [{ step: 'review', verdict: 'changes_requested', body: 'Review in full.' }, ['review:done', 'return:done']],
+    [{ step: 'fix', body: 'Fix in full.' }, ['fix:done', 'to_review:done']],
+    [{ step: 'review', verdict: 'approve', body: 'Approved in full.' }, ['review:done']],
+  ]
+  for (const [step, expected] of steps) assert.deepEqual(results(await runStep(mock, step)), expected, step.step)
+  assert.deepEqual(mock.journal.map(e => [e.kind, e.author, e.body, e.verdict, e.round]), [
+    ['report', 'implementer', 'Report in full.', null, 1],
+    ['review', 'reviewer', 'Review in full.', 'changes_requested', 1],
+    ['fix', 'implementer', 'Fix in full.', null, 2],
+    ['review', 'reviewer', 'Approved in full.', 'approve', 2],
+  ])
+  assert.equal(mock.tasks.get(7).status, 'REVIEW')
+}))
+
+test('full text past the server limit is cut with a marker like any body', withMock({ tasks: [{ id: 7, status: 'IN_PROGRESS' }] }, async mock => {
+  const out = await runStep(mock, { step: 'fix', body: 'z'.repeat(JOURNAL_BODY_MAX + 1) })
+  assert.deepEqual(results(out), ['fix:done', 'to_review:done'])
+  assert.equal(Array.from(writes(mock)[0].body.body).length, JOURNAL_BODY_MAX)
+}))
+
 // ------------------------------------------------------------------ whole runs
 
 test('a clean run: brief, report, REVIEW, approve, then the accounting close lands from REVIEW', withMock({ tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
@@ -284,7 +317,7 @@ const allDone = async (mock, steps) => {
   for (const step of steps)
     assert.deepEqual((await runStep(mock, step)).actions.filter(a => a.result !== 'done'), [], step.note ?? step.step)
 }
-const BLOCK = { project_id: PROJECT, close: null, block: { id: 7, reason: 'MERGE_CONFLICT' }, minors_umbrella: null }
+const BLOCK = { project: PROJECT, close: null, block: { id: 7, reason: 'MERGE_CONFLICT' }, minors_umbrella: null }
 
 test('minor findings only: an approval, a second approval in REVIEW after the polish, then DONE', withMock({ tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
   await allDone(mock, [
@@ -387,19 +420,25 @@ test('no api key: the fallback sentinel is printed and nothing is called', withM
   const env = { ...process.env, CONPORT_API_URL: mock.url }
   delete env.CONPORT_API_KEY
   delete env.CLAUDE_PLUGIN_OPTION_API_KEY
-  const r = await runHelper(env, 'cycle', '--step', jsonFile('step.json', { project_id: PROJECT, task_id: 7, step: 'brief', body: 'b' }))
+  const r = await runHelper(env, 'cycle', '--step', jsonFile('step.json', { project: PROJECT, task_id: 7, step: 'brief', body: 'b' }))
   assert.equal(r.code, 0)
   assert.equal(r.stdout, '{"error": "no api key"}\n')
   assert.equal(mock.requests.length, 0)
 }))
 
 for (const [what, step] of [
-  ['an unknown step', { project_id: PROJECT, task_id: 7, step: 'close', body: 'b' }],
-  ['a review without a verdict', { project_id: PROJECT, task_id: 7, step: 'review', result: CLEAN }],
-  ['a review with an unknown verdict', { project_id: PROJECT, task_id: 7, step: 'review', verdict: 'APPROVED', result: CLEAN }],
-  ['a brief without a body', { project_id: PROJECT, task_id: 7, step: 'brief', body: '  ' }],
-  ['a report without a result', { project_id: PROJECT, task_id: 7, step: 'report' }],
-  ['a step without a task id', { project_id: PROJECT, step: 'brief', body: 'b' }],
+  ['an unknown step', { project: PROJECT, task_id: 7, step: 'close', body: 'b' }],
+  ['a review without a verdict', { project: PROJECT, task_id: 7, step: 'review', result: CLEAN }],
+  ['a review with an unknown verdict', { project: PROJECT, task_id: 7, step: 'review', verdict: 'APPROVED', result: CLEAN }],
+  ['a brief without a body', { project: PROJECT, task_id: 7, step: 'brief', body: '  ' }],
+  ['a report without a result', { project: PROJECT, task_id: 7, step: 'report' }],
+  ['a report with a blank body and no result', { project: PROJECT, task_id: 7, step: 'report', body: ' \n' }],
+  ['a fix with a body that is not text', { project: PROJECT, task_id: 7, step: 'fix', body: 5, result: FIXED }],
+  ['a review with a full text but no verdict', { project: PROJECT, task_id: 7, step: 'review', body: 'r' }],
+  ['a step without a task id', { project: PROJECT, step: 'brief', body: 'b' }],
+  ['a step naming its project by number', { project_id: 42, task_id: 7, step: 'brief', body: 'b' }],
+  ['a step whose project is a number', { project: 42, task_id: 7, step: 'brief', body: 'b' }],
+  ['a step whose project is empty', { project: ' ', task_id: 7, step: 'brief', body: 'b' }],
 ])
   test(`cycle: ${what} is CLI misuse — exit 2, nothing printed`, async () => {
     const env = { ...process.env, CONPORT_API_URL: 'http://127.0.0.1:9/api/v1', CONPORT_API_KEY: KEY }

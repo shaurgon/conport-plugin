@@ -9,7 +9,7 @@ import { WORKFLOWS, fencedRegion, secondMarker, source, withSecond } from './fen
 
 const HELPER = join(WORKFLOWS, 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
-const PROJECT = 42                                 // a neutral id: no real project is implied
+const PROJECT = 'prk7m2qx9d'                       // a neutral handle: no real project is implied
 
 // ------------------------------------------------------------------ REST mock
 
@@ -119,9 +119,9 @@ const runHelper = (env, ...argv) => new Promise((resolve, reject) => {
   p.on('close', code => resolve({ code, stdout, stderr }))
 })
 
+const accountEnv = mock => ({ ...process.env, CONPORT_API_URL: mock.url, CONPORT_API_KEY: KEY })
 const runAccount = async (mock, table) => {
-  const env = { ...process.env, CONPORT_API_URL: mock.url, CONPORT_API_KEY: KEY }
-  const r = await runHelper(env, 'account', '--table', tableFile(table))
+  const r = await runHelper(accountEnv(mock), 'account', '--table', tableFile(table))
   assert.equal(r.code, 0, 'exit 0 expected, stderr: ' + r.stderr)
   assert.ok(!r.stdout.includes(KEY), 'the api key must never reach stdout')
   return { out: JSON.parse(r.stdout), stdout: r.stdout }
@@ -142,7 +142,7 @@ const UMBRELLA = { title: 'Review minors: task-5 run', description: 'Deferred re
 // --------------------------------------------------------------------- close
 
 test('close: an open task is closed with the resolution passed as its own field', withMock({ tasks: [{ id: 5, title: 'T', status: 'TODO', description: 'spec body' }] }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: null, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: null, minors_umbrella: null })
 
   assert.deepEqual(step(out, 'close').result, 'done')
   assert.equal(step(out, 'close').target, 5)
@@ -156,7 +156,7 @@ test('close: an open task is closed with the resolution passed as its own field'
 }))
 
 test('close: a task already DONE is skipped, with no write at all', withMock({ tasks: [{ id: 5, title: 'T', status: 'DONE', description: 'spec body' }] }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: null, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: null, minors_umbrella: null })
 
   assert.equal(step(out, 'close').result, 'skipped_already')
   assert.equal(out.task_closed, true)
@@ -175,7 +175,7 @@ for (const code of ['done_needs_approval', 'done_needs_review', 'done_needs_reso
     tasks: [{ id: 5, title: 'T', status: 'REVIEW', description: 'spec body' }, { id: 7, title: 'B', status: 'TODO', description: 'keep me' }],
     fail: closeRefusal(code, 'Do the one prescribed thing.'),
   }, async mock => {
-    const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+    const { out } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'merged as abc123' }, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
 
     const close = step(out, 'close')
     assert.equal(close.result, 'failed')
@@ -194,7 +194,7 @@ test('close: a closing refusal without a message leaves no dangling separator', 
   tasks: [{ id: 5, title: 'T', status: 'REVIEW', description: 'spec body' }],
   fail: closeRefusal('done_needs_approval', ''),
 }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
 
   assert.equal(step(out, 'close').detail, 'done_needs_approval: the task is not closed')
 }))
@@ -204,7 +204,7 @@ test('close: a 409 with another code stays a failed call', withMock({
   tasks: [{ id: 5, title: 'T', status: 'IN_PROGRESS', description: 'spec body' }],
   fail: closeRefusal('some_other_conflict', 'other'),
 }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
 
   assert.equal(step(out, 'close').result, 'failed')
   assert.equal(out.task_closed, false)
@@ -216,7 +216,7 @@ test('close: a 409 with another code stays a failed call', withMock({
 // --------------------------------------------------------------------- block
 
 test('block: the status changes and the reason is appended, keeping the description', withMock({ tasks: [{ id: 7, title: 'T', status: 'IN_PROGRESS', description: 'original spec' }] }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
 
   assert.equal(step(out, 'block').result, 'done')
   assert.equal(out.task_closed, false)
@@ -226,7 +226,7 @@ test('block: the status changes and the reason is appended, keeping the descript
 }))
 
 test('block: a task already BLOCKED is skipped, with no write at all', withMock({ tasks: [{ id: 7, title: 'T', status: 'BLOCKED', description: 'original spec\n\n## Blocked: GATE_RED' }] }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
 
   assert.equal(step(out, 'block').result, 'skipped_already')
   assert.deepEqual(writes(mock), [])
@@ -250,7 +250,7 @@ test('block: a task in REVIEW refused with review_exit_not_allowed is reported, 
   tasks: [{ id: 7, title: 'T', status: 'REVIEW', description: 'original spec' }],
   fail: refuseReviewExit,
 }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: UMBRELLA })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: UMBRELLA })
 
   const block = step(out, 'block')
   assert.equal(block.result, 'failed')
@@ -269,7 +269,7 @@ test('block: a review_exit_not_allowed refusal without a message leaves no dangl
   fail: rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/7'))
     ? { status: 409, body: { detail: { error: 'review_exit_not_allowed', message: '', context: {} } } } : null,
 }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
 
   assert.equal(step(out, 'block').detail, 'review_exit_not_allowed: the task is in REVIEW and stays there')
   assert.deepEqual(out.failed_calls, [])
@@ -281,7 +281,7 @@ test('block: a 409 with another code stays a failed call', withMock({
   fail: rec => (rec.method === 'PATCH' && rec.path.endsWith('/tasks/7'))
     ? { status: 409, body: { detail: { error: 'some_other_conflict', message: 'other', context: {} } } } : null,
 }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: { id: 7, reason: 'GATE_RED' }, minors_umbrella: null })
 
   assert.equal(step(out, 'block').result, 'failed')
   assert.equal(out.failed_calls.length, 1)
@@ -292,7 +292,7 @@ test('block: a 409 with another code stays a failed call', withMock({
 // ------------------------------------------------------------------ umbrella
 
 test('umbrella: the tails epic and its child are created once, the rerun skips both', withMock({ tasks: [] }, async mock => {
-  const { out: first } = await runAccount(mock, { project_id: PROJECT, close: null, block: null, minors_umbrella: UMBRELLA })
+  const { out: first } = await runAccount(mock, { project: PROJECT, close: null, block: null, minors_umbrella: UMBRELLA })
 
   assert.equal(step(first, 'minors_epic').result, 'done')
   assert.equal(step(first, 'minors_child').result, 'done')
@@ -308,7 +308,7 @@ test('umbrella: the tails epic and its child are created once, the rerun skips b
   assert.equal(child.priority, 4)
 
   const before = mock.tasks.size
-  const { out: second } = await runAccount(mock, { project_id: PROJECT, close: null, block: null, minors_umbrella: UMBRELLA })
+  const { out: second } = await runAccount(mock, { project: PROJECT, close: null, block: null, minors_umbrella: UMBRELLA })
   assert.equal(step(second, 'minors_epic').result, 'skipped_already')
   assert.equal(step(second, 'minors_child').result, 'skipped_already')
   assert.deepEqual(second.minors_created, [])
@@ -324,7 +324,7 @@ const PAGED_EPICS = [
 ]
 
 test('umbrella: a tails epic sitting past the first page is found, not duplicated', withMock({ tasks: PAGED_EPICS }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: null, minors_umbrella: UMBRELLA })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: null, minors_umbrella: UMBRELLA })
 
   assert.equal(step(out, 'minors_epic').result, 'skipped_already', 'the epic on the last page is seen')
   assert.equal(step(out, 'minors_epic').target, 500)
@@ -348,7 +348,7 @@ test('a failing item lands in failed_calls while the remaining items still run',
   fail: rec => (rec.method === 'GET' && rec.path.endsWith('/tasks/5')) ? { status: 500, body: { detail: 'boom' } } : null,
 }, async mock => {
   const { out } = await runAccount(mock, {
-    project_id: PROJECT,
+    project: PROJECT,
     close: { id: 5, resolution: 'merged as abc123' },
     block: { id: 7, reason: 'GATE_RED' },
     minors_umbrella: UMBRELLA,
@@ -366,7 +366,7 @@ test('a failing item lands in failed_calls while the remaining items still run',
 // ------------------------------------------------------------- key handling
 
 test('no api key in either variable: the fallback sentinel is printed and nothing is called', withMock({ tasks: [{ id: 5, title: 'T', status: 'TODO' }] }, async mock => {
-  const table = tableFile({ project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+  const table = tableFile({ project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
   const env = { ...process.env, CONPORT_API_URL: mock.url }
   delete env.CONPORT_API_KEY
   delete env.CLAUDE_PLUGIN_OPTION_API_KEY
@@ -381,7 +381,7 @@ test('no api key in either variable: the fallback sentinel is printed and nothin
 // configured key as CLAUDE_PLUGIN_OPTION_API_KEY, exactly as scripts/_common.js
 // reads it. Accepting only the manual variable left every install keyless.
 test('the harness key alone drives the accounting run', withMock({ tasks: [{ id: 5, title: 'T', status: 'TODO' }] }, async mock => {
-  const table = tableFile({ project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+  const table = tableFile({ project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
   const env = { ...process.env, CONPORT_API_URL: mock.url, CLAUDE_PLUGIN_OPTION_API_KEY: KEY }
   delete env.CONPORT_API_KEY
   const r = await runHelper(env, 'account', '--table', table)
@@ -400,7 +400,7 @@ test('the harness key alone drives the accounting run', withMock({ tasks: [{ id:
 test('a server that never answers: the call lands in failed_calls instead of hanging', { timeout: 20000 }, async () => {
   const server = createServer(() => {})            // the request is received and never answered
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  const table = tableFile({ project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+  const table = tableFile({ project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
   const env = {
     ...process.env,
     CONPORT_API_URL: `http://127.0.0.1:${server.address().port}/api/v1`,
@@ -425,7 +425,7 @@ test('a key echoed back by the server is masked out of failed_calls', withMock({
   tasks: [{ id: 5, title: 'T', status: 'TODO' }],
   fail: rec => rec.method === 'GET' ? { status: 401, body: { detail: 'bad key ' + KEY } } : null,
 }, async mock => {
-  const { out, stdout } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
+  const { out, stdout } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null })
 
   assert.equal(out.failed_calls.length, 1)
   assert.ok(!stdout.includes(KEY), 'the key value never leaves the process')
@@ -435,14 +435,14 @@ test('a key echoed back by the server is masked out of failed_calls', withMock({
 // ------------------------------------------------------------ table shapes
 
 test('an empty table does nothing and still reports the S_ACC shape', withMock({ tasks: [] }, async mock => {
-  const { out } = await runAccount(mock, { project_id: PROJECT, close: null, block: null, minors_umbrella: null })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: null, minors_umbrella: null })
 
   assert.deepEqual(out, { via: 'wf-helper', actions: [], minors_created: [], task_closed: false, failed_calls: [] })
   assert.deepEqual(mock.requests, [])
 }))
 
 test('a table carrying steps this command does not implement is refused, not half-executed', withMock({ tasks: [{ id: 5, title: 'T', status: 'TODO' }] }, async mock => {
-  const { stdout } = await runAccount(mock, { project_id: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null, skipped: [{ id: 9, dep: 8 }] })
+  const { stdout } = await runAccount(mock, { project: PROJECT, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null, skipped: [{ id: 9, dep: 8 }] })
 
   assert.equal(stdout.trim(), '{"error": "unsupported table"}')
   assert.deepEqual(mock.requests, [], 'nothing is executed from a table only partly understood')
@@ -457,7 +457,7 @@ const CRITICAL = { title: 'UNRESOLVED CRITICAL: the gate is not observed', prior
 // A run with one merged, one failed and one skipped child: may_close is false,
 // because two children are still open.
 const epicTable = over => ({
-  project_id: PROJECT, epic: EPIC,
+  project: PROJECT, epic: EPIC,
   done: [{ id: 5, resolution: 'merged as abc123' }],
   failed: [{ id: 7, reason: 'GATE_RED' }],
   skipped: [{ id: 9, dep: 7 }],
@@ -552,7 +552,7 @@ test('epic table: a failed child in REVIEW is reported as refused and every late
 
 const CLOSED_CHILD = [{ id: 5, title: 'A', status: 'DONE', parent_task_id: EPIC, description: 'spec of A' }]
 const closingTable = over => ({
-  project_id: PROJECT, epic: EPIC, done: [{ id: 5, resolution: 'merged as abc123' }],
+  project: PROJECT, epic: EPIC, done: [{ id: 5, resolution: 'merged as abc123' }],
   failed: [], skipped: [], parity_failed: [], minors: [],
   verdict: 'READY', may_close: true, close_resolution: RESOLUTION, ...over,
 })
@@ -708,14 +708,42 @@ for (const file of ['epic.js', 'wf-helper.mjs'])
 
 test('the fenced key scanner reads the key list only, not the prose around it', () => {
   const src = [
-    "// EPIC_TABLE_KEYS_BEGIN — a comment naming 'project_id' is prose",
+    "// EPIC_TABLE_KEYS_BEGIN — a comment naming 'project_handle' is prose",
     "  // and 'not_a_key' quoted here is prose too",
-    "const EPIC_TABLE_KEYS = ['project_id', 'epic'] // 'trailing_prose' is prose",
+    "const EPIC_TABLE_KEYS = ['project', 'epic'] // 'trailing_prose' is prose",
     '// EPIC_TABLE_KEYS_END',
   ].join('\n')
 
-  assert.deepEqual(keysInFenced(src, 'fixture'), ['project_id', 'epic'])
+  assert.deepEqual(keysInFenced(src, 'fixture'), ['project', 'epic'])
 })
+
+test('both accounting tables name the project by `project`, never by a number', () => {
+  for (const file of ['epic.js', 'wf-helper.mjs']) {
+    const keys = fencedKeys(file)
+    assert.ok(keys.includes('project'), file)
+    assert.ok(!keys.includes('project_id'), file)
+  }
+})
+
+// A table of an earlier surface keys its project by number: it fits neither shape
+// and is refused whole. A table whose `project` is not a handle string is misuse.
+test('a table naming project_id is unsupported', withMock({ tasks: [{ id: 5, title: 'T', status: 'TODO' }] }, async mock => {
+  const r = await runHelper(accountEnv(mock), 'account', '--table',
+    tableFile({ project_id: 42, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null }))
+  assert.equal(r.code, 0)
+  assert.equal(r.stdout.trim(), '{"error": "unsupported table"}')
+  assert.deepEqual(mock.requests, [])
+}))
+
+for (const [what, project] of [['a number', 42], ['an empty string', '  '], ['no value', undefined]]) {
+  test(`a table whose project is ${what} is refused before any call`, withMock({ tasks: [{ id: 5, title: 'T', status: 'TODO' }] }, async mock => {
+    const r = await runHelper(accountEnv(mock), 'account', '--table',
+      tableFile({ project, close: { id: 5, resolution: 'r' }, block: null, minors_umbrella: null }))
+    assert.equal(r.code, 2)
+    assert.match(r.stderr, /project must be the project's handle/)
+    assert.deepEqual(mock.requests, [])
+  }))
+}
 
 test('the epic accounting table key set is the same in epic.js and wf-helper.mjs', () => {
   const fromHelper = fencedKeys('wf-helper.mjs')

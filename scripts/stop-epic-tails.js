@@ -90,8 +90,9 @@ async function collectTails(epics, auth) {
   const tails = [];
   const noRelease = [];
   for (const [project, sessionEpics] of byProject) {
-    // The record holds the project as the tool call named it — an id or a
-    // name, possibly `team/project`. A record that is not a project is skipped.
+    // The record holds the project as the tool call named it — a handle or a
+    // name, possibly `team/project`. A record that is not a project is skipped;
+    // a number left by an earlier version is sent as it is and answers 404.
     const parsed = parseProject(project);
     if (!parsed) continue;
     const route = projectRoute(parsed);

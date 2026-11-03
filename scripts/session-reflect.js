@@ -98,7 +98,7 @@ function buildPayload(sessionId, project, parsed) {
     c.tool === 'mcp__conport__sync_decision' || c.tool === 'mcp__conport__log_progress'
   ).length;
   return {
-    project_id: project,
+    project,
     session_id: sessionId,
     conversation_turns: turns,
     conport_calls: parsed.conport_calls,

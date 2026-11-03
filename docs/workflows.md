@@ -26,6 +26,15 @@ REVIEW after the approval, with the run's resolution. The entries are signed
 `reviewer` (the review) — the reviewer never signs as the author of the work it
 reviews.
 
+Every agent of the run is handed the task, not its text: the run writes the
+brief into the task's journal first, and the agent's prompt is the task number
+and how to read the journal (`get_task_journal_entry` with `kind="brief"`,
+`list_task_journal` for the earlier entries). A fixer, a re-reviewer, a
+rebaser and the reviewer after a rebase each get a new brief — the whole
+assignment plus the findings, the fixer's actions, the rebase onto the default
+branch or the conflicted files. The agents only read the
+journal; the run writes every entry from their answers.
+
 Nothing is ever pushed — every merge stays local, so you review the result before
 it leaves the machine.
 
@@ -33,9 +42,12 @@ it leaves the machine.
 
 - A paid plan — workflows run on the Workflow tool, and the harness setting
   `disableWorkflows` turns them off.
+- A ConPort API key: `CONPORT_API_KEY`, or the api key option of the plugin.
+  Without one the run refuses at its start with `ABORTED_NO_API_KEY` — the
+  agents work from the task journal, which lives in ConPort.
 - A resolvable ConPort project: pass `project`, or set `CONPORT_PROJECT_NAME`
-  (`k7m2qx9d/<project>` for a team's project). There is no other source of
-  the name.
+  — the project's handle (`prk7m2qx9d`) or its name (`k7m2qx9d/<project>` for
+  a team's project). There is no other source of the name.
 - A gate — the commands that must be green before a merge. Pass it as `gate`, or
   let the run read it from the Global Constraints section of the plan that
   carries the task.
@@ -49,7 +61,7 @@ it leaves the machine.
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
 | `task` | integer | yes | Id of the ConPort task to execute. |
-| `project` | string | no | ConPort project name. Omitted → taken from `CONPORT_PROJECT_NAME`. |
+| `project` | string | no | ConPort project: its handle or name. Omitted → taken from `CONPORT_PROJECT_NAME`. |
 | `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor comment, but only across `docs/superpowers/plans/*.md` — if your plans live anywhere else, `plan` is effectively required. A plan kept in ConPort is pulled first — see [A plan kept in ConPort](#a-plan-kept-in-conport). |
 | `gate` | object | no | `{dir, commands}` — the directory to run in and the list of gate commands. Omitted → taken from the plan's Global Constraints. |
 | `serialChecks` | boolean | no | Worktree agents run static checks only — all tests are deferred to the merge gate, which runs alone. For projects whose gate shares one test database. |
@@ -89,11 +101,12 @@ Example:
   once a `review` entry with verdict `approve` exists; otherwise a reviewer adds
   a `review` entry with verdict `changes_requested` and moves the task back to
   IN_PROGRESS, then the task can be run again.
-- **The journal never decides the outcome.** Each journal step is one helper
-  command; a step that is refused or fails is named in the run ledger
-  (`journal`), and the later steps of that task are skipped, while the run
-  itself goes on — except after the brief, which a report does not need. Without an API key the run writes no journal at all, and the
-  task closes from IN_PROGRESS as it did before the review cycle existed.
+- **A brief that does not land stops its dispatch.** Each journal step is one
+  helper command, named in the run ledger (`journal`). The first brief that
+  does not land aborts the run with `ABORTED_NO_BRIEF` before any agent works; a
+  later one fails the task with `BRIEF_NOT_WRITTEN` and its agent is not
+  dispatched. A report, review or fix that is refused or fails skips the later
+  entries of that task, while the run itself goes on.
 - **A report that landed only in part** (the report is written, the move to
   REVIEW failed) leaves the task IN_PROGRESS with a report, and its close is
   refused with `done_needs_review`: move the task to REVIEW, add the review,
@@ -167,7 +180,7 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
 |---|---|---|---|
 | `epic` | integer | yes | Id of the ConPort epic to execute. |
 | `plan` | string | no | Path to the plan file. Omitted → looked up by the epic's anchor under `docs/superpowers/plans/`. A plan kept in ConPort is pulled first — see [A plan kept in ConPort](#a-plan-kept-in-conport). |
-| `project` | string | no | ConPort project name. Omitted → derived as in `/conport:task`. |
+| `project` | string | no | ConPort project: its handle or name. Omitted → derived as in `/conport:task`. |
 | `gate` | object | no | `{dir, commands}` — as in `/conport:task`. |
 | `allowNoPlan` | boolean | no | Without a plan file the run aborts. Set this to execute the epic's ConPort children from their own descriptions instead — strictly sequentially. |
 | `serialChecks` | boolean | no | As in `/conport:task`. |
@@ -199,7 +212,7 @@ first, then pass that file's path as the `plan` argument — the run hands it to
 the helper as `--plan .superpowers/plans/doc-M.md`:
 
 ```
-npx -y conport@^0.4 plan pull <epic id>
+npx -y conport@^0.5 plan pull <epic id>
 /conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
 /conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
 ```
@@ -229,7 +242,7 @@ judging a change, hunting for gaps, deciding whether the goal was reached.
 
 | Command | What it does |
 |---|---|
-| `preflight` | State of the repository before a run: clean or dirty tree, current branch, the default branch, the head commit. Debris of an interrupted merge is aborted first. |
+| `preflight` | State of the repository before a run: clean or dirty tree, current branch, the default branch, the head commit, whether an API key is set (`api_key`). Debris of an interrupted merge is aborted first. |
 | `gate` | Runs the gate commands in the gate directory and reports GREEN, or RED with the tail of the first failing command. |
 | `merge` | Merges the queued branches one at a time, the full gate after each; a conflict or a red gate aborts that merge cleanly and the batch reports it per branch. |
 | `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics, and the run's own unmerged branches are named in `kept`. The checkout the helper runs in is never removed, even when listed: it is named in `skipped` (a `cleanup skipped: …` note in the run ledger). |
@@ -260,17 +273,18 @@ The helper is tested on Node 22. It calls the global `fetch`, so a runtime
 without one cannot run it at all; nothing older than Node 22 is tested.
 
 - `CONPORT_API_KEY` — a ConPort API key. With it, `account`, `scout` and
-  `cycle` talk to ConPort over REST. Without it, the run does the steps of
-  `account` and `scout` through the ConPort MCP tools instead — the behavior is
-  identical, only slower — and writes no task journal: `cycle` has no MCP
-  fallback, so the task never enters REVIEW and closes from IN_PROGRESS. An installed plugin
+  `cycle` talk to ConPort over REST. `preflight` reports whether a key is set
+  (`api_key`, never the key itself), and both workflows refuse to start
+  without one: their agents read the task journal, and `cycle` has no MCP
+  fallback. Run by hand without a key, `account` and `scout` hand their work
+  back to the ConPort MCP tools. An installed plugin
   needs nothing here: the key configured for the plugin reaches the helper as
   `CLAUDE_PLUGIN_OPTION_API_KEY`, which is read exactly like `CONPORT_API_KEY`.
 - `CONPORT_API_URL` — the API base, for a self-hosted ConPort. Include the
   `/api/v1` suffix, as in `https://api.conport.app/api/v1`. Defaults to the
   hosted API.
 - `CONPORT_PROJECT_NAME` — the project `scout` reads when the call carries no
-  `--project` flag: `<project>` for a personal project, `k7m2qx9d/<project>`
+  `--project` flag: the project's handle, `<project>` for a personal project, `k7m2qx9d/<project>`
   for a team's one. Without either, `scout` hands the work back.
 - `CONPORT_TIMEOUT_MS` — the deadline of a single REST call, 10000 by default. A
   silent server ends the call with an error the run falls back on, never a hang.

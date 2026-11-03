@@ -186,7 +186,7 @@ short reason. The dismissal is keyed on a stable hash of the gap
 identity, so it survives re-detection runs and threshold tuning.
 
 For mass dismissal of a known cross-cutting cluster, use
-`gap_dismiss_bulk(project_id, reason, category|gap_type|subject_type)` —
+`gap_dismiss_bulk(project, reason, category|gap_type|subject_type)` —
 one shared reason gets stamped on every affected gap. At least one filter
 is required so the call cannot wipe the whole backlog by accident.
 
@@ -200,19 +200,19 @@ drift or dangling wikilink gaps.
 
 ## Tools
 
-- `get_block_backlinks(project_id, document_id, [block_ulid], [edge_types])`
+- `get_block_backlinks(project, document_id, [block_ulid], [edge_types])`
   — incoming document links for the doc or one of its blocks.
-- `get_semantically_related_blocks(project_id, document_id, block_ulid, [limit], [threshold])`
+- `get_semantically_related_blocks(project, document_id, block_ulid, [limit], [threshold])`
   — top-N semantically similar blocks in OTHER docs, excluding already-
   linked targets.
-- `get_linked(project_id, item_type='document', item_id, include_section_links=true)`
+- `get_linked(project, item_type='document', item_id, include_section_links=true)`
   — combined item-graph + Wave 5 section edges for one document.
-- `get_document(project_id, document_id, raw=false)` — full markdown with
+- `get_document(project, document_id, raw=false)` — full markdown with
   render-time stubs from incoming supersedes/resolves/extends edges.
   Pass `raw=true` to bypass.
-- `gap_dismiss(project_id, gap_hash, reason)` — close a drift gap that
+- `gap_dismiss(project, gap_hash, reason)` — close a drift gap that
   isn't actually drift; reason is mandatory for audit.
-- `gap_dismiss_bulk(project_id, reason, category|gap_type|subject_type)`
+- `gap_dismiss_bulk(project, reason, category|gap_type|subject_type)`
   — close a whole cluster of gaps with one shared reason. At least one
   filter is required.
 

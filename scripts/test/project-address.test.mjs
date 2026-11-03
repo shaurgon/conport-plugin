@@ -1,8 +1,9 @@
-// How the hooks address a project: the only sources are CONPORT_PROJECT_ID and
-// CONPORT_PROJECT_NAME, a `team/project` name is split into the team header and
-// the short path segment, and without either variable no hook reaches the
-// server. Every hook runs as the real script in a child process against a
-// local stand-in for the ConPort REST API.
+// How the hooks address a project: the only source is CONPORT_PROJECT_NAME (a
+// handle or a name), a `team/project` name is split into the team header and the
+// short path segment, CONPORT_PROJECT_ID is no longer read — the session start
+// says so in one line — and without a name no hook reaches the server. Every
+// hook runs as the real script in a child process against a local stand-in for
+// the ConPort REST API.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -108,13 +109,13 @@ function runHook(script, payload, ctx, vars = {}) {
     child.stdout.on('data', (d) => { out += d })
     child.on('error', reject)
     child.on('close', (code) => resolve({ code, out }))
-    child.stdin.end(JSON.stringify(payload))
+    child.stdin.end(typeof payload === 'string' ? payload : JSON.stringify(payload))  // a string is raw stdin
   })
 }
 
 const prompt = (ctx, vars, session = 's1') =>
   runHook('user-prompt-submit.js', { session_id: session, prompt: 'hi' }, ctx, vars)
-const sessionStart = (ctx, vars) => runHook('session-start.js', {}, ctx, vars)
+const sessionStart = (ctx, vars, source = 'startup') => runHook('session-start.js', { source }, ctx, vars)
 
 // A transcript long enough for the SessionEnd hook to queue a reflection.
 function transcript(ctx) {
@@ -174,7 +175,7 @@ test('the conventions hook sends the canonical name whole', () => withEnv(async 
   const { code } = await sessionStart(ctx, { CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' })
   assert.equal(code, 0)
   assert.deepEqual(ctx.api.requests, [
-    { url: '/api/v1/hooks/conventions?project_id=k7m2qx9d%2Fmy-proj', team: undefined },
+    { url: '/api/v1/hooks/conventions?project=k7m2qx9d%2Fmy-proj', team: undefined },
   ])
 }))
 
@@ -184,7 +185,8 @@ test('the reflection payload carries the canonical name whole', () => withEnv(as
   assert.equal(code, 0)
   await posted
   assert.deepEqual(ctx.api.requests, [{ url: '/api/v1/hooks/reflect-session', team: undefined }])
-  assert.equal(ctx.api.bodies[0].project_id, 'k7m2qx9d/my-proj')
+  assert.equal(ctx.api.bodies[0].project, 'k7m2qx9d/my-proj')
+  assert.equal('project_id' in ctx.api.bodies[0], false)
 }))
 
 test('without CONPORT_PROJECT_NAME no hook calls the server', () => withEnv(async (ctx) => {
@@ -205,7 +207,9 @@ test('without CONPORT_PROJECT_NAME no hook calls the server', () => withEnv(asyn
   assert.deepEqual(denyLists(ctx), [])
 }))
 
-test('the Stop hook splits a recorded team/project name and sends a recorded id bare', () => withEnv(async (ctx) => {
+// A record of an earlier version names the project by its number: it is sent as
+// it is and the server answers 404, which passes with the next session.
+test('the Stop hook splits a recorded team/project name and sends any other record as it is', () => withEnv(async (ctx) => {
   const vars = { CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' }
   recordEpic(ctx, 'k7m2qx9d/my-proj', 's1')
   assert.equal((await stop(ctx, vars, 's1')).code, 0)
@@ -249,27 +253,100 @@ test('the machine-wide deny-list of earlier versions is neither read nor removed
   assert.equal((await bash(ctx, {})).code, 0)
   assert.equal((await bash(ctx, { CONPORT_PROJECT_NAME: 'my-proj' })).code, 0)
   assert.equal((await bash(ctx, { CONPORT_PROJECT_ID: '99' })).code, 0)
-  await sessionStart(ctx, { CONPORT_PROJECT_ID: '99' })
-  assert.deepEqual(denyLists(ctx), ['deny-list.json', 'deny-list_99.json'])
+  await sessionStart(ctx, { CONPORT_PROJECT_NAME: 'my-proj' })
+  assert.deepEqual(denyLists(ctx), ['deny-list.json', 'deny-list_my-proj.json'])
 }))
 
-test('CONPORT_PROJECT_ID still wins and sends no team header', () => withEnv(async (ctx) => {
-  await prompt(ctx, { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' })
-  await sessionStart(ctx, { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' })
+const RETIRED = 'CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project\'s handle or name'
+
+// What the session start told the session: the line the user is shown and the
+// context the agent is given (null: none). The line has one channel — the user.
+function startNotice(out) {
+  const parsed = JSON.parse(out)
+  return { user: parsed.systemMessage, agent: parsed.hookSpecificOutput?.additionalContext ?? null }
+}
+
+// The line is said once per session: at its start, not again when the same
+// session is resumed, cleared or compacted.
+for (const source of ['resume', 'clear', 'compact']) {
+  test(`a session start from ${source} does not say the line again`, () => withEnv(async (ctx) => {
+    const started = await sessionStart(ctx, { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'my-proj' }, source)
+    assert.equal(started.code, 0)
+    assert.equal(started.out, '')
+    assert.deepEqual(ctx.api.requests, [{ url: '/api/v1/hooks/conventions?project=my-proj', team: undefined }])
+  }))
+}
+
+// Only a known re-entry is silent: a host that sends no `source`, a value this
+// hook does not know, or stdin it cannot read still gets the line — silence
+// there would hide it for good.
+for (const [what, stdin] of [
+  ['a null source', { source: null }], ['no source', {}], ['an unknown source', { source: 'other' }],
+  ['empty stdin', ''], ['stdin that is not JSON', '{broken'], ['stdin that is not an object', '"startup"'],
+]) {
+  test(`a session start with ${what} says the line`, () => withEnv(async (ctx) => {
+    const started = await runHook('session-start.js', stdin, ctx, { CONPORT_PROJECT_ID: '42' })
+    assert.equal(started.code, 0)
+    assert.deepEqual(startNotice(started.out), { user: RETIRED, agent: null })
+  }))
+}
+
+test('CONPORT_PROJECT_ID alone names no project, and the session start says so in one line', () => withEnv(async (ctx) => {
+  const vars = { CONPORT_PROJECT_ID: '42' }
+  const started = await sessionStart(ctx, vars)
+  assert.equal(started.code, 0)
+  assert.deepEqual(startNotice(started.out), { user: RETIRED, agent: null })
+  assert.equal((await prompt(ctx, vars)).code, 0)
+  assert.equal((await sessionEnd(ctx, vars)).code, 0)
+  recordEpic(ctx, '42')
+  assert.equal((await stop(ctx, vars)).out, '')
+  assert.equal((await bash(ctx, vars)).code, 0)
+  assert.deepEqual(ctx.api.requests, [], 'no hook reaches the server by the number')
+  assert.deepEqual(projectGuesses(ctx), [])
+  assert.match(readFileSync(join(ctx.dataDir, 'session-end.log'), 'utf8'), /SKIP: no project identifier/)
+  assert.deepEqual(denyLists(ctx), [])
+}))
+
+test('with both variables the name addresses the project and the session start still says the line', () => withEnv(async (ctx) => {
+  const vars = { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' }
+  await prompt(ctx, vars)
+  const started = await sessionStart(ctx, vars)
+  assert.deepEqual(startNotice(started.out), { user: RETIRED, agent: null })
   assert.deepEqual(ctx.api.requests, [
-    { url: '/api/v1/projects/42/epic-tails', team: undefined },
-    { url: '/api/v1/hooks/conventions?project_id=42', team: undefined },
+    { url: '/api/v1/projects/my-proj/epic-tails', team: 'k7m2qx9d' },
+    { url: '/api/v1/hooks/conventions?project=k7m2qx9d%2Fmy-proj', team: undefined },
   ])
   const posted = ctx.api.nextRequest()
-  await sessionEnd(ctx, { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' })
+  await sessionEnd(ctx, vars)
   await posted
-  assert.equal(ctx.api.bodies[0].project_id, '42')
+  assert.equal(ctx.api.bodies[0].project, 'k7m2qx9d/my-proj')
 }))
 
-test('a CONPORT_PROJECT_ID that is not a number is read as a name', () => withEnv(async (ctx) => {
-  await prompt(ctx, { CONPORT_PROJECT_ID: 'k7m2qx9d/my-proj' }, 's1')
-  await prompt(ctx, { CONPORT_PROJECT_ID: 'a/b/c', CONPORT_PROJECT_NAME: 'other' }, 's2')
-  assert.deepEqual(ctx.api.requests, [{ url: '/api/v1/projects/my-proj/epic-tails', team: 'k7m2qx9d' }])
+test('the line is said only when CONPORT_PROJECT_ID holds a value', () => withEnv(async (ctx) => {
+  for (const vars of [{}, { CONPORT_PROJECT_ID: '' }, { CONPORT_PROJECT_ID: '   ' },
+    { CONPORT_PROJECT_NAME: 'my-proj' }, { CONPORT_PROJECT_NAME: 'my-proj', CONPORT_PROJECT_ID: ' ' }]) {
+    const started = await sessionStart(ctx, vars)
+    assert.equal(started.code, 0)
+    assert.equal(started.out, '', JSON.stringify(vars))
+  }
+  // Any value counts, a name-shaped one too: the variable is not read as a project.
+  const named = await sessionStart(ctx, { CONPORT_PROJECT_ID: 'my-proj' })
+  assert.deepEqual(startNotice(named.out), { user: RETIRED, agent: null })
+  assert.equal(ctx.api.requests.filter((r) => !r.url.endsWith('?project=my-proj')).length, 0)
+}))
+
+test('a handle in CONPORT_PROJECT_NAME is the path segment, with no team header', () => withEnv(async (ctx) => {
+  const vars = { CONPORT_PROJECT_NAME: 'prk7m2qx9d' }
+  await prompt(ctx, vars)
+  await sessionStart(ctx, vars)
+  assert.deepEqual(ctx.api.requests, [
+    { url: '/api/v1/projects/prk7m2qx9d/epic-tails', team: undefined },
+    { url: '/api/v1/hooks/conventions?project=prk7m2qx9d', team: undefined },
+  ])
+  const posted = ctx.api.nextRequest()
+  await sessionEnd(ctx, vars)
+  await posted
+  assert.equal(ctx.api.bodies[0].project, 'prk7m2qx9d')
 }))
 
 // The workflow helper cannot import the hooks' module, so the rule lives in

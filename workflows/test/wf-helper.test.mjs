@@ -59,6 +59,23 @@ test('preflight: clean tree reports clean, both branch names and the head sha', 
   assert.equal(out.main_sha, git(dir, 'rev-parse', 'HEAD').trim())
 })
 
+test('preflight: says whether an api key is set, from either variable, and never prints it', () => {
+  const dir = mkRepo()
+  const env = { ...process.env }
+  delete env.CONPORT_API_KEY
+  delete env.CLAUDE_PLUGIN_OPTION_API_KEY
+  const key = 'pf_key_never_printed'
+  for (const [extra, expected] of [
+    [{}, false], [{ CONPORT_API_KEY: '  ' }, false],
+    [{ CONPORT_API_KEY: key }, true], [{ CLAUDE_PLUGIN_OPTION_API_KEY: key }, true],
+  ]) {
+    const r = runEnv(dir, { ...env, ...extra }, 'preflight')
+    assert.equal(r.code, 0, r.stderr)
+    assert.equal(JSON.parse(r.stdout).api_key, expected, JSON.stringify(Object.keys(extra)))
+    assert.ok(!r.stdout.includes(key), 'the key itself never reaches stdout')
+  }
+})
+
 test('preflight: dirty tree reports the dirty paths', () => {
   const dir = mkRepo()
   writeFileSync(join(dir, 'base.txt'), 'changed\n')

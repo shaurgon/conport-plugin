@@ -18,7 +18,7 @@ The `conport` skill produces a compact dashboard by chaining three MCP calls:
 ## Sample output shape
 
 ```
-[CONPORT] <project> (ID: <project id>) · <n> decisions · <n> patterns
+[CONPORT] <project> (<handle>) · <n> decisions · <n> patterns
 
 Focus
   Checkout redesign: cart and payment form in review …

@@ -27,9 +27,9 @@ const REQUEST_TIMEOUT_MS = 10000                   // per REST call, as in scrip
 // The two accounting tables this command knows how to execute — the one of a
 // single task run and the one of an epic run. A table whose keys fit neither
 // shape is refused whole rather than executed in part.
-const TASK_TABLE_KEYS = new Set(['project_id', 'close', 'block', 'minors_umbrella'])
+const TASK_TABLE_KEYS = new Set(['project', 'close', 'block', 'minors_umbrella'])
 // EPIC_TABLE_KEYS_BEGIN — mirrored by EPIC_TABLE_KEYS in epic.js (drift-guarded)
-const EPIC_TABLE_KEYS = new Set(['project_id', 'epic', 'done', 'failed', 'skipped',
+const EPIC_TABLE_KEYS = new Set(['project', 'epic', 'done', 'failed', 'skipped',
   'parity_failed', 'minors', 'verdict', 'may_close', 'close_resolution'])
 // EPIC_TABLE_KEYS_END
 const EPIC_TAILS_TITLE = epic => 'Tails of epic task-' + epic
@@ -207,6 +207,10 @@ const preflight = () => {
     // The version handshake rides the first pipe of every run, so a stale
     // helper is visible in the run report, not only to `--version` by hand.
     helper_version: helperVersion(),
+    // Whether a ConPort API key is set — never the key. The workflows dispatch
+    // every agent through the task's journal, which lives in ConPort, so a run
+    // without a key refuses at its start.
+    api_key: apiKey() !== null,
   })
 }
 
@@ -492,12 +496,18 @@ const progressJournal = (api, project) => {
   }
 }
 
+// The project of a table or a step: a non-empty string, the handle the scout
+// returned. A number — the project id of an earlier release — is refused; the
+// server decides whether the string names a project.
+const isProjectHandle = v => typeof v === 'string' && v.trim() !== ''
+
 // The state every accounting run shares: the API client, the report's action log
 // and the failed-call list. A failed item is recorded and stepped over — the
-// remaining items still run.
+// remaining items still run. `project` is the project's handle as the scout
+// returned it, ready for a path segment.
 const accounting = (table, key) => {
   const api = conport(process.env.CONPORT_API_URL || API_BASE, key)
-  const project = table.project_id
+  const project = encodeURIComponent(table.project.trim())
   const actions = []
   const failed_calls = []
   const scrub = text => mask(String(text)).split(key).join('***')
@@ -757,6 +767,7 @@ const account = async flags => {
   const keys = Object.keys(table)
   const fits = known => keys.every(k => known.has(k))
   if (!fits(TASK_TABLE_KEYS) && !fits(EPIC_TABLE_KEYS)) sentinel('unsupported table')
+  if (!isProjectHandle(table.project)) return usage("--table: project must be the project's handle")
 
   const c = accounting(table, key)
   emit(fits(TASK_TABLE_KEYS) ? await accountTask(table, c) : await accountEpic(table, c))
@@ -801,12 +812,16 @@ const findingLine = f => {
   return `[${f.severity}] ${at} — ${f.what}.${extra}`
 }
 
-// The text of an entry. The brief arrives written; the report, the fix and the
-// review are written here from the agents' structured results, the same way for
-// both workflows.
+// A full text the caller wrote itself, or null.
+const fullText = s => (typeof s.body === 'string' && s.body.trim() ? s.body : null)
+
+// The text of an entry. The brief arrives written, and so may a report, a fix or
+// a review: a full text in `body` is the entry as it stands. Without one the
+// report, the fix and the review are written here from the agents' structured
+// results, the same way for both workflows.
 export const journalBody = s => {
   const r = s.result ?? {}
-  if (s.step === 'brief') return String(s.body)
+  if (s.step === 'brief' || fullText(s) !== null) return String(s.body)
   if (s.step === 'report') return [
     'Implementer report: ' + r.status,
     `Branch: ${r.branch} at ${r.head_sha}`,
@@ -834,10 +849,13 @@ export const journalBody = s => {
 // What is wrong with a step file, or null when it is a step this command runs.
 const stepProblem = s => {
   if (!s || typeof s !== 'object' || Array.isArray(s)) return 'the step must be a JSON object'
-  if (!Number.isInteger(s.project_id) || !Number.isInteger(s.task_id)) return 'project_id and task_id must be integers'
+  if (!isProjectHandle(s.project)) return "project must be the project's handle"
+  if (!Number.isInteger(s.task_id)) return 'task_id must be an integer'
   if (!CYCLE_STEPS.has(s.step)) return 'step must be one of ' + [...CYCLE_STEPS].join(', ')
-  if (s.step === 'brief') return typeof s.body === 'string' && s.body.trim() ? null : 'a brief needs a non-empty body'
-  if (!s.result || typeof s.result !== 'object' || Array.isArray(s.result)) return `a ${s.step} needs the agent's result object`
+  if (s.step === 'brief') return fullText(s) !== null ? null : 'a brief needs a non-empty body'
+  if (s.body !== undefined && fullText(s) === null) return `a ${s.step} body must be a non-empty text`
+  if (fullText(s) === null && (!s.result || typeof s.result !== 'object' || Array.isArray(s.result)))
+    return `a ${s.step} needs the agent's result object or a full text in body`
   if (s.step === 'review' && !JOURNAL_VERDICTS.has(s.verdict)) return 'a review needs verdict approve or changes_requested'
   return null
 }
@@ -888,7 +906,7 @@ const cycle = async flags => {
 
   const key = apiKey()
   if (!key) sentinel('no api key')
-  const c = accounting({ project_id: s.project_id }, key)
+  const c = accounting({ project: s.project }, key)
   await runCycle(c, s)
   emit({ via: VIA, task: s.task_id, step: s.step, actions: c.actions, failed_calls: c.failed_calls })
 }
@@ -1046,7 +1064,47 @@ const findPlan = (root, id) => {
   return null
 }
 
-// A project name as the caller holds it: a bare name, an id, or `team/project`.
+// Every link an item is the source or the target of, all pages.
+const linksOf = async (api, projectSegment, type, id) => {
+  const out = []
+  for (;;) {
+    const query = new URLSearchParams({ item_type: type, item_id: String(id), limit: '500', offset: String(out.length) })
+    const page = await api('GET', `/projects/${projectSegment}/links?${query}`)
+    out.push(...page.links)
+    if (!page.links.length || out.length >= page.total) return out
+  }
+}
+
+// The first of these documents, by id, whose type is `type`; null when none is.
+// A document that no longer exists is no candidate.
+const firstDocOfType = async (api, projectSegment, ids, type) => {
+  for (const id of [...new Set(ids)].sort((a, b) => a - b)) {
+    let doc
+    try { doc = await api('GET', `/projects/${projectSegment}/documents/${id}?raw=true`) } catch (e) {
+      if (e && e.status === 404) continue
+      throw e
+    }
+    if (doc && doc.doc_type === type) return id
+  }
+  return null
+}
+
+// The spec of a task through the graph: the plan document linked to the task
+// with clarifies, then the spec that plan is derived_from. Null when either
+// link is missing; the description is never read for it.
+const specThroughPlan = async (api, projectSegment, taskId) => {
+  const toTask = await linksOf(api, projectSegment, 'task', taskId)
+  const plan = await firstDocOfType(api, projectSegment, toTask
+    .filter(l => l.link_type === 'clarifies' && l.source_type === 'doc' && l.target_type === 'task' && l.target_id === taskId)
+    .map(l => l.source_id), 'plan')
+  if (plan === null) return null
+  const fromPlan = await linksOf(api, projectSegment, 'doc', plan)
+  return firstDocOfType(api, projectSegment, fromPlan
+    .filter(l => l.link_type === 'derived_from' && l.source_type === 'doc' && l.source_id === plan && l.target_type === 'doc')
+    .map(l => l.target_id), 'spec')
+}
+
+// A project as the caller holds it: its handle, a bare name or `team/project`.
 // The team does not fit the path segment, so it is split off here and sent as a
 // header. An empty part or a second "/" is not a name — null, as with no name.
 export const projectAddress = name => {
@@ -1069,11 +1127,16 @@ const scout = async flags => {
 
   const api = conport(process.env.CONPORT_API_URL || API_BASE, key, project.team)
   const scrub = text => mask(String(text)).split(key).join('***')
-  let projectId
+  // The address becomes the project's handle once; every later path carries the
+  // handle. A project answered without one leaves nothing to address the task by.
+  let handle
   let task
+  let linkedSpec
   try {
-    projectId = (await api('GET', '/projects/' + encodeURIComponent(project.project))).id
-    task = await api('GET', `/projects/${projectId}/tasks/${taskId}`)
+    handle = (await api('GET', '/projects/' + encodeURIComponent(project.project))).handle
+    if (typeof handle !== 'string' || !handle) throw new Error('the server answered no project handle')
+    task = await api('GET', `/projects/${encodeURIComponent(handle)}/tasks/${taskId}`)
+    linkedSpec = await specThroughPlan(api, encodeURIComponent(handle), taskId)
   } catch (e) { errorOut(scrub(e && e.message ? e.message : e)) }
 
   const root = typeof flags['repo-root'] === 'string' ? flags['repo-root'] : process.cwd()
@@ -1085,7 +1148,7 @@ const scout = async flags => {
   const gc = text ? globalConstraints(text) : ''
   emit({
     via: VIA,
-    project_id: projectId,
+    project: handle,
     task: {
       id: task.id, kind: task.kind, status: task.status, title: task.title,
       description: task.description ?? '', parent_epic_id: task.parent_task_id ?? null,
@@ -1101,7 +1164,8 @@ const scout = async flags => {
     gc_lines: gc ? gc.split('\n').length : 0,
     gate: gc ? extractGate(gc) : null,
     acceptance: extractAcceptance(task.description),
-    spec_doc_id: docRef(task.description) ?? (text ? docRef(planHeader(text)) : null),
+    // The plan's spec in the graph, else the one a local plan file's header names.
+    spec_doc_id: linkedSpec ?? (text ? docRef(planHeader(text)) : null),
   })
 }
 

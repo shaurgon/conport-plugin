@@ -11,9 +11,11 @@ you are a member of.
 
 ```text
 Set CONPORT_PROJECT_NAME.
+Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
+CONPORT_PROJECT_ID is no longer read.
 ```
 
 Cursor reads it from the environment of its own process — export it in the
@@ -83,7 +85,7 @@ show green with ~40 tools. In Agent chat, ask:
 `init` only finds a project, it never creates one, and the agent calls
 `create_project` only on your word — which this request gives it.
 
-Expected: a JSON response with `project_id` and `summary`. Type `/conport` in
+Expected: a JSON response with `project` (the project's handle) and `summary`. Type `/conport` in
 chat — the skill should be offered as a slash completion.
 
 ## Superpowers overlay (optional)
@@ -95,7 +97,7 @@ ConPort instead of `docs/superpowers/`. Turn it on with
 agent gets the overlay rules from the **Superpowers overlay** block of the
 `conport` skill. There is no commit guard either, so nothing refuses a commit
 of a new file under `docs/superpowers/` — the rules alone keep specs and plans
-out of git. The rules call the `conport` CLI (`npx -y conport@^0.4`), which
+out of git. The rules call the `conport` CLI (`npx -y conport@^0.5`), which
 needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`. See
 the [README](../../README.md#superpowers-overlay).
 

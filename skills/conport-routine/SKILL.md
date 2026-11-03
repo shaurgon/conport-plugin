@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 16.6.0
+  version: 17.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -33,20 +33,21 @@ structure on top.
 
 | Tool | Purpose |
 |------|---------|
-| `get_agenda(project_id, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
-| `list_milestones(project_id, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
-| `update_milestone(project_id, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
-| `get_routine_config(project_id)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
-| `set_routine_config(project_id, ...)` | Accept/change the policy, `selection` included. `enabled=false` switches the cycle off entirely. |
-| `routine_run_start(project_id)` | Opens the run journal entry → `{id, started_at, already_open}`. |
-| `routine_run_finish(project_id, run_id, outcome, summary, task_ids)` | Closes the run. `outcome`: `completed` \| `empty` \| `aborted`. Auto-creates the progress entry. |
-| `list_routine_runs(project_id, limit=10)` | Recent runs, newest first — the run journal. An open (running or crashed) run has `finished_at: null` and no outcome. |
-| `get_estimation_stats(project_id, limit=50)` | Plan/actual calibration stats — call before estimating: `sample_size`, `median_ratio`, p50/p90 actual seconds, `by_priority` breakdown, `recent` samples. |
+| `get_agenda(project, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
+| `list_milestones(project, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
+| `update_milestone(project, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
+| `get_routine_config(project)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
+| `set_routine_config(project, ...)` | Accept/change the policy, `selection` included. `enabled=false` switches the cycle off entirely. |
+| `routine_run_start(project)` | Opens the run journal entry → `{id, started_at, already_open}`. |
+| `routine_run_finish(project, run_id, outcome, summary, task_ids)` | Closes the run. `outcome`: `completed` \| `empty` \| `aborted`. Auto-creates the progress entry. |
+| `list_routine_runs(project, limit=10)` | Recent runs, newest first — the run journal. An open (running or crashed) run has `finished_at: null` and no outcome. |
+| `get_estimation_stats(project, limit=50)` | Plan/actual calibration stats — call before estimating: `sample_size`, `median_ratio`, p50/p90 actual seconds, `by_priority` breakdown, `recent` samples. |
 | `list_tasks(..., ready=true, order="priority", offset=N)` | Deep priority-ordered slice of ready tasks when `ready_top` isn't enough. Accepts a `routine_eligible` filter (true — only marked tasks). |
 | `update_task` → IN_PROGRESS | Sets a lease on the task (auto-returns to TODO if the lease expires). Close with `resolution=...` as usual. |
-| `add_task_journal_entry(project_id, task_id, kind, author, body, verdict=None)` | One entry in the task's journal: `report` (the work done), `review` (the reviewer's verdict, `approve` or `changes_requested`), `fix` (the report on the fixes), `brief` (an assignment). The server stamps the round. `author` is the role or name of who wrote the entry: the implementer and the reviewer sign with different names, and a `review` signed like a `report` or `fix` of the same round is refused with `reviewer_is_author`. |
-| `update_task` → REVIEW | Hands finished work to a reviewer. Needs a `report` or `fix` of the current round; a task in REVIEW leaves it only to DONE (approved), IN_PROGRESS (changes requested) or CANCELLED. |
-| `list_task_journal(project_id, task_id, round=None, include_body=false)` | The task's journal, oldest first — the reviewer reads the round's `brief` and `report` with `include_body=true`. |
+| `add_task_journal_entry(project, task_id, kind, body, author=None, verdict=None)` | One entry in the task's journal: `report` (the work done), `review` (the reviewer's verdict, `approve` or `changes_requested`), `fix` (the report on the fixes), `brief` (an assignment). The server stamps the round. The entry moves the task: a `report` takes it to REVIEW (a TODO or BLOCKED task is started first), a `fix` back to REVIEW, `changes_requested` back to IN_PROGRESS for the next round — no `update_task` around it. `author` is the role or name of who wrote the entry, by default the role of the kind (`implementer`, `reviewer`, `orchestrator`): the implementer and the reviewer sign with different names, and a `review` signed like a `report` or `fix` of the same round is refused with `reviewer_is_author`. |
+| `list_task_journal(project, task_id, round=None, include_body=false)` | The task's journal, oldest first — the reviewer reads the round's `brief` and `report` with `include_body=true`; a page carries `next_offset` while entries remain. |
+| `get_task_journal_entry(project, task_id, kind=...)` | The latest entry of a kind with its text — the brief to work from, the report to review (or one entry by `entry_id`). |
+| A task in REVIEW | Leaves it only to DONE (approved, `update_task` with `resolution`), IN_PROGRESS (a `review` with `changes_requested` does it) or CANCELLED. |
 | `update_task(snooze_until=...)` | Defer a task until a date; empty string clears the snooze. |
 
 **Relation to `init`.** The `init` response (conport skill) may include a
@@ -100,17 +101,17 @@ configured level.
 ### Phase 1: Start
 
 1. `init` (per the conport skill) if not already done this session.
-2. `get_routine_config(project_id)`.
+2. `get_routine_config(project)`.
    - `enabled=false` → **report that the routine is disabled and exit.** Do not
      start a run, do not touch the backlog.
    - `is_default=true` → proceed on the returned defaults (no config row is fine).
-3. `routine_run_start(project_id)`.
+3. `routine_run_start(project)`.
    - `already_open=true` → the previous run never finished. **Deal with it
      first:** check what it left behind (stale IN_PROGRESS tasks from that run
      surface in Phase 2). If the run is dead — no live work attached — close it
      with `routine_run_finish(outcome='aborted')` and a one-line summary, then
      start your run.
-4. `get_agenda(project_id)` — this single call feeds Phases 2–4.
+4. `get_agenda(project)` — this single call feeds Phases 2–4.
 
 ### Phase 2: Reconcile (all autonomy levels)
 
@@ -225,19 +226,20 @@ Then the ready pool:
      has a `report`, `fix` or `review` entry (the server then refuses a direct
      DONE with `done_needs_review`):
      - `add_task_journal_entry(kind='report')` with what was done and how it
-       was verified, then `update_task` → REVIEW.
+       was verified — the entry moves the task to REVIEW.
      - A **separate** reviewer — another agent given only the task, its brief
        and the report, never the run that did the work — reads the round
        (`list_task_journal(include_body=true)`) and writes
        `add_task_journal_entry(kind='review', verdict=...)` under its own
        `author`, never the name the round's report or fix was signed with.
-     - `approve` → step 5. `changes_requested` → `update_task` → IN_PROGRESS
-       (the next round), fix, `add_task_journal_entry(kind='fix')`, REVIEW
-       again, and the reviewer looks once more.
+     - `approve` → step 5. `changes_requested` → the entry has returned the
+       task to IN_PROGRESS (the next round): fix, then
+       `add_task_journal_entry(kind='fix')`, which moves it to REVIEW again, and
+       the reviewer looks once more.
      - No separate reviewer can run → leave the task in REVIEW and name it in
        the digest; a later run or the owner reviews it. A fix that does not fit
-       this run → move the task back to IN_PROGRESS (the return), then to TODO
-       with a note.
+       this run → the `changes_requested` review has already returned the task to
+       IN_PROGRESS; move it to TODO with a note.
   5. `update_task` → DONE with `resolution=...`. If it can't be finished this
      run — set BLOCKED with a note, or return to TODO; never leave it silently
      IN_PROGRESS.
@@ -257,7 +259,7 @@ Then the ready pool:
 
 ### Phase 5: Digest
 
-1. `routine_run_finish(project_id, run_id, outcome, summary, task_ids)`:
+1. `routine_run_finish(project, run_id, outcome, summary, task_ids)`:
    - `outcome='completed'` when anything was done (including reconcile-only or
      housekeeping-only runs); `outcome='empty'` per the empty-day protocol below.
    - `summary` — what was done, what's blocked and why, verdicts for stale
@@ -301,7 +303,7 @@ Phase 4 and the digest:
 
 - **Chronic gaps** — review gaps that stayed acknowledged-but-unresolved across
   multiple runs; either turn them into tasks or dismiss with a reason.
-- **Estimate vs actual** — call `get_estimation_stats(project_id)` and compare
+- **Estimate vs actual** — call `get_estimation_stats(project)` and compare
   `estimated_seconds` against actual durations on tasks closed this week; note
   systematic drift (`median_ratio` far from 1) in the digest so future
   estimates calibrate.

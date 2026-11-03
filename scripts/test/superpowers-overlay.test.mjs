@@ -237,9 +237,15 @@ function assertInjected(out) {
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.4 plan import/)
+  assert.match(text, /npx -y conport@\^0\.5 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
+})
+
+test('every journal tool call of the rules names its project', () => {
+  const calls = rulesText().match(/\b(?:add_task_journal_entry|get_task_journal_entry|list_task_journal)\([^)]*\)/g) ?? []
+  assert.ok(calls.length >= 3, `expected the brief, dispatch and history calls, got ${calls.length}`)
+  for (const call of calls) assert.match(call, /\(project=<project>, /, call)
 })
 
 test('with the overlay on and no project configured, the hook injects the rules from the stdin cwd', () => withRepo(async ({ tmp, main }) => {
@@ -278,14 +284,14 @@ test('with the overlay off the hook prints nothing, as before', () => withRepo(a
 test('the deny-list fetch runs as before, with the overlay on and off', () => withRepo(async ({ tmp, main }) => {
   const api = await startApi()
   const dataDir = join(tmp, 'data')
-  const env = { CONPORT_URL: api.url, CONPORT_PROJECT_ID: '99', CLAUDE_PLUGIN_DATA: dataDir }
+  const env = { CONPORT_URL: api.url, CONPORT_PROJECT_NAME: 'prk7m2qx9d', CLAUDE_PLUGIN_DATA: dataDir }
   try {
     let res = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, env })
     assert.equal(res.code, 0)
     assert.equal(res.out, '')
     assert.equal(api.requests.length, 1)
-    assert.match(api.requests[0], /^\/api\/v1\/hooks\/conventions\?project_id=99$/)
-    assert.equal(readFileSync(join(dataDir, 'deny-list_99.json'), 'utf8'), '{"deny":[]}')
+    assert.match(api.requests[0], /^\/api\/v1\/hooks\/conventions\?project=prk7m2qx9d$/)
+    assert.equal(readFileSync(join(dataDir, 'deny-list_prk7m2qx9d.json'), 'utf8'), '{"deny":[]}')
 
     rmSync(dataDir, { recursive: true, force: true })
     writeConfig(main, ON)
@@ -293,9 +299,33 @@ test('the deny-list fetch runs as before, with the overlay on and off', () => wi
     assert.equal(res.code, 0)
     assertInjected(res.out)
     assert.equal(api.requests.length, 2)
-    assert.ok(existsSync(join(dataDir, 'deny-list_99.json')))
+    assert.ok(existsSync(join(dataDir, 'deny-list_prk7m2qx9d.json')))
   } finally {
     await api.close()
+  }
+}))
+
+// One JSON document on stdout: the line about the retired variable is shown to
+// the user at the start of a session only, while the overlay rules reach the
+// agent on every source — a compacted session needs them again.
+test('with the overlay on, the line goes to the user at startup and the rules to the agent', () => withRepo(async ({ tmp, main }) => {
+  writeConfig(main, ON)
+  const line = 'CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project\'s handle or name'
+  const run = source => runSessionStart({
+    stdin: JSON.stringify({ cwd: main, source }), cwd: tmp, env: { CONPORT_PROJECT_ID: '42' },
+  })
+  const started = await run('startup')
+  assert.equal(started.code, 0)
+  const parsed = JSON.parse(started.out)
+  assert.equal(parsed.systemMessage, line)
+  assert.equal(parsed.hookSpecificOutput.hookEventName, 'SessionStart')
+  assert.equal(parsed.hookSpecificOutput.additionalContext, rulesText())
+
+  for (const source of ['resume', 'clear', 'compact']) {
+    const again = await run(source)
+    assert.equal(again.code, 0)
+    assert.equal('systemMessage' in JSON.parse(again.out), false, source)
+    assertInjected(again.out)
   }
 }))
 

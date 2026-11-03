@@ -51,9 +51,11 @@ ever sees what that user is a member of — one key works in the user's
 
 ```text
 Set CONPORT_PROJECT_NAME.
+Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
+CONPORT_PROJECT_ID is no longer read.
 ```
 
 Where the variable goes:
@@ -107,8 +109,8 @@ This works immediately, **no harness restart needed**.
 
    ```bash
    npx -y conport api projects list
-   npx -y conport api tasks list --project_identifier <project>
-   npx -y conport api decisions list --project_identifier <project>
+   npx -y conport api tasks list --project <project>
+   npx -y conport api decisions list --project <project>
    npx -y conport api search ...      # see: conport api search --help
    ```
 
@@ -188,7 +190,7 @@ Notes:
      `create_project` with the same name, then call `init` again.
    - **CLI host:** run `npx -y conport api projects list`, then list this
      project's tasks with
-     `npx -y conport api tasks list --project_identifier "$CONPORT_PROJECT_NAME" --status TODO,IN_PROGRESS,REVIEW`
+     `npx -y conport api tasks list --project "$CONPORT_PROJECT_NAME" --status TODO,IN_PROGRESS,REVIEW`
      — the flag takes the name as it is set, `k7m2qx9d/<project>` included.
      A project that does not exist yet is not created by reading it: ask the
      user, and only when they say so run

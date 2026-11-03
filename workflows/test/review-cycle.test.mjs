@@ -59,12 +59,19 @@ test('task.js: a clean run writes brief, report and REVIEW, an approval, then cl
   ])
   assert.deepEqual(order(labels, ['j-brief', 'impl', 'j-report', 'rev', 'j-review', 'merge', 'account']),
     ['j-brief', 'impl', 'j-report', 'rev', 'j-review', 'merge', 'account'])
-  assert.ok(steps.every(s => s.project_id === 42))
+  assert.ok(steps.every(s => s.project === 'prk7m2qx9d' && !('project_id' in s)))
   assert.deepEqual(steps[1].result, taskRun().answers.impl, 'the report is the implementer\'s own result')
   assert.deepEqual(steps[2].result, taskRun().answers.rev, 'the review is the reviewer\'s own result')
   assert.match(steps[0].body, /task-7 "the thing"/)
-  assert.match(steps[0].body, /branch task\/t7\b/)
   assert.match(steps[0].body, /Acceptance: accept/)
+  // the dispatch is the task and how to read its journal, never the task's text
+  for (const label of ['impl', 'rev']) {
+    assert.ok(prompt(label).includes('Your task is task-7; its brief is in the task\'s ConPort journal.'), label)
+    assert.ok(prompt(label).includes('get_task_journal_entry(task_id=7, kind="brief")'), label)
+    for (const text of ['<<<BEGIN task description', '<<<BEGIN spec digest', '<<<BEGIN global constraints', 'Acceptance: accept'])
+      assert.ok(!prompt(label).includes(text), `${label}: ${text}`)
+  }
+  assert.ok(prompt('impl').includes('git checkout -b task/t7 '))
   assert.equal(accountTable(prompt('account')).close.id, 7, 'the close is the accounting step, as before')
   assert.ok(ledger.journal.every(j => j.ok), 'the ledger names each step and its outcome')
 })
@@ -78,13 +85,15 @@ test('task.js: changes requested -> return, fix, REVIEW, re-review, then the clo
     { label: 'j-brief', step: 'brief', task: 7 },
     { label: 'j-report', step: 'report', task: 7 },
     { label: 'j-review', step: 'review', task: 7, verdict: 'changes_requested' },
+    { label: 'j-brief-fix', step: 'brief', task: 7 },
     { label: 'j-fix', step: 'fix', task: 7 },
+    { label: 'j-brief-rereview', step: 'brief', task: 7 },
     { label: 'j-review2', step: 'review', task: 7, verdict: 'approve' },
   ])
-  assert.deepEqual(order(labels, ['j-review', 'fix', 'j-fix', 'rev2', 'j-review2', 'merge']),
-    ['j-review', 'fix', 'j-fix', 'rev2', 'j-review2', 'merge'])
-  assert.deepEqual(steps[3].result, FIXED, 'the fix entry is the fixer\'s own result')
-  assert.match(steps[4].note, /re-review/i)
+  const wanted = ['j-review', 'j-brief-fix', 'fix', 'j-fix', 'j-brief-rereview', 'rev2', 'j-review2', 'merge']
+  assert.deepEqual(order(labels, wanted), wanted)
+  assert.deepEqual(steps[4].result, FIXED, 'the fix entry is the fixer\'s own result')
+  assert.match(steps[6].note, /re-review/i)
 })
 
 test('task.js: minor findings alone are an approval — the fixer polishes, no fix entry, the re-review is recorded', async () => {
@@ -92,7 +101,7 @@ test('task.js: minor findings alone are an approval — the fixer polishes, no f
     rev: { verdict: 'NEEDS_FIXES', findings: [MINOR] }, fix: FIXED, rev2: CLEAN,
   }))
   assert.equal(ledger.outcome, 'MERGED')
-  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'approve', 'approve'])
+  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'approve', 'brief', 'brief', 'approve'])
 })
 
 test('task.js: a re-review that still finds a serious defect requests changes again and the run fails', async () => {
@@ -100,7 +109,8 @@ test('task.js: a re-review that still finds a serious defect requests changes ag
     rev: { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] }, fix: FIXED, rev2: { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] },
   }))
   assert.equal(ledger.fail_reason, 'RED_AFTER_FIX')
-  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'changes_requested', 'fix', 'changes_requested'])
+  assert.deepEqual(steps.map(s => s.verdict ?? s.step),
+    ['brief', 'report', 'changes_requested', 'brief', 'fix', 'brief', 'changes_requested'])
 })
 
 test('task.js: a failed fix of a serious finding writes no fix entry', async () => {
@@ -108,7 +118,7 @@ test('task.js: a failed fix of a serious finding writes no fix entry', async () 
     rev: { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] }, fix: { status: 'BLOCKED', head_sha: 'x' },
   }))
   assert.equal(ledger.fail_reason, 'FIX_FAILED')
-  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'changes_requested'])
+  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'changes_requested', 'brief'])
 })
 
 test('task.js: an implementer that does not finish leaves a brief and no report', async () => {
@@ -141,21 +151,96 @@ test('task.js: a step that does not land stops the journal of the task; the run 
     [['j-brief', true, false], ['j-report', false, false], ['j-review', false, true]])
 })
 
-test('task.js: a helper that answers nothing leaves the outcome alone and tries no step after the report', async () => {
+test('task.js: a helper that answers nothing for the brief aborts before any agent works', async () => {
   const { args, answers } = taskRun()
-  const { ledger, calls } = await runWorkflow('task.js', args, answers)
-  assert.equal(ledger.outcome, 'MERGED')
-  // the brief is exempt from the stop rule, the report is not
-  assert.deepEqual(calls.filter(c => c.label.startsWith('j-')).map(c => c.label), ['j-brief', 'j-report'])
+  const { ledger, calls } = await runWorkflow('task.js', args, { ...answers, 'j-*': null })
+  assert.equal(ledger.abort_reason, 'ABORTED_NO_BRIEF')
+  assert.deepEqual(calls.filter(c => c.label.startsWith('j-')).map(c => c.label), ['j-brief'])
+  assert.ok(!calls.some(c => c.label.startsWith('impl')), 'no implementer without its brief')
 })
 
-// The server takes a report without a brief: a brief that did not land is
-// recorded, and the cycle goes on.
-test('task.js: a brief that does not land does not stop the cycle', async () => {
-  const { ledger, steps } = await go('task.js', taskRun(), helper(['j-brief']))
+// Every agent reads its brief from the journal: a brief that did not land stops
+// the dispatch it was written for.
+test('task.js: a brief that does not land aborts the run before the implementer, naming the one action', async () => {
+  const { ledger, steps, labels } = await go('task.js', taskRun(), helper(['j-brief']))
+  assert.equal(ledger.outcome, 'ABORTED')
+  assert.equal(ledger.abort_reason, 'ABORTED_NO_BRIEF')
+  assert.match(ledger.abort_detail, /brief did not reach the task journal .*run again/)
+  assert.deepEqual(steps.map(s => s.label), ['j-brief'])
+  assert.ok(!labels.some(l => l.startsWith('impl') || l === 'account'), 'nothing is dispatched or accounted')
+})
+
+test('task.js: a fix brief that does not land dispatches no fixer and fails the run with its own reason', async () => {
+  const { ledger, labels } = await go('task.js', taskRun({ rev: { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] }, fix: FIXED }),
+    helper(['j-brief-fix']))
+  assert.equal(ledger.fail_reason, 'BRIEF_NOT_WRITTEN')
+  assert.equal(ledger.fail_detail, 'j-brief-fix')
+  assert.ok(!labels.includes('fix'), 'no fixer without its brief')
+})
+
+test('task.js: a re-review brief that does not land dispatches no re-reviewer', async () => {
+  const { ledger, labels } = await go('task.js', taskRun({ rev: { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] }, fix: FIXED, rev2: CLEAN }),
+    helper(['j-brief-rereview']))
+  assert.equal(ledger.fail_reason, 'BRIEF_NOT_WRITTEN')
+  assert.ok(!labels.includes('rev2'))
+})
+
+test('task.js: the questions of NEEDS_CONTEXT go into a new brief before the second implementer', async () => {
+  const asked = { status: 'NEEDS_CONTEXT', branch: 'task/t7', head_sha: 'b', worktree_path: '/tmp/wt-7', questions: ['which table?'] }
+  const { ledger, steps, labels, prompt } = await go('task.js', taskRun({ impl: asked, 'impl-ctx': taskRun().answers.impl }))
   assert.equal(ledger.outcome, 'MERGED')
-  assert.deepEqual(steps.map(s => s.label), ['j-brief', 'j-report', 'j-review'])
-  assert.deepEqual(ledger.journal.map(j => [j.label, j.ok]), [['j-brief', false], ['j-report', true], ['j-review', true]])
+  assert.deepEqual(order(labels, ['impl', 'j-brief-ctx', 'impl-ctx']), ['impl', 'j-brief-ctx', 'impl-ctx'])
+  const ctx = steps.find(s => s.label === 'j-brief-ctx')
+  assert.ok(ctx.body.includes('["which table?"]') && ctx.body.includes('Acceptance: accept'), 'the whole brief plus the questions')
+  assert.ok(!prompt('impl-ctx').includes('which table?'))
+})
+
+test('task.js: NEEDS_CONTEXT whose new brief does not land fails with BRIEF_NOT_WRITTEN and dispatches no second implementer', async () => {
+  const asked = { status: 'NEEDS_CONTEXT', branch: 'task/t7', head_sha: 'b', worktree_path: '/tmp/wt-7', questions: ['q'] }
+  const { ledger, labels } = await go('task.js', taskRun({ impl: asked }), helper(['j-brief-ctx']))
+  assert.deepEqual([ledger.fail_reason, ledger.fail_detail], ['BRIEF_NOT_WRITTEN', 'j-brief-ctx'])
+  assert.ok(!labels.includes('impl-ctx'))
+})
+
+// A conflict at the merge: the rebaser reads a brief of its own, the rebase
+// assignment, and its reviewer the conflicted files — each written first.
+const taskConflict = over => taskRun({
+  merge: { results: [{ id: 7, status: 'CONFLICT', conflict_files: ['a.js'] }] },
+  rebase: { status: 'DONE', head_sha: 'hhh7', conflict_files: ['a.js'] },
+  'rev-rb': CLEAN,
+  'merge-rb': { results: [{ id: 7, status: 'MERGED', merge_sha: 'iii8' }] },
+  ...over,
+})
+
+test('task.js: the rebaser is dispatched on a rebase brief of its own, not on the latest fix brief', async () => {
+  const { ledger, steps, labels } = await go('task.js', taskConflict({
+    rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: FIXED, rev2: CLEAN }))
+  assert.equal(ledger.outcome, 'MERGED')
+  const briefsBefore = steps.slice(0, steps.findIndex(s => s.label === 'j-brief-rebase') + 1).filter(s => s.step === 'brief')
+  assert.equal(briefsBefore.at(-1).label, 'j-brief-rebase')
+  const rb = briefsBefore.at(-1).body
+  assert.match(rb, /=== REBASE: the branch task\/t7 conflicts with main ===/)
+  assert.match(rb, /semantic_choice=true/)
+  assert.ok(!rb.includes('REVIEW FINDINGS TO FIX'), 'the rebase brief is not the fix brief')
+  assert.deepEqual(order(labels, ['j-brief-rebase', 'rebase', 'j-brief-rb', 'rev-rb']), ['j-brief-rebase', 'rebase', 'j-brief-rb', 'rev-rb'])
+})
+
+test('task.js: a rebase brief that does not land dispatches no rebaser and fails with BRIEF_NOT_WRITTEN', async () => {
+  const { ledger, labels } = await go('task.js', taskConflict(), helper(['j-brief-rebase']))
+  assert.deepEqual([ledger.fail_reason, ledger.fail_detail], ['BRIEF_NOT_WRITTEN', 'j-brief-rebase'])
+  assert.ok(!labels.includes('rebase') && !labels.includes('rev-rb'))
+})
+
+test('task.js: a brief for the review after the rebase that does not land fails with BRIEF_NOT_WRITTEN, not MERGE_CONFLICT', async () => {
+  const { ledger, labels } = await go('task.js', taskConflict(), helper(['j-brief-rb']))
+  assert.deepEqual([ledger.fail_reason, ledger.fail_detail], ['BRIEF_NOT_WRITTEN', 'j-brief-rb'])
+  assert.ok(labels.includes('rebase') && !labels.includes('rev-rb'))
+})
+
+test('task.js: a rebase that fails is still MERGE_CONFLICT', async () => {
+  const { ledger, labels } = await go('task.js', taskConflict({ rebase: { status: 'BLOCKED', head_sha: 'b', conflict_files: ['a.js'] } }))
+  assert.equal(ledger.fail_reason, 'MERGE_CONFLICT')
+  assert.ok(!labels.includes('j-brief-rb'))
 })
 
 // A previous run stopped after its report: the task waits in REVIEW.
@@ -171,7 +256,9 @@ test('task.js: a task found in REVIEW skips Execute and is reviewed on the branc
   }))
   assert.equal(ledger.outcome, 'MERGED')
   assert.ok(!labels.some(l => l.startsWith('impl')), 'no implementer for work that is already reported')
-  assert.deepEqual(steps.map(brief), [{ label: 'j-review', step: 'review', task: 7, verdict: 'approve' }])
+  assert.deepEqual(steps.map(brief), [
+    { label: 'j-brief', step: 'brief', task: 7 },
+    { label: 'j-review', step: 'review', task: 7, verdict: 'approve' }], 'its reviewer reads a brief written for it')
   assert.ok(prompt('branch').includes('node <helper> branch --names \'["task/t7-ctx","task/t7-r2","task/t7"]\''))
   assert.ok(prompt('rev').includes('git diff main...task/t7-r2'))
   assert.ok(prompt('merge').includes('"branch":"task/t7-r2","head_sha":"bbb9"'))
@@ -185,7 +272,7 @@ test('task.js: a task found in REVIEW whose fix needs a worktree is told to make
   }))
   assert.ok(!/\bnull\b/.test(prompt('fix')), 'the fixer is not sent to a worktree named null')
   assert.ok(prompt('fix').includes('git worktree add <a sibling directory outside the primary working tree> task/t7'))
-  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['changes_requested', 'fix', 'approve'])
+  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'changes_requested', 'brief', 'fix', 'brief', 'approve'])
 })
 
 test('task.js: a task found in REVIEW without its branch aborts before any work, naming the one action', async () => {
@@ -282,7 +369,13 @@ test('epic.js: a clean run writes brief, report and REVIEW, an approval, then cl
   ])
   assert.deepEqual(order(labels, ['j-brief-501', 'impl-501', 'j-report-501', 'rev-501', 'j-review-501', 'merge-w0', 'account']),
     ['j-brief-501', 'impl-501', 'j-report-501', 'rev-501', 'j-review-501', 'merge-w0', 'account'])
-  assert.match(steps[0].body, /branch epic500\/t501\b/)
+  assert.match(steps[0].body, /task-501 "the thing" of epic task-500/)
+  for (const label of ['impl-501', 'rev-501']) {
+    assert.ok(prompt(label).includes('get_task_journal_entry(task_id=501, kind="brief")'), label)
+    for (const text of ['<<<BEGIN spec card', '<<<BEGIN spec digest', '<<<BEGIN global constraints', 'docs/plan.md'])
+      assert.ok(!prompt(label).includes(text), `${label}: ${text}`)
+  }
+  assert.ok(prompt('impl-501').includes('git checkout -b epic500/t501 '))
   assert.deepEqual(accountTable(prompt('account')).done.map(d => d.id), [501])
 })
 
@@ -293,9 +386,9 @@ test('epic.js: changes requested -> return, fix, REVIEW, re-review', async () =>
   assert.equal(ledger.outcome, 'EPIC_CLOSED')
   assert.deepEqual(steps.map(s => [s.label, s.verdict ?? s.step]), [
     ['j-brief-501', 'brief'], ['j-report-501', 'report'], ['j-review-501', 'changes_requested'],
-    ['j-fix-501', 'fix'], ['j-review2-501', 'approve']])
-  assert.deepEqual(order(labels, ['j-review-501', 'fix-501', 'j-fix-501', 'rev2-501', 'j-review2-501', 'merge-w0']),
-    ['j-review-501', 'fix-501', 'j-fix-501', 'rev2-501', 'j-review2-501', 'merge-w0'])
+    ['j-brief-fix-501', 'brief'], ['j-fix-501', 'fix'], ['j-brief-rereview-501', 'brief'], ['j-review2-501', 'approve']])
+  const wanted = ['j-review-501', 'j-brief-fix-501', 'fix-501', 'j-fix-501', 'j-brief-rereview-501', 'rev2-501', 'j-review2-501', 'merge-w0']
+  assert.deepEqual(order(labels, wanted), wanted)
 })
 
 test('epic.js: the review after a rebase is recorded too; a gap fix, which has no task, writes nothing', async () => {
@@ -313,7 +406,10 @@ test('epic.js: the review after a rebase is recorded too; a gap fix, which has n
   }))
   assert.equal(ledger.outcome, 'EPIC_CLOSED')
   assert.deepEqual(steps.map(s => [s.label, s.verdict ?? s.step]), [
-    ['j-brief-501', 'brief'], ['j-report-501', 'report'], ['j-review-501', 'approve'], ['j-review-rb-501', 'approve']])
+    ['j-brief-501', 'brief'], ['j-report-501', 'report'], ['j-review-501', 'approve'],
+    ['j-brief-rebase-501', 'brief'], ['j-brief-rb-501', 'brief'], ['j-review-rb-501', 'approve']])
+  assert.match(steps.find(s => s.label === 'j-brief-rebase-501').body, /=== REBASE: the branch epic500\/t501 conflicts with main ===/)
+  assert.ok(steps.find(s => s.label === 'j-brief-rb-501').body.includes('["a.js"]'), 'the conflicted files are in the brief')
   assert.match(steps.at(-1).note, /rebase/i)
 })
 
@@ -330,7 +426,9 @@ test('epic.js: a child found in REVIEW skips its implementer and is reviewed on 
   }))
   assert.equal(ledger.outcome, 'EPIC_CLOSED')
   assert.ok(!labels.some(l => l.startsWith('impl-')), 'no implementer for work that is already reported')
-  assert.deepEqual(steps.map(brief), [{ label: 'j-review-501', step: 'review', task: 501, verdict: 'approve' }])
+  assert.deepEqual(steps.map(brief), [
+    { label: 'j-brief-501', step: 'brief', task: 501 },
+    { label: 'j-review-501', step: 'review', task: 501, verdict: 'approve' }])
   assert.ok(prompt('branch-501').includes('\'["epic500/t501-ctx","epic500/t501-r2","epic500/t501"]\''))
   assert.ok(prompt('rev-501').includes('git diff main...epic500/t501'))
   assert.ok(prompt('merge-w0').includes('"branch":"epic500/t501","head_sha":"bbb9"'))
@@ -404,9 +502,88 @@ for (const [file, run] of [['task.js', taskRun], ['epic.js', epicRun]])
     assert.ok(p.includes('<code>: the task is not closed — <message>'))
   })
 
-test('epic.js: a brief that does not land does not stop the cycle of that child', async () => {
-  const { steps } = await go('epic.js', epicRun(), helper(['j-brief-501']))
-  assert.deepEqual(steps.map(s => s.label), ['j-brief-501', 'j-report-501', 'j-review-501'])
+test('epic.js: a child whose brief does not land is not dispatched and fails with its own reason', async () => {
+  const { ledger, steps, labels } = await go('epic.js', epicRun(), helper(['j-brief-501']))
+  assert.deepEqual(steps.map(s => s.label), ['j-brief-501'])
+  assert.deepEqual([ledger.tasks['501'].state, ledger.tasks['501'].reason], ['FAILED', 'BRIEF_NOT_WRITTEN'])
+  assert.ok(!labels.some(l => l.startsWith('impl-') || l.startsWith('rev-')))
+})
+
+const epicConflict = over => epicRun({
+  'merge-w0': { results: [{ id: 501, status: 'CONFLICT', conflict_files: ['a.js'] }] },
+  'rebase-501': { status: 'DONE', head_sha: 'hhh7', conflict_files: ['a.js'] },
+  'rev-rb-501': CLEAN,
+  'merge-501-rb': { results: [{ id: 501, status: 'MERGED', merge_sha: 'iii8' }] },
+  ...over,
+})
+const failure = (ledger, key = '501') => [ledger.tasks[key].state, ledger.tasks[key].reason]
+
+test('epic.js: the rebaser is dispatched on a rebase brief of its own, not on the latest fix brief', async () => {
+  const { steps, labels } = await go('epic.js', epicConflict({
+    'rev-501': { verdict: 'APPROVED', findings: [MINOR] }, 'fix-501': FIXED, 'rev2-501': CLEAN }))
+  const briefsBefore = steps.slice(0, steps.findIndex(s => s.label === 'j-brief-rebase-501') + 1).filter(s => s.step === 'brief')
+  assert.equal(briefsBefore.at(-1).label, 'j-brief-rebase-501')
+  assert.ok(!briefsBefore.at(-1).body.includes('REVIEW FINDINGS TO FIX'), 'the rebase brief is not the fix brief')
+  const wanted = ['j-brief-rebase-501', 'rebase-501', 'j-brief-rb-501', 'rev-rb-501']
+  assert.deepEqual(order(labels, wanted), wanted)
+})
+
+test('epic.js: a rebase brief that does not land dispatches no rebaser and fails with BRIEF_NOT_WRITTEN', async () => {
+  const { ledger, labels } = await go('epic.js', epicConflict(), helper(['j-brief-rebase-501']))
+  assert.deepEqual(failure(ledger), ['FAILED', 'BRIEF_NOT_WRITTEN'])
+  assert.ok(!labels.includes('rebase-501') && !labels.includes('rev-rb-501'))
+})
+
+test('epic.js: a brief for the review after the rebase that does not land fails with BRIEF_NOT_WRITTEN, not MERGE_CONFLICT', async () => {
+  const { ledger, labels } = await go('epic.js', epicConflict(), helper(['j-brief-rb-501']))
+  assert.deepEqual(failure(ledger), ['FAILED', 'BRIEF_NOT_WRITTEN'])
+  assert.ok(labels.includes('rebase-501') && !labels.includes('rev-rb-501'))
+})
+
+test('epic.js: a rebase that fails is still MERGE_CONFLICT', async () => {
+  const { ledger, labels } = await go('epic.js', epicConflict({ 'rebase-501': { status: 'BLOCKED', head_sha: 'b', conflict_files: ['a.js'] } }))
+  assert.deepEqual(failure(ledger), ['FAILED', 'MERGE_CONFLICT'])
+  assert.ok(!labels.includes('j-brief-rb-501'))
+})
+
+test('epic.js: NEEDS_CONTEXT whose new brief does not land fails with BRIEF_NOT_WRITTEN and dispatches no second implementer', async () => {
+  const asked = { status: 'NEEDS_CONTEXT', branch: 'epic500/t501', head_sha: 'b', worktree_path: '/tmp/wt-7', questions: ['q'] }
+  const { ledger, labels } = await go('epic.js', epicRun({ 'impl-501': asked }), helper(['j-brief-ctx-501']))
+  assert.deepEqual(failure(ledger), ['FAILED', 'BRIEF_NOT_WRITTEN'])
+  assert.ok(!labels.includes('impl-501-ctx'))
+})
+
+test('epic.js: a child in REVIEW whose brief does not land gets no reviewer and fails with BRIEF_NOT_WRITTEN', async () => {
+  const { ledger, labels } = await go('epic.js', epicInReview({ 'branch-501': { exists: true, branch: 'epic500/t501', head_sha: 'bbb9' } }),
+    helper(['j-brief-501']))
+  assert.deepEqual(failure(ledger), ['FAILED', 'BRIEF_NOT_WRITTEN'])
+  assert.ok(labels.includes('branch-501') && !labels.some(l => l.startsWith('rev-')))
+})
+
+test('epic.js: a re-review brief that does not land dispatches no re-reviewer and fails with BRIEF_NOT_WRITTEN', async () => {
+  const { ledger, labels } = await go('epic.js', epicRun({ 'rev-501': { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] }, 'fix-501': FIXED, 'rev2-501': CLEAN }),
+    helper(['j-brief-rereview-501']))
+  assert.deepEqual(failure(ledger), ['FAILED', 'BRIEF_NOT_WRITTEN'])
+  assert.ok(labels.includes('fix-501') && !labels.includes('rev2-501'))
+})
+
+test('epic.js: a fix brief that does not land dispatches no fixer', async () => {
+  const { ledger, labels } = await go('epic.js', epicRun({ 'rev-501': { verdict: 'NEEDS_FIXES', findings: [IMPORTANT] }, 'fix-501': FIXED }),
+    helper(['j-brief-fix-501']))
+  assert.equal(ledger.tasks['501'].reason, 'BRIEF_NOT_WRITTEN')
+  assert.ok(!labels.includes('fix-501'))
+})
+
+test('epic.js: a plan task without a ConPort child has no journal and is not dispatched', async () => {
+  const run = epicRun()
+  const sc = run.answers.scout
+  run.answers.scout = { ...sc, tasks: [{ ...sc.tasks[0], conport_id: null, coverage: 'plan_only' }] }
+  const { ledger, labels, steps } = await go('epic.js', run)
+  const row = Object.values(ledger.tasks)[0]
+  assert.deepEqual([row.state, row.reason], ['FAILED', 'NO_CONPORT_TASK'])
+  assert.match(row.detail, /create the child .*run again/)
+  assert.ok(!labels.some(l => l.startsWith('impl-')))
+  assert.deepEqual(steps, [])
 })
 
 test('epic.js: a branch check that answers nothing fails the child with its own reason', async () => {
@@ -420,7 +597,52 @@ test('epic.js: the scout carries each child\'s status, which tells a child in RE
   assert.equal(src.split(line).length - 1, 2, 'in STEP 2 and in branch B alike')
 })
 
+// ------------------------------------------------------------------ the api key
+
+// Every agent works from the journal, which lives in ConPort: without a key the
+// run refuses at its start, before the tree is even looked at.
+for (const [file, run] of [['task.js', taskRun], ['epic.js', epicRun]]) {
+  test(`${file}: no api key refuses the run at its start with the one action`, async () => {
+    const { args, answers } = run()
+    const { ledger, calls } = await runWorkflow(file, args, { ...answers, preflight: { ...answers.preflight, api_key: false, clean: false } })
+    assert.equal(ledger.outcome, 'ABORTED')
+    assert.equal(ledger.abort_reason, 'ABORTED_NO_API_KEY')
+    assert.match(ledger.abort_detail, /^set CONPORT_API_KEY \(or the api key option of the conport plugin\) and run again/)
+    assert.ok(!ledger.abort_detail.includes('\n'), 'one line')
+    assert.deepEqual(calls.map(c => c.label), ['preflight'], 'nothing else runs')
+  })
+
+  test(`${file}: a helper that does not say whether a key is set refuses the run, naming the update`, async () => {
+    const { args, answers } = run()
+    const { api_key: _key, ...stale } = answers.preflight
+    const { ledger, calls } = await runWorkflow(file, args, { ...answers, preflight: stale })
+    assert.equal(ledger.abort_reason, 'ABORTED_STALE_HELPER')
+    assert.match(ledger.abort_detail, /^update the conport plugin/)
+    assert.deepEqual(calls.map(c => c.label), ['preflight'])
+  })
+}
+
 test('epic.js: the implementer leaves a child in REVIEW as it is', async () => {
   const { prompt } = await go('epic.js', epicRun())
   assert.ok(prompt('impl-501').includes('if already IN_PROGRESS, REVIEW or DONE, leave it'))
 })
+
+// ------------------------------------------------------------ project address
+
+// The project travels as the scout's `project` — the handle — into the scout
+// schema, every step file, the accounting table and the MCP hints of the prompts;
+// no number of a project is asked for or passed on.
+for (const [file, run, impl] of [['task.js', taskRun, 'impl'], ['epic.js', epicRun, 'impl-501']]) {
+  test(`${file}: the scout schema, the steps, the table and the prompts carry the project handle`, async () => {
+    const { calls, steps, prompt } = await go(file, run())
+    const scout = calls.find(c => c.label === 'scout').opts.schema
+    assert.deepEqual(scout.properties.project, { type: 'string' })
+    assert.ok(scout.required.includes('project') && !('project_id' in scout.properties))
+    assert.ok(steps.length > 0 && steps.every(s => s.project === 'prk7m2qx9d'))
+    const table = accountTable(prompt('account'))
+    assert.equal(table.project, 'prk7m2qx9d')
+    assert.ok(!('project_id' in table))
+    assert.ok(prompt(impl).includes('project=prk7m2qx9d'), 'the MCP hint names the handle')
+    for (const c of calls) assert.doesNotMatch(c.prompt, /project_id/, `${c.label} still names project_id`)
+  })
+}

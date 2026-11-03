@@ -11,16 +11,23 @@ import { extractGate } from '../wf-helper.mjs'
 const HELPER = join(dirname(dirname(fileURLToPath(import.meta.url))), 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
 const PROJECT = 'sample-project'
-const PROJECT_ID = 42                              // a neutral id: no real project is implied
+const HANDLE = 'prk7m2qx9d'                       // a neutral handle: no real project is implied
 
 // ------------------------------------------------------------------ REST mock
 
-// A local stand-in for the two routes the scout reads: project resolution by name
-// or id, and one task by id. The production API is never touched by these tests.
+// A local stand-in for the routes the scout reads: project resolution by handle
+// or name, one task by id, the links of an item and one document by id. The
+// production API is never touched by these tests.
 const startMock = async (opts = {}) => {
   const state = { tasks: new Map(), requests: [] }
   for (const t of opts.tasks ?? [])
     state.tasks.set(t.id, { description: '', kind: 'task', parent_task_id: null, ...t })
+  // Links as [source, link_type, target], each end ['doc' | 'task', id]; documents as {id: doc_type}.
+  const links = (opts.links ?? []).map(([source, linkType, target], i) => ({
+    id: i + 1, source_type: source[0], source_id: source[1],
+    target_type: target[0], target_id: target[1], link_type: linkType, description: null,
+  }))
+  const docs = opts.docs ?? {}
 
   const fail = opts.fail ?? (() => null)
   const send = (res, code, payload) => {
@@ -40,16 +47,29 @@ const startMock = async (opts = {}) => {
       const injected = fail(rec)
       if (injected) return send(res, injected.status, injected.body)
 
-      const task = url.pathname.match(new RegExp(`^/api/v1/projects/${PROJECT_ID}/tasks/(\\d+)$`))
+      const task = url.pathname.match(new RegExp(`^/api/v1/projects/${HANDLE}/tasks/(\\d+)$`))
       if (task) {
         const found = state.tasks.get(Number(task[1]))
         return found ? send(res, 200, found) : send(res, 404, { detail: 'Task not found' })
       }
+      if (url.pathname === `/api/v1/projects/${HANDLE}/links`) {
+        const type = url.searchParams.get('item_type')
+        const id = Number(url.searchParams.get('item_id'))
+        const offset = Number(url.searchParams.get('offset') ?? 0)
+        const limit = Number(url.searchParams.get('limit') ?? 100)
+        const all = links.filter(l => (l.source_type === type && l.source_id === id) || (l.target_type === type && l.target_id === id))
+        return send(res, 200, { links: all.slice(offset, offset + Math.min(limit, opts.linkPage ?? 500)), total: all.length })
+      }
+      const doc = url.pathname.match(new RegExp(`^/api/v1/projects/${HANDLE}/documents/(\\d+)$`))
+      if (doc) {
+        const type = docs[Number(doc[1])]
+        return type ? send(res, 200, { id: Number(doc[1]), doc_type: type, content: '' }) : send(res, 404, { detail: 'Document not found' })
+      }
       const project = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)$/)
       if (project) {
         const name = decodeURIComponent(project[1])
-        if (name !== PROJECT && name !== String(PROJECT_ID)) return send(res, 404, { detail: 'Project not found' })
-        return send(res, 200, { id: PROJECT_ID, name: PROJECT })
+        if (name !== PROJECT && name !== HANDLE) return send(res, 404, { detail: 'Project not found' })
+        return send(res, 200, opts.project ?? { handle: HANDLE, name: PROJECT, canonical_name: 'pers/' + PROJECT })
       }
       return send(res, 404, { detail: 'no route ' + url.pathname })
     })
@@ -76,6 +96,13 @@ const repoWithPlan = (name, body) => {
 }
 
 after(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }) })
+
+// A repository root with no plan file: the scout must not find one in the real checkout.
+const emptyRoot = () => {
+  const root = mkdtempSync(join(tmpdir(), 'wfs-'))
+  roots.push(root)
+  return root
+}
 
 const GC = `## Global Constraints
 
@@ -159,7 +186,8 @@ test('a task with a plan slice: section lines, files, verbatim constraints, gate
   const root = repoWithPlan('2026-09-01-sample.md', PLAN)
   const { out } = await runScout(mock, ['--task', '901', '--project', PROJECT, '--repo-root', root])
 
-  assert.equal(out.project_id, PROJECT_ID)
+  assert.equal(out.project, HANDLE)
+  assert.equal('project_id' in out, false, 'the base names the project by its handle only')
   assert.deepEqual(out.task, {
     id: 901, kind: 'task', status: 'TODO', title: 'first thing',
     description: TASKS[0].description, parent_epic_id: 900,
@@ -315,15 +343,66 @@ test('an explicit --plan overrides the anchor search', withMock({ tasks: TASKS }
 
 // --------------------------------------------------------------- spec doc id
 
-test('spec_doc_id comes from the description first, then from the plan header', withMock({
+// The chain spec -> plan -> task lives in the graph: the plan document clarifies
+// the task, the plan is derived_from its spec. The description names neither.
+// Documents of other types clarifying the task carry lower ids than the plan, so
+// taking the first clarifying document of any type would miss it.
+const GRAPH = {
+  docs: { 940: 'general', 941: 'general', 945: 'spec', 960: 'plan', 970: 'spec' },
+  links: [
+    [['doc', 940], 'clarifies', ['task', 904]],     // not a plan: never taken for one
+    [['doc', 945], 'clarifies', ['task', 904]],     // a spec clarifying the task: not its plan
+    [['doc', 960], 'clarifies', ['task', 904]],
+    [['doc', 960], 'clarifies', ['task', 900]],     // the plan of the epic too
+    [['doc', 945], 'clarifies', ['task', 900]],
+    [['doc', 960], 'derived_from', ['doc', 941]],     // derived from a document that is no spec
+    [['doc', 960], 'derived_from', ['doc', 970]],
+    [['task', 904], 'clarifies', ['doc', 945]],     // the wrong direction
+    [['doc', 960], 'mentions', ['doc', 945]],       // another type
+  ],
+}
+
+test('spec_doc_id comes from the plan linked to the task and that plan\'s derived_from link, never from the description', withMock({
+  tasks: [...TASKS, { id: 904, title: 'linked', status: 'TODO', kind: 'task', parent_task_id: 900, description: 'Follows doc-951 closely.' }],
+  ...GRAPH,
+}, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  const linked = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', root])
+  assert.equal(linked.out.spec_doc_id, 970, 'the spec of the linked plan wins over the description and the plan header')
+
+  const epic = await runScout(mock, ['--task', '900', '--project', PROJECT, '--repo-root', root])
+  assert.equal(epic.out.spec_doc_id, 970, 'an epic reaches its spec through its plan the same way')
+}))
+
+test('the links of a task are read page by page', withMock({
+  tasks: [...TASKS, { id: 904, title: 'linked', status: 'TODO', kind: 'task', parent_task_id: 900, description: '' }],
+  ...GRAPH,
+  linkPage: 1,
+}, async mock => {
+  const { out } = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', emptyRoot()])
+  assert.equal(out.spec_doc_id, 970)
+}))
+
+test('a description naming a doc is not read for the spec: without a linked plan the plan header names it', withMock({
   tasks: [...TASKS, { id: 904, title: 'own spec', status: 'TODO', kind: 'task', description: 'Follows doc-951 closely.' }],
 }, async mock => {
   const root = repoWithPlan('2026-09-01-sample.md', PLAN)
-  const own = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', root])
-  assert.equal(own.out.spec_doc_id, 951, 'the description wins over the plan header')
+  const plan = join(root, 'docs', 'superpowers', 'plans', '2026-09-01-sample.md')
+  const own = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', root, '--plan', plan])
+  assert.equal(own.out.spec_doc_id, 950, 'the description is not a source of the spec')
 
-  const fromPlan = await runScout(mock, ['--task', '902', '--project', PROJECT, '--repo-root', root])
-  assert.equal(fromPlan.out.spec_doc_id, 950, 'a description naming none falls back to the plan header')
+  const none = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', emptyRoot()])
+  assert.equal(none.out.spec_doc_id, null, 'no link and no plan file: no spec, whatever the description says')
+}))
+
+test('a linked plan without a derived_from link falls back to the plan header', withMock({
+  tasks: TASKS,
+  docs: { 960: 'plan' },
+  links: [[['doc', 960], 'clarifies', ['task', 902]]],
+}, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  const { out } = await runScout(mock, ['--task', '902', '--project', PROJECT, '--repo-root', root])
+  assert.equal(out.spec_doc_id, 950)
 }))
 
 // -------------------------------------------------------------- environment
@@ -333,7 +412,7 @@ test('the project name is taken from the environment when no flag is passed', wi
   const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: PROJECT }
   const { out } = await runScout(mock, ['--task', '901', '--repo-root', root], env)
 
-  assert.equal(out.project_id, PROJECT_ID)
+  assert.equal(out.project, HANDLE)
 }))
 
 // A `team/project` name does not fit one path segment: the team goes into the
@@ -342,11 +421,12 @@ test('scout reads a team/project name with the team header', withMock({ tasks: T
   const root = repoWithPlan('2026-09-01-sample.md', PLAN)
   const { out } = await runScout(mock, ['--task', '901', '--project', 'k7m2qx9d/' + PROJECT, '--repo-root', root])
 
-  assert.equal(out.project_id, PROJECT_ID)
-  assert.deepEqual(mock.requests.map(r => [r.path, r.team]), [
+  assert.equal(out.project, HANDLE)
+  assert.deepEqual(mock.requests.slice(0, 2).map(r => [r.path, r.team]), [
     ['/api/v1/projects/' + PROJECT, 'k7m2qx9d'],
-    [`/api/v1/projects/${PROJECT_ID}/tasks/901`, 'k7m2qx9d'],
+    [`/api/v1/projects/${HANDLE}/tasks/901`, 'k7m2qx9d'],
   ])
+  assert.ok(mock.requests.every(r => r.team === 'k7m2qx9d'), 'every call carries the team header')
 }))
 
 test('scout takes a team/project name from the environment the same way', withMock({ tasks: TASKS }, async mock => {
@@ -354,17 +434,52 @@ test('scout takes a team/project name from the environment the same way', withMo
   const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: 'pers/' + PROJECT }
   await runScout(mock, ['--task', '901', '--repo-root', root], env)
 
-  assert.deepEqual(mock.requests.map(r => [r.path, r.team]), [
+  assert.deepEqual(mock.requests.slice(0, 2).map(r => [r.path, r.team]), [
     ['/api/v1/projects/' + PROJECT, 'pers'],
-    [`/api/v1/projects/${PROJECT_ID}/tasks/901`, 'pers'],
+    [`/api/v1/projects/${HANDLE}/tasks/901`, 'pers'],
+  ])
+  assert.ok(mock.requests.every(r => r.team === 'pers'), 'every call carries the team header')
+}))
+
+// An address is turned into the handle once; every later path carries the handle,
+// never the name it was reached by.
+test('scout turns the name into the handle and addresses the task by the handle', withMock({ tasks: TASKS }, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  await runScout(mock, ['--task', '901', '--project', PROJECT, '--repo-root', root])
+  const paths = mock.requests.map(r => r.path)
+  assert.deepEqual(paths.slice(0, 2), ['/api/v1/projects/' + PROJECT, `/api/v1/projects/${HANDLE}/tasks/901`])
+  assert.ok(paths.slice(1).every(p => p.startsWith(`/api/v1/projects/${HANDLE}/`)), 'every later path carries the handle')
+}))
+
+test('a handle given as the project is resolved like a name', withMock({ tasks: TASKS }, async mock => {
+  const root = repoWithPlan('2026-09-01-sample.md', PLAN)
+  const { out } = await runScout(mock, ['--task', '901', '--project', HANDLE, '--repo-root', root])
+  assert.equal(out.project, HANDLE)
+  assert.deepEqual(mock.requests.slice(0, 2).map(r => [r.path, r.team]), [
+    ['/api/v1/projects/' + HANDLE, undefined],
+    [`/api/v1/projects/${HANDLE}/tasks/901`, undefined],
   ])
 }))
+
+// A server that answers the project without a handle (one of an earlier
+// release) gives the scout nothing to address the task by: an error, so the
+// workflow takes branch B, and no task is read by a number.
+for (const [what, project] of [['a number only', { id: 42, name: PROJECT }], ['an empty handle', { handle: '', name: PROJECT }]]) {
+  test(`a project answered with ${what} is an error, not a base`, withMock({ tasks: TASKS, project }, async mock => {
+    const r = await runHelper(scoutEnv(mock), 'scout', '--task', '901', '--project', PROJECT)
+    assert.equal(r.code, 0)
+    const out = JSON.parse(r.stdout)
+    assert.match(out.error, /no project handle/)
+    assert.deepEqual(mock.requests.map(r => r.path), ['/api/v1/projects/' + PROJECT])
+  }))
+}
 
 test('scout sends no team header for a bare name', withMock({ tasks: TASKS }, async mock => {
   const root = repoWithPlan('2026-09-01-sample.md', PLAN)
   await runScout(mock, ['--task', '901', '--project', PROJECT, '--repo-root', root])
 
-  assert.deepEqual(mock.requests.map(r => r.team), [undefined, undefined])
+  assert.ok(mock.requests.length >= 2)
+  assert.ok(mock.requests.every(r => r.team === undefined))
 }))
 
 for (const name of ['a/b/c', '/' + PROJECT, 'pers/', '/']) {
@@ -386,7 +501,7 @@ test('the harness key alone drives the REST path', withMock({ tasks: TASKS }, as
   delete env.CONPORT_API_KEY
   const { out } = await runScout(mock, ['--task', '901', '--project', PROJECT, '--repo-root', root], env)
 
-  assert.equal(out.project_id, PROJECT_ID)
+  assert.equal(out.project, HANDLE)
   assert.equal(out.task.title, 'first thing')
   assert.equal(mock.requests[0].key, KEY, 'the harness key travels in X-API-Key')
 }))

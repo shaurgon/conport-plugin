@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { chmodSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,15 +25,15 @@ async function startApi() {
     const url = new URL(req.url, 'http://x')
     api.requests.push(url)
     res.setHeader('content-type', 'application/json')
-    if (url.pathname === '/api/v1/projects/99/tasks') {
+    if (url.pathname === '/api/v1/projects/prk7m2qx9d/tasks') {
       const parents = (url.searchParams.get('parent_task_ids') || '').split(',').map(Number)
       const rows = api.children.filter((c) => parents.includes(c.parent_task_id))
       const offset = Number(url.searchParams.get('offset') || 0)
       const limit = Number(url.searchParams.get('limit') || 50)
       res.end(JSON.stringify({ tasks: rows.slice(offset, offset + limit), total: rows.length }))
-    } else if (url.pathname === '/api/v1/projects/99/milestones' && api.milestones) {
+    } else if (url.pathname === '/api/v1/projects/prk7m2qx9d/milestones' && api.milestones) {
       res.end(JSON.stringify(api.milestones))
-    } else if (url.pathname === '/api/v1/projects/99/epic-tails') {
+    } else if (url.pathname === '/api/v1/projects/prk7m2qx9d/epic-tails') {
       res.end(JSON.stringify({ tails: api.tails }))
     } else {
       res.statusCode = 404
@@ -49,11 +49,12 @@ async function startApi() {
 function runHook(script, payload, { api, dataDir }) {
   const env = { ...process.env }
   delete env.CLAUDE_PLUGIN_OPTION_API_KEY
+  delete env.CONPORT_PROJECT_ID
   Object.assign(env, {
     CLAUDE_PLUGIN_DATA: dataDir,
     CONPORT_URL: api.url,
     CONPORT_API_KEY: 'cport_test_key',
-    CONPORT_PROJECT_ID: '99',
+    CONPORT_PROJECT_NAME: 'prk7m2qx9d',
   })
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(SCRIPTS, script)], { env })
@@ -88,7 +89,7 @@ const addUnderEpic = (ctx, session, epicId, taskId, title = `Epic ${epicId}`) =>
   runHook('track-session-epics.js', {
     session_id: session,
     tool_name: TOOL_ADD,
-    tool_input: { project_id: 99, title: `child ${taskId}`, parent_task_id: epicId },
+    tool_input: { project: 'prk7m2qx9d', title: `child ${taskId}`, parent_task_id: epicId },
     tool_response: mcpResult({
       id: taskId, summary: 'created',
       epic_progress: { epic_id: epicId, epic_title: title, open_children: 1, total_children: 1 },
@@ -132,7 +133,7 @@ test('a session that changed no epic gets nothing at Stop and spends no request'
   // A write on a root task: the server echoes no epic_progress.
   await runHook('track-session-epics.js', {
     session_id: 's1', tool_name: TOOL_UPDATE,
-    tool_input: { project_id: 99, task_id: 7, status: 'DONE' },
+    tool_input: { project: 'prk7m2qx9d', task_id: 7, status: 'DONE' },
     tool_response: mcpResult({ id: 7, status: 'DONE', summary: 'closed' }),
   }, ctx)
   ctx.api.children = [child(51, 50, 'TODO')]
@@ -174,7 +175,7 @@ const closableTail = (id) => ({
 })
 
 const INIT = /run mcp__conport__init\(\) before responding/
-const tailsCache = (ctx) => join(ctx.dataDir, 'hook_state', 'epic_tails_99.json')
+const tailsCache = (ctx) => join(ctx.dataDir, 'hook_state', 'epic_tails_prk7m2qx9d.json')
 const promptContext = async (ctx, session = 's1') => {
   const { code, out } = await runHook('user-prompt-submit.js', { session_id: session, prompt: 'hi' }, ctx)
   assert.equal(code, 0)
@@ -366,18 +367,35 @@ test('an epic that grew after work started is listed first', () => withEnv(async
 test('a child status change recorded from a plain-object result makes its epic a session epic', () => withEnv(async (ctx) => {
   await runHook('track-session-epics.js', {
     session_id: 's1', tool_name: TOOL_UPDATE,
-    tool_input: { project_id: 99, task_id: 81, status: 'IN_PROGRESS' },
+    tool_input: { project: 'prk7m2qx9d', task_id: 81, status: 'IN_PROGRESS' },
     tool_response: { id: 81, status: 'IN_PROGRESS', epic_progress: { epic_id: 80, epic_title: 'Epic 80' } },
   }, ctx)
   ctx.api.children = [child(81, 80, 'IN_PROGRESS')]
   assert.match(JSON.parse((await stop(ctx, 's1')).out).reason, /task-80 Epic 80/)
 }))
 
+// The project of a tool call is its `project` argument, recorded as it was given;
+// a call that names none — the `project_id` of an earlier surface included —
+// leaves no record.
+test('the session record holds the project the tool call named in `project`', () => withEnv(async (ctx) => {
+  const record = (session, input) => runHook('track-session-epics.js', {
+    session_id: session, tool_name: TOOL_UPDATE, tool_input: { task_id: 81, status: 'IN_PROGRESS', ...input },
+    tool_response: { id: 81, status: 'IN_PROGRESS', epic_progress: { epic_id: 80, epic_title: 'Epic 80' } },
+  }, ctx)
+  await record('s1', { project: 'k7m2qx9d/my-proj' })
+  await record('s2', { project_id: 99 })
+  await record('s3', { project: '' })
+  const file = (session) => join(ctx.dataDir, 'hook_state', `session_epics_${session}.jsonl`)
+  assert.deepEqual(JSON.parse(readFileSync(file('s1'), 'utf8')), { project: 'k7m2qx9d/my-proj', epic_id: 80, title: 'Epic 80' })
+  assert.equal(existsSync(file('s2')), false)
+  assert.equal(existsSync(file('s3')), false)
+}))
+
 test('an unreadable add_task result still records the epic named in its input', () => withEnv(async (ctx) => {
   // Content blocks as the harness hands them over, carrying non-JSON text.
   await runHook('track-session-epics.js', {
     session_id: 's1', tool_name: TOOL_ADD,
-    tool_input: { project_id: 99, title: 'x', parent_task_id: 90 },
+    tool_input: { project: 'prk7m2qx9d', title: 'x', parent_task_id: 90 },
     tool_response: [{ type: 'text', text: 'created task-91' }],
   }, ctx)
   ctx.api.children = [child(91, 90, 'TODO')]
@@ -387,7 +405,7 @@ test('an unreadable add_task result still records the epic named in its input', 
 test('a readable add_task payload without the epic echo records nothing, even with a parent in the input', () => withEnv(async (ctx) => {
   await runHook('track-session-epics.js', {
     session_id: 's1', tool_name: TOOL_ADD,
-    tool_input: { project_id: 99, title: 'x', parent_task_id: 90 },
+    tool_input: { project: 'prk7m2qx9d', title: 'x', parent_task_id: 90 },
     tool_response: mcpResult({ id: 91, summary: 'created' }),
   }, ctx)
   ctx.api.children = [child(91, 90, 'TODO')]

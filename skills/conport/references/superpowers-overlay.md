@@ -30,19 +30,25 @@ creates).
    `.superpowers/drafts/<date>-<topic>-design.md`. The user reads it and
    approves it.
 2. **Upload the spec.**
-   `npx -y conport@^0.4 documents upload <draft> --doc-type spec` → `doc-N`.
+   `npx -y conport@^0.5 documents upload <draft> --doc-type spec` → `doc-N`.
    Delete the draft. From now on edit the spec with ConPort's block tools
    (`update_block`, `insert_block`, an `amend` change). For a local copy run
-   `npx -y conport@^0.4 documents get doc-N` → `.superpowers/docs/doc-N.md`.
+   `npx -y conport@^0.5 documents get doc-N` → `.superpowers/docs/doc-N.md`.
 3. **Gap hunt after the spec** works on the ConPort document; its findings go
    into that document.
 4. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
    the writing-plans format (`### Task N: <title>`). After the user approves it:
-   `npx -y conport@^0.4 plan import <draft> --spec doc-N [--epic <id>] [--milestone <id>]`
+   `npx -y conport@^0.5 plan import <draft> --spec doc-N [--epic <id>] [--milestone <id>]`
    — this creates the `plan` document, the epic and its tasks. Attach the epic
    to a milestone by the project's roadmap rules. Delete the draft and the
    `<draft>.conport.json` that `plan import` wrote beside it.
-5. **Execution.** `npx -y conport@^0.4 plan pull <epic>` →
+
+   Every `### Task N:` section carries two lines: `**Goal:** <one sentence>`
+   and `**Acceptance:** <criterion>`; the criterion may continue as a list
+   directly below that line. `plan import` builds a new task's description
+   from these two lines and refuses, before writing anything, a section that
+   would create a task without them. The terminal finish section needs neither.
+5. **Execution.** `npx -y conport@^0.5 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
    file path). If `/conport:task` or `/conport:epic` is used, pass it the same
@@ -52,17 +58,48 @@ creates).
    reviews and fixes are entries in the task's journal; stages are the
    `REVIEW` status. Keep the `<file>.conport.json` written next to the pulled
    plan: import and finish read it.
-6. **Editing the plan during the work.** `npx -y conport@^0.4 plan pull <epic>`
+
+   **Dispatching a subagent.** A brief, a report, a review and a fix live in
+   the task's journal, never in files: nothing is written under
+   `.superpowers/sdd/`, and a dispatch names no file there. Wherever SDD says to
+   write a brief file, a report file or a review package, do this instead:
+   - **Brief.** Put the task's full text (`task-brief` prints it) and the
+     context the subagent needs into one entry:
+     `add_task_journal_entry(project=<project>, task_id=<N>, kind="brief", body=<the brief>)`.
+   - **Dispatch.** The prompt is the task number and how to read its journal,
+     and nothing else from the brief:
+
+     ```
+     Your task is task-<N> in the ConPort project <project>; the brief is in its journal.
+     Read it: get_task_journal_entry(project=<project>, task_id=<N>, kind="brief").
+     Earlier reports, reviews and fixes: list_task_journal(project=<project>, task_id=<N>, include_body=true)
+     (when the answer has next_offset, call again with offset=next_offset).
+     ```
+
+     A reviewer gets, in addition, the two commits to diff: `BASE` and `HEAD`.
+   - **The subagent's answer** is an entry, written in full in `body`: the
+     implementer's report `kind="report"`, the reviewer's verdict
+     `kind="review"` with `verdict="approve"` or `verdict="changes_requested"`,
+     the fixer's report `kind="fix"`. The entry moves the task: a report or a
+     fix puts it in REVIEW (a report starts a TODO task first), a review that
+     requests changes returns it to IN_PROGRESS for the next round. Without
+     `author` the entry is signed by its role — `implementer` for a report or a
+     fix, `reviewer` for a review — so a review never signs as the report's
+     author. The subagent's final message is only the status and the entry's
+     id.
+   - **A closed task** refuses every entry with `journal_task_closed`: reopen
+     the task, then write the entry.
+6. **Editing the plan during the work.** `npx -y conport@^0.5 plan pull <epic>`
    → edit the pulled file above the line `<!-- conport-pull-tail -->` →
-   `npx -y conport@^0.4 plan import <pulled file>` →
-   `npx -y conport@^0.4 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
+   `npx -y conport@^0.5 plan import <pulled file>` →
+   `npx -y conport@^0.5 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
    number) → continue SDD. Once execution has started, section numbers never
    change: a new section takes the next free number, and a section no longer
    needed is not removed from the plan — its task is set to `CANCELLED` in
    ConPort with a resolution. The SDD ledger and `task-brief` key on the
    section number. When `plan import` refuses because `<file>` and ConPort's
    plan have both changed since pull: move `<file>` aside to
-   `<file>.mine.md`, run `npx -y conport@^0.4 plan pull <epic> -o <file>`,
+   `<file>.mine.md`, run `npx -y conport@^0.5 plan pull <epic> -o <file>`,
    carry your edits over from `<file>.mine.md`, run `plan import` again.
 7. **Finish.** The final whole-branch review is clean and its fixes are
    merged → the terminal task of the pulled plan → `superpowers-conport` in
@@ -74,10 +111,14 @@ creates).
 
 The CLI reads its API key from `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`, never from the plugin's settings. When a
-`npx -y conport@^0.4 …` command fails with `CONPORT_API_KEY is not set`, the
+`npx -y conport@^0.5 …` command fails with `CONPORT_API_KEY is not set`, the
 one action is: set `CONPORT_API_KEY` (env or `~/.config/conport/.env`) and
-retry. When it fails with `No project specified`, the one action is: set
-`CONPORT_PROJECT_NAME` and retry. Neither is a reason to turn the overlay off.
+retry. When it fails with `No project specified`, or with
+`CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name`,
+the one action is: set `CONPORT_PROJECT_NAME` to the project's handle or name
+and retry. When it says `<file>.conport.json names the project by a retired number`,
+run the `plan pull` command that line gives. None of these is a reason to turn
+the overlay off.
 
 If the CLI does not run at all (no Node.js, no network, an old version), tell
 the user in one line which command failed and why, and ask whether to turn the
