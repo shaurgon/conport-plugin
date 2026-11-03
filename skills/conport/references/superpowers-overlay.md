@@ -77,6 +77,12 @@ creates).
      ```
 
      A reviewer gets, in addition, the two commits to diff: `BASE` and `HEAD`.
+   - **The agent type.** In Claude Code dispatch the plugin's agents:
+     `conport:sdd-implementer` for the implementation,
+     `conport:sdd-task-reviewer` for a review, `conport:sdd-fixer` for a fix
+     round and `conport:sdd-gap-hunter` for a gap hunt. The first three read
+     the brief from the journal when the prompt points there and write their
+     answer as the entry below.
    - **The subagent's answer** is an entry, written in full in `body`: the
      implementer's report `kind="report"`, the reviewer's verdict
      `kind="review"` with `verdict="approve"` or `verdict="changes_requested"`,

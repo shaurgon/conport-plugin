@@ -4,6 +4,42 @@ Workflows are deterministic, scripted runs: a fixed sequence of phases where eac
 step is executed by a fresh subagent whose answer must match a schema. The plugin
 ships them under `workflows/` and Claude Code exposes them as slash commands.
 
+## The agents
+
+The judgement steps of a run are dispatched as the plugin's own agent types,
+which it ships under `agents/` and Claude Code lists under the plugin's name:
+
+| Agent type | Dispatched for | Can edit files |
+|---|---|---|
+| `conport:sdd-implementer` | every implementation, and the fix of a confirmed critical gap | yes |
+| `conport:sdd-task-reviewer` | every review, re-review and review after a rebase, and the review of a gap fix | no |
+| `conport:sdd-fixer` | the fix round after a review | yes |
+| `conport:sdd-gap-hunter` | the gap hunt of an epic run | no |
+
+Each carries the standing procedure of its role — read the brief first, test
+first, the checks before the commit, never `git stash`, no subagents of its
+own (the Agent tool is denied to all four) — while the run's prompt supplies
+the task and decides where the dispatch is more specific: which checks to run,
+the branch to create, the structured answer to return. None of them pins a
+model: they run on the model of your session. The other steps — the scout, the
+helper's mechanical steps, the rebase, the verification of the hunter's
+findings, the acceptance and the accounting — run as general agents.
+
+A type Claude Code does not know — the plugin's agents did not load, or the
+plugin is installed under another name — does not stop the run. The dispatch
+of that type is refused, the run sends the same prompt once to a general agent
+instead, and every later dispatch of that type goes to a general agent
+straight away; such a dispatch shows in the run's progress under the step's
+label with `-untyped` appended (`impl-untyped`). The ledger notes it once per type:
+`agent type missing: conport:sdd-implementer — dispatched untyped`. The step
+then works from the run's prompt alone, without the standing procedure of its
+role. Any other refusal of a typed dispatch — a permission rule that denies
+the type, for one — is not caught and stops the run as before.
+
+The same four types serve subagent-driven development by hand: dispatch them
+with a brief and a report path, or with a ConPort task whose journal holds the
+brief.
+
 ## `/conport:task`
 
 Deterministic execution of one ConPort task, end to end:

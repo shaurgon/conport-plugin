@@ -23,6 +23,7 @@ const MIRRORED = {
   PIPE_MERGE: ['const mergeArgs =', 'const mergeCommand =', 'const mergePrompt =', 'const mergeStatePrompt ='],
   PIPE_JAN: ['const janPrompt ='],
   ACCOUNT_PIPE: ['const accountPipe =', 'node <helper> account'],
+  AGENT_TYPES: ['const AGENT =', "'conport:sdd-implementer'", 'const NO_AGENT_TYPE =', 'const typed ='],
 }
 
 for (const [name, carries] of Object.entries(MIRRORED)) {

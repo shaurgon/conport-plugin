@@ -10,7 +10,8 @@ export const meta = {
 // prompts of this file — edit them together. Between task.js and epic.js the
 // mirror parity tests hold byte for byte alike exactly this: every region fenced
 // by a <NAME>_BEGIN / <NAME>_END marker pair that both files carry (PIPE_BASE,
-// FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE) and the
+// FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE,
+// AGENT_TYPES) and the
 // SKELETON_VERSION declaration. Everything else the two files share — the
 // judgement prompts included — is duplicated by hand and guarded by nothing.
 
@@ -27,6 +28,39 @@ const SERIAL = !!A.serialChecks
 const FILE_MINORS = !!A.fileMinors // default: minors live in the ledger only — they never become tasks
 const SKELETON_VERSION = 18     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
+
+// AGENT_TYPES_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
+// The typed agents the plugin ships under agents/, by the name Claude Code gives a
+// plugin agent: <plugin>:<agent>. Each carries the standing procedure of its role —
+// the report, the ban on subagents of its own, the gate — and takes the model of the
+// user's session. A type that names no installed agent makes agent() throw, so only
+// these four roles are typed: the scout, the pipes, the rebaser, the verifier, the
+// acceptor and the accountant run as untyped agents.
+const AGENT = {
+  implementer: 'conport:sdd-implementer', reviewer: 'conport:sdd-task-reviewer',
+  fixer: 'conport:sdd-fixer', gapHunter: 'conport:sdd-gap-hunter',
+}
+// A typed dispatch whose type names no installed agent — the plugin's agents/ not
+// loaded, or the plugin installed under another name — throws instead of starting
+// an agent. That one error, and no other, is caught: the same prompt goes once to
+// an untyped agent labelled <label>-untyped, so the progress shows both, the type is remembered as missing so later dispatches go
+// untyped straight away, and the ledger names the type once.
+const NO_AGENT_TYPE = /agent type '[^']*' not found/
+const missingTypes = new Set()
+const typed = async (prompt, opts) => {
+  if (!missingTypes.has(opts.agentType)) {
+    try { return await agent(prompt, opts) } catch (e) {
+      if (!NO_AGENT_TYPE.test(String(e && e.message))) throw e
+      if (!missingTypes.has(opts.agentType)) {
+        missingTypes.add(opts.agentType)
+        L.notes.push('agent type missing: ' + opts.agentType + ' — dispatched untyped')
+      }
+    }
+  }
+  const { agentType, ...untyped } = opts
+  return agent(prompt, { ...untyped, label: untyped.label + '-untyped' })
+}
+// AGENT_TYPES_END
 
 const L = {
   task: TASK, skeleton_version: SKELETON_VERSION,
@@ -706,14 +740,14 @@ let impl = resumed
 if (!(await briefed('j-brief'))) return abort('ABORTED_NO_BRIEF', NO_BRIEF)
 if (impl) { L.branch = impl.branch; L.head_sha = impl.head_sha }
 else {
-  impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH), { label: 'impl', isolation: 'worktree', schema: S_IMPL })
+  impl = await typed(implPrompt(sc, gate, SERIAL, BRANCH), { label: 'impl', agentType: AGENT.implementer, isolation: 'worktree', schema: S_IMPL })
   if (impl === null)
-    impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH + '-r2'), { label: 'impl-r2', isolation: 'worktree', schema: S_IMPL })
+    impl = await typed(implPrompt(sc, gate, SERIAL, BRANCH + '-r2'), { label: 'impl-r2', agentType: AGENT.implementer, isolation: 'worktree', schema: S_IMPL })
   // The questions go into a new brief; one that does not land dispatches no second implementer.
   let askedLost = false
   if (impl && impl.status === 'NEEDS_CONTEXT') {
     if (await briefed('j-brief-ctx', ASKED(impl.questions ?? [])))
-      impl = await agent(implPrompt(sc, gate, SERIAL, BRANCH + '-ctx'), { label: 'impl-ctx', isolation: 'worktree', schema: S_IMPL })
+      impl = await typed(implPrompt(sc, gate, SERIAL, BRANCH + '-ctx'), { label: 'impl-ctx', agentType: AGENT.implementer, isolation: 'worktree', schema: S_IMPL })
     else askedLost = true
   }
   if (askedLost) fail('BRIEF_NOT_WRITTEN', 'j-brief-ctx')
@@ -726,14 +760,14 @@ else {
 }
 
 if (!L.outcome) {
-  const rev = await retry('rev', l => agent(revPrompt(sc, impl, MAIN), { label: l, schema: S_REV }))
+  const rev = await retry('rev', l => typed(revPrompt(sc, impl, MAIN), { label: l, agentType: AGENT.reviewer, schema: S_REV }))
   if (!rev) fail('REVIEW_DEAD')
   else {
     L.review = rev
     await reviewOf('j-review', rev, resumed ? REVIEW_NOTES.resumed : null)   // changes requested return the task
     if (rev.findings.length) {                       // minors are fixed on the spot too
       const fixBrief = await briefed('j-brief-fix', TO_FIX(rev))
-      const fx = fixBrief ? await retry('fix', l => agent(fixPrompt(sc, impl, SERIAL), { label: l, schema: S_FIX })) : null
+      const fx = fixBrief ? await retry('fix', l => typed(fixPrompt(sc, impl, SERIAL), { label: l, agentType: AGENT.fixer, schema: S_FIX })) : null
       adoptWorktree(impl, fx)
       if (!fx || fx.status !== 'DONE') {
         if (hard(rev) && !fixBrief) fail('BRIEF_NOT_WRITTEN', 'j-brief-fix')
@@ -744,7 +778,7 @@ if (!L.outcome) {
         // approval with minors the task is still in REVIEW and takes none.
         if (hard(rev)) await cycleStep('j-fix', 'fix', { result: fx })
         const reBrief = await briefed('j-brief-rereview', TO_RECHECK(rev, fx))
-        const r2 = reBrief ? await agent(revPrompt(sc, impl, MAIN, { rereview: true }), { label: 'rev2', schema: S_REV }) : null
+        const r2 = reBrief ? await typed(revPrompt(sc, impl, MAIN, { rereview: true }), { label: 'rev2', agentType: AGENT.reviewer, schema: S_REV }) : null
         if (r2) await reviewOf('j-review2', r2, REVIEW_NOTES.rereview)
         if (!reBrief) fail('BRIEF_NOT_WRITTEN', 'j-brief-rereview')
         else if (!r2 || hard(r2)) fail('RED_AFTER_FIX')
@@ -774,7 +808,7 @@ if (!L.outcome) {
     adoptWorktree(impl, rb)
     const rbDone = !!rb && rb.status === 'DONE'
     const rrBrief = rbDone && await briefed('j-brief-rb', REBASED(rb.conflict_files))
-    const rr = rrBrief ? await agent(revPrompt(sc, impl, MAIN, { postRebase: true }), { label: 'rev-rb', schema: S_REV }) : null
+    const rr = rrBrief ? await typed(revPrompt(sc, impl, MAIN, { postRebase: true }), { label: 'rev-rb', agentType: AGENT.reviewer, schema: S_REV }) : null
     if (rr) await reviewOf('j-review-rb', rr, REVIEW_NOTES.rebase(MAIN))
     if (rbDone && !rrBrief) { fail('BRIEF_NOT_WRITTEN', 'j-brief-rb'); res = null }
     else if (!rb || !rr || hard(rr)) { fail('MERGE_CONFLICT'); res = null }
