@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 17.1.0
+  version: 18.0.0
 ---
 
 # ConPort — Project Management System
@@ -591,7 +591,7 @@ mismatch.
 |---------|------|
 | "Draw / visualize subsystem X", "architecture diagram of X" | author the flow below, then `add_document(doc_type='diagram', content=<the JSON spec>)` |
 | "Update the diagram", gap `diagram_stale` | same flow from step 2; `update_document` with the rewritten spec |
-| "What diagrams does this project have?" | `list_diagrams` (id, title, scope, version, updated_at) — `list_documents` hides diagrams unless `doc_type='diagram'` is passed |
+| "What diagrams does this project have?" | `list_diagrams` (id, title, scope, updated_at) — `list_documents` hides diagrams unless `doc_type='diagram'` is passed |
 
 A diagram is a document whose body is a **JSON spec**, not markdown. The
 dashboard draws it itself — there is no picture to render or upload, so what is
