@@ -48,8 +48,8 @@ async function fetchChildren(route, epicIds, auth) {
   return children;
 }
 
-// Same test as the server's `epic_grew_after_start` gap: an open child
-// created after the first child of the epic was started.
+// An epic grew after work started: an open child created after the first
+// child of the epic was started.
 function grewAfterStart(children) {
   const starts = children
     .map((c) => Date.parse(c.started_at))

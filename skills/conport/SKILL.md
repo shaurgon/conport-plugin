@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 18.0.0
+  version: 19.0.0
 ---
 
 # ConPort — Project Management System
@@ -73,6 +73,13 @@ mcp__conport__init({
 
 `skill_id` / `skill_version` / `client_type` are optional but strongly recommended — they let the server tell you when SKILL.md has been updated upstream so manual installs (Claude.ai project files, hand-copied skills) don't silently drift. Pick `client_type` from the list above; fall back to omitting it if running somewhere else.
 
+**No person at the session → `init(questions=false)`.** A subagent, a scheduled
+routine run or any other run nobody answers passes `questions: false`: the
+response then carries no questions and none is marked as asked. A question
+handed to a run that cannot ask it is lost — handed out twice without an
+answer, it is settled by its default. When you dispatch a subagent that works
+with ConPort, tell it to call `init(questions=false)`.
+
 `init` only finds a project — it never creates one. Each refusal
 (`project_not_found`, `project_name_in_other_team`, `team_not_found`,
 `invalid_project_name`) has one prescribed action — see *TEAMS → Refusals* below. Do not answer a refusal by
@@ -84,9 +91,10 @@ trying another name.
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N tasks in TODO, M in progress, K in review. Top 5:` — use `backlog.top` from the response; `K` is `backlog.total_review`, and `, K in review` is dropped when it is zero. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0`, `backlog.total_in_progress == 0` and `backlog.total_review == 0`. Tasks waiting in REVIEW need a reviewer, not more work: when the response carries `review_tasks` (`id`, `title`, `priority`; present only when some task waits), print them as `In review: #id title, …` and follow the instruction that comes with them — have them reviewed before taking new work.
 4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
-5. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
-6. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
-7. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
+5. **If the response carries `questions`** — ask them before starting the user's work. See *Questions from init* below.
+6. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
+7. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
+8. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
    ```
    [SKILL UPDATE] {skill_id} {current} → {latest} ({severity}). Changelog: {changelog_url} · Install: {install_guide}
@@ -104,6 +112,41 @@ trying another name.
    `skill_update_available` above: present → update; absent → you're current.
    If you catch yourself reasoning "my number looks higher than that other
    unit's, so I'm ahead" — stop, that's the exact mistake this signal prevents.
+
+### Questions from init
+
+The server resolves knowledge-base gaps and semantic-pass proposals on its own,
+every day. What only a person can decide reaches you as a question: `init`
+returns up to three in `questions`, each with `id`, `gap_type`, `text`,
+`options` (`key`, `label`, `effect` — what the server does on that answer) and
+`default` (the `key` taken when nobody answers).
+
+1. **Ask before the work starts, one question at a time,** in your own words
+   and in the user's language — `text` is English with the names filled in.
+   Offer the options by their `label` and `effect` and say which one is the
+   default.
+2. **Pass the user's choice** with
+   `answer_question(project, question_id, option)` — `question_id` is the
+   question's `id`, `option` the chosen `key`.
+3. **Silence is not an answer.** A question the user skips or leaves unanswered
+   gets no call — never answer it yourself, not even with the default. The
+   server asks it again later.
+4. **Read the outcome.** `outcome` is `resolved` (the server did what the
+   option says), `dismissed` (left as it is for good), `deferred` (asked again
+   in 30 days) or `cleared` (what it was about is gone; nothing was done). An
+   `instruction` in the answer is one step for you — carry it out as part of
+   this session.
+
+| Refusal | Do exactly this |
+|---|---|
+| `question_closed` | The question was already answered or closed: do nothing, go on |
+| `unknown_option` | Ask the user the same question again with the options in `context.options`; never pick a key yourself |
+| `question_not_found` | The id is not a question of this project: go on |
+| `epic_not_ready` | The epic gained an open task while it was being closed: tell the user, go on |
+
+`answer_question` can also return a refusal of the task cycle — for example
+`done_needs_review` when the chosen option closes a task. Such a refusal carries
+its own `message`; follow it.
 
 **Save-first.** Save decisions (`sync_decision`) and progress (`log_progress`)
 as they happen, not in a batch at the end of the session. The moment a choice is
@@ -326,8 +369,8 @@ brief → IN_PROGRESS → work → report → REVIEW → review
   (approved), to IN_PROGRESS (changes requested) or to CANCELLED. An epic tail
   with a child in REVIEW prescribes `Review task-N` (`review task-N` after a
   `Finish …` step); a task left in REVIEW
-  surfaces as an `inactive_task` gap that asks for a separate reviewer's
-  `review` entry.
+  is listed in `review_tasks` of `init` and in `stale_review` of `get_agenda`
+  until a separate reviewer writes its `review` entry.
 
 **Review refusals — one action each.** A refused write changes nothing. The
 answer carries `error`, a `message` that prescribes the action, and `context`
@@ -497,7 +540,7 @@ return it in the `roadmap` section.
 | Amend / re-tag an existing decision | `update_decision` |
 | Decision no longer holds, NO replacement | `deprecate_decision` (reason required) |
 | Un-retire a decision | `reactivate_decision` |
-| Decision candidates auto-extracted from `log_progress` | never committed directly — they wait in the proposals queue: `semantic_proposals_list` → approve/reject/defer; `list_decisions` filters provenance via `source` (`manual` \| `progress_extraction`) |
+| "Which decisions were written by hand?" | `list_decisions` with `source` (`manual` \| `progress_extraction` — the latter only for decisions extracted from progress entries before that extraction was removed; nothing is extracted from `log_progress` now) |
 
 ### Progress
 
@@ -570,9 +613,10 @@ drift. Edit the original, or author an addendum with an explicit callout
 | "What recipes are available?" | `list_context_recipes` |
 | "Current architecture of subsystem X?" | `render_current_architecture` with `scope=[...]` |
 | "Is this architecture doc safe to archive?" | `audit_doc_l1_coverage(doc_id)` |
-| Init response shows gaps / "show all gaps" | review `gaps.fresh`; `gap_list`, `gap_ack`, `gap_dismiss` (reason), `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
+| Init response carries `questions` | ask the user, one at a time, then `answer_question` — see *Questions from init* |
+| "Show the gaps" / "how healthy is the knowledge base?" | `gap_list` (open ones by default), `gap_stats` — read-only: the server resolves gaps itself |
 | "Clean up the graph" | `semantic_cleanup` (one-click; runs in background — poll `semantic_pass_stats`) |
-| Manual semantic flow | `semantic_pass_run(dry_run=true)` → `semantic_proposals_list` → approve/reject/defer → `semantic_proposals_apply`; `semantic_pass_stats` |
+| Run the semantic pass | `semantic_pass_run` — it settles its own proposals by rule, none waits for review; `semantic_pass_stats` |
 
 **`start_id` convention.** Prefer the prefix form `'<type>-<id>'` (`'task-<id>'`,
 `'doc-<id>'`); type vocabulary `task` / `doc` / `decision` / `pattern` /
@@ -840,7 +884,8 @@ On an `Invalid arguments for tool` error:
 
 ## CHECKLIST
 
-- [ ] Has `init` been run?
+- [ ] Has `init` been run — with `questions=false` in a subagent or any run with no person at it?
+- [ ] `init` returned `questions` → asked the user one at a time before the work, answered each with `answer_question`, and made no call for a question left unanswered?
 - [ ] `CONPORT_PROJECT_NAME` not set → stopped and showed the `settings.local.json` line instead of guessing a name?
 - [ ] `init` answered `project_not_found` → told the user and waited for their word before `create_project`? Answered `project_name_in_other_team` → showed `candidates` instead of creating a second project?
 - [ ] Question about the project → has `search` been done?

@@ -51,17 +51,6 @@
           }
         ]
       }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "prompt_input_exit|clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/session-reflect.js"
-          }
-        ]
-      }
     ]
   }
 }

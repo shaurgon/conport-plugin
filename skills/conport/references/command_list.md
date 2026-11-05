@@ -70,6 +70,7 @@ mcp__conport__init({
 | skill_id | string | no | Skill the client runs (`conport`, `conport-agent`) — only used to detect an available skill update |
 | skill_version | string | no | Semver of the installed SKILL.md content (independent of the plugin release tag) |
 | client_type | string | no | Calling environment: `claude-code` \| `claude-ai` \| `cursor` \| `openclaw` \| `mcporter` \| `paperclip`. Picks the install-guide URL of an update notice |
+| questions | boolean | no | `true` (default) when a person is at the session: up to three questions are returned and marked as asked. Pass `false` for a run with no person — a subagent, a routine cycle: no question is returned or marked |
 
 **Returns:** `project` (the project's handle — pass it as `project` to every
 other tool), `name` (the short name), `canonical_name`
@@ -82,10 +83,10 @@ items with `effective_priority` and `subtask_count`; built over TODO,
 IN_PROGRESS and REVIEW), `stats` (`tasks_todo`, `tasks_in_progress`,
 `tasks_review` among them), `active_context`
 (`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
-entries), `gaps` (`fresh` + `chronic`), `instructions` and `summary`.
-Conditional sections: `reconciliation` when stale IN_PROGRESS tasks are
-detected, `cleanup_hint` when the graph is worth a `semantic_cleanup`,
-`routine_suggestion` for a routine-ripe project with no policy yet,
+entries), `instructions` and `summary`.
+Conditional sections: `questions` (with `questions=true`, up to three — see
+below), `reconciliation` when stale IN_PROGRESS tasks are
+detected, `routine_suggestion` for a routine-ripe project with no policy yet,
 `skill_update_available` when the caller passed skill metadata and a newer
 version exists, and `roadmap` (current milestone with its epics + `next`) /
 `epic_tails` (epics near closing, each with a prescribed `suggested_action` —
@@ -100,6 +101,15 @@ Top-5 excludes subtasks of active epics so
 you see roots + orphans; `effective_priority` rolls up the most-important
 priority across direct children (priority is industry-standard 1-5 where
 1=critical and 5=idle, so "most important" = the smallest number).
+
+**`questions`.** Knowledge-base gaps and semantic-pass proposals are resolved
+by the server's daily pass; a gap only a person can decide becomes a question.
+Each one carries `id`, `gap_type`, `text` (English, with the names filled in),
+`options` (2–3, each `key`, `label` and `effect` — what the server does on that
+answer) and `default` (the `key` taken when nobody answers). Ask the user each
+one, in their language, before the work starts, and pass the choice to
+`answer_question`; a question left unanswered gets no call. A question handed
+out twice without an answer is settled by its default.
 
 **Refusals** (a dict with `error`):
 
@@ -385,7 +395,7 @@ mcp__conport__list_decisions({
 | limit | integer | no | Max results (default: 20) |
 | offset | integer | no | Pagination offset (default: 0) |
 | tags | array | no | Filter by tags |
-| source | string | no | Filter by provenance: `manual` (hand-written) \| `progress_extraction` (auto-extracted from progress; candidates are staged as semantic proposals and only become decisions after approval) |
+| source | string | no | Filter by provenance: `manual` (hand-written) \| `progress_extraction` (extracted from progress entries before that extraction was removed; no new ones appear) |
 | only_current | boolean | no | Drop superseded and deprecated decisions, leaving only what still holds (default: false) |
 
 **Returns:** `decisions` (newest first — `id`, `summary`, `rationale`,
@@ -1972,12 +1982,15 @@ mcp__conport__audit_doc_l1_coverage({
 
 ## Knowledge-base gaps
 
-Gaps are detected server-side (`init` returns the fresh ones). These tools are
-the review loop: acknowledge what you have seen, dismiss what is not real.
+Gaps are detected and resolved server-side. A daily pass fixes what the server
+can fix on its own and closes what has lost its cause; a gap only a person can
+decide reaches the agent as a question in `init`, answered with
+`answer_question`. These tools read the gaps and answer the questions — there is
+no manual review queue.
 
 ### gap_list
 
-List gaps. Defaults to the active ones (detected + acknowledged).
+List gaps. Defaults to the open ones (`detected`).
 
 ```
 mcp__conport__gap_list({
@@ -1990,105 +2003,12 @@ mcp__conport__gap_list({
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
 | category | string | no | structural \| temporal \| coverage \| dependency \| doc_drift \| routine |
-| state | string | no | detected \| acknowledged \| dismissed \| resolved. Comma-separated for several (default: `detected,acknowledged`) |
+| state | string | no | detected \| acknowledged \| dismissed \| resolved. Comma-separated for several (default: `detected`). No gap is in `acknowledged` any more: every acknowledged gap was reopened as `detected`, or closed when its type was retired |
 | limit | integer | no | Max results (default: 50) |
 
 **Returns:** `gaps` (`hash`, `category`, `gap_type`, `subject`, `state`,
 `details`, `first_detected_at`, `last_detected_at`, `dismissed_reason`),
 `total` and `summary`.
-
-### gap_ack
-
-Acknowledge a gap — seen, not acting on it now (`detected` → `acknowledged`).
-The acknowledgement is sticky: if the detector loses and re-finds the gap, it
-comes back acknowledged rather than fresh.
-
-```
-mcp__conport__gap_ack({
-  project: <project>,
-  gap_hash: "a1b2c3d4"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| gap_hash | string | yes | Gap hash from `gap_list` |
-
-**Returns:** a one-line `summary` of the transition.
-
-**Refusals:** `not_found` when no *detected* gap carries that hash.
-
-### gap_dismiss
-
-Dismiss a gap permanently — it is not a real gap. The reason is mandatory and
-kept for audit; dismissal outranks acknowledgement.
-
-```
-mcp__conport__gap_dismiss({
-  project: <project>,
-  gap_hash: "a1b2c3d4",
-  reason: "Both documents are canonical on their own layer"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| gap_hash | string | yes | Gap hash from `gap_list` |
-| reason | string | yes | Why this is not a gap |
-
-**Returns:** a one-line `summary` carrying the reason.
-
-**Refusals:** `not_found` when no active (detected/acknowledged) gap carries
-that hash.
-
-### gap_dismiss_bulk
-
-Dismiss a whole cluster of gaps with one shared reason. At least one filter is
-required — a filterless call would wipe the backlog.
-
-```
-mcp__conport__gap_dismiss_bulk({
-  project: <project>,
-  category: "doc_drift",
-  reason: "Layered docs, drift is expected between them"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| reason | string | yes | Shared dismiss reason, applied to every affected gap |
-| category | string | no | Filter by category |
-| gap_type | string | no | Filter by gap type, e.g. `unmarked_supersession`, `dangling_wikilink` |
-| subject_type | string | no | Filter by subject type, e.g. `doc-pair`, `tag`, `decision` |
-
-**Returns:** `dismissed_count`, `gap_hashes`, `summary`.
-
-**Refusals:** `missing_filter` when none of `category` / `gap_type` /
-`subject_type` is given.
-
-### gap_undismiss
-
-Re-open a dismissed gap (`dismissed` → `detected`).
-
-```
-mcp__conport__gap_undismiss({
-  project: <project>,
-  gap_hash: "a1b2c3d4"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| gap_hash | string | yes | Gap hash from `gap_list` |
-
-**Returns:** a one-line `summary`. The dismiss reason is cleared with the
-re-open.
-
-**Refusals:** `not_found` when no *dismissed* gap carries that hash.
 
 ### gap_stats
 
@@ -2107,18 +2027,55 @@ mcp__conport__gap_stats({
 **Returns:** `breakdown` (state → category → count), `resolved_last_30d`,
 `summary`.
 
+### answer_question
+
+Answer a question from `init`: pass its `id` and the `key` of the option the
+user chose. Ask the user first — silence is not an answer, and no call is made
+without one.
+
+```
+mcp__conport__answer_question({
+  project: <project>,
+  question_id: "a1b2c3d4e5f6a7b8",
+  option: "keep"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| question_id | string | yes | The `id` of a question `init` returned |
+| option | string | yes | The `key` of the chosen option |
+
+**Returns:** `question_id`, `option`, `outcome` (`resolved` — the server did
+what the option says; `dismissed` — left as it is; `deferred` — asked again
+later; `cleared` — what the question was about is gone, nothing was done),
+`instruction` (one line to carry out now, for an option you perform yourself)
+and `action` (what was recorded).
+
+**Refusals:** `question_closed` — the question is already answered or closed,
+go on; `question_not_found`; `unknown_option` — `context.options` lists the
+valid keys: ask the user again with them, never pick one yourself;
+`epic_not_ready` — the epic gained an open task while it was being closed. An
+option that closes a task can also return a refusal of the task cycle (such as
+`done_needs_review`); follow its `message`.
+
 ---
 
 ## Semantic pass
 
-LLM analysis of the knowledge graph. It never mutates silently: a pass produces
-**proposals**, you review them, and only approved ones are applied.
+LLM analysis of the knowledge graph. A pass produces **proposals**, and a rule
+settles every one of them without a manual review: graph mutations at or above
+the confidence threshold are applied, those below it and noise are rejected.
+The server applies the rule daily to every project and at the end of each pass,
+so no proposal waits for review.
 
 ### semantic_cleanup
 
-One-click cleanup: run the pass, auto-reject noise, auto-apply informational
-proposals and high-confidence mutations, leave the rest for manual review.
-Returns immediately and runs in the background.
+One-click cleanup: run the pass, then settle every waiting proposal by the
+rule — reject noise, approve mutations at or above `confidence_threshold` and
+reject those below it, apply what was approved. Returns immediately and runs in
+the background.
 
 ```
 mcp__conport__semantic_cleanup({
@@ -2130,13 +2087,12 @@ mcp__conport__semantic_cleanup({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| confidence_threshold | number | no | Auto-approve mutations above this confidence (default: 0.85) |
-| dry_run | boolean | no | Preview only — **default true**. Pass `false` explicitly to actually apply |
+| confidence_threshold | number | no | Approve mutations at or above this confidence (default: 0.85) |
+| dry_run | boolean | no | **Default true** — applies nothing in this call, but stores the proposals and approves those at or above `confidence_threshold`; the next daily run (within a day) or any `semantic_pass_run` applies what it approved. Not a preview: with a lowered threshold it approves what the rule would reject. Pass `false` to apply in this call |
 
 **Returns:** `started`, `run_id`, `dry_run`, `poll` and `summary`. Poll
 `semantic_pass_stats`: the run is done once its `recent_runs` entry for
-`run_id` has `completed_at`, then review the remainder with
-`semantic_proposals_list`.
+`run_id` has `completed_at`.
 
 **Already running:** when a pass or cleanup is already open for the project
 the answer is `already_running: true` with the live `run_id` and a `summary` —
@@ -2147,7 +2103,8 @@ inside the per-owner cooldown.
 
 ### semantic_pass_run
 
-Run the pass manually and inspect proposals before anything is stored.
+Run the pass manually. A real run stores the proposals and then settles every
+waiting one by the rule; a dry run returns them without storing anything.
 
 ```
 mcp__conport__semantic_pass_run({
@@ -2164,118 +2121,11 @@ mcp__conport__semantic_pass_run({
 | dry_run | boolean | no | Return proposals without saving them (default: false). Previews are not rate-limited |
 
 **Returns:** `pass_run_id`, `proposals` and `residuals` (populated on a dry
-run), `stats` and `summary`.
+run), `stats` (with `proposal_rules` — what the rule applied and rejected) and
+`summary`.
 
 **Refusals:** `rate_limited` (with `retry_after_seconds`) for a real run inside
 the per-owner cooldown.
-
-### semantic_proposals_list
-
-Review queue. Defaults to what is waiting for you.
-
-```
-mcp__conport__semantic_proposals_list({
-  project: <project>,
-  status: "pending_review"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| status | string | no | Filter by status, comma-separated for several (default: `pending_review`) |
-| proposal_type | string | no | Filter by proposal type |
-| pass_run_id | integer | no | Only proposals from one pass run |
-| limit | integer | no | Max results (default: 50) |
-| include_off_domain | boolean | no | Include proposals whose subject entities are not mentioned in this project — leftovers of an earlier owner-wide pass. Audit/debug only (default: false) |
-
-**Returns:** `proposals` (`id`, `proposal_type`, `subject_entity_ids`,
-`target_entity_ids`, `payload`, `rationale`, `confidence`, `evidence_refs`,
-`status`, `pass_run_id`, `created_at`), `total` and `summary`. Ordered by
-confidence.
-
-### semantic_proposal_approve
-
-Approve a proposal for later execution by `semantic_proposals_apply`.
-
-```
-mcp__conport__semantic_proposal_approve({
-  project: <project>,
-  proposal_id: 42
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| proposal_id | integer | yes | Proposal ID |
-| reviewer_note | string | no | Note kept with the review |
-
-**Returns:** a one-line `summary`. Approval only queues the proposal —
-`semantic_proposals_apply` executes it.
-
-**Refusals:** `not_found` when the proposal is not pending review.
-
-### semantic_proposal_reject
-
-Reject a proposal. The reason is mandatory — it trains later passes.
-
-```
-mcp__conport__semantic_proposal_reject({
-  project: <project>,
-  proposal_id: 42,
-  reason: "The two entities are genuinely different services"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| proposal_id | integer | yes | Proposal ID |
-| reason | string | yes | Why it is rejected |
-
-**Returns:** a one-line `summary` carrying the reason.
-
-**Refusals:** `not_found` when the proposal is neither pending nor deferred.
-
-### semantic_proposal_defer
-
-Park a proposal for a later review round.
-
-```
-mcp__conport__semantic_proposal_defer({
-  project: <project>,
-  proposal_id: 42
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| proposal_id | integer | yes | Proposal ID |
-| note | string | no | Note kept with the review |
-
-**Returns:** a one-line `summary`. A deferred proposal can still be rejected;
-`semantic_proposal_approve` accepts only proposals still in `pending_review`.
-
-**Refusals:** `not_found` when the proposal is not pending review.
-
-### semantic_proposals_apply
-
-Execute the approved proposals. Informational types are just marked applied.
-
-```
-mcp__conport__semantic_proposals_apply({
-  project: <project>
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| proposal_ids | string | no | Comma-separated proposal IDs. Omit to apply every approved proposal |
-
-**Returns:** `applied`, `errors`, `errors_detail`, `summary`.
 
 ### semantic_pass_stats
 
@@ -2324,8 +2174,8 @@ mcp__conport__get_agenda({
 **Returns:** `woken_tasks`, `roadmap` (current / next milestone), `epic_tails`
 (epics near closing), `ready_top`, `housekeeping` (`stale_in_progress`,
 `stale_review` — tasks in REVIEW untouched for over 24 hours, each with `id`,
-`title`, `hours_in_review` (hours since the task in REVIEW was last touched, by a journal entry or an edit) — `blocked_too_long`, `fresh_gaps`,
-`cleanup_hint`), `activity_delta` and a one-line `summary` (which counts
+`title`, `hours_in_review` (hours since the task in REVIEW was last touched, by a journal entry or an edit) — `blocked_too_long`),
+`activity_delta` and a one-line `summary` (which counts
 "N stale in review").
 
 ### get_routine_config
@@ -2402,7 +2252,7 @@ mcp__conport__routine_run_finish({
   project: <project>,
   run_id: 7,
   outcome: "completed",
-  summary: "Closed two tail epics, acknowledged three gaps",
+  summary: "Closed two tail epics, returned one stale task to TODO",
   task_ids: [12, 14]
 })
 ```
@@ -2578,8 +2428,8 @@ kept, or a decision tagged `error-solution` by hand.
 | History | `recent_activity`, `item_history`, `context_history` |
 | Context assembly | `assemble_context`, `list_context_recipes`, `render_current_architecture`, `audit_doc_l1_coverage` |
 | Architecture diagrams | `list_diagrams` |
-| Gaps | `gap_list`, `gap_ack`, `gap_dismiss`, `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
-| Semantic pass | `semantic_cleanup`, `semantic_pass_run`, `semantic_proposals_list`, `semantic_proposal_approve`, `semantic_proposal_reject`, `semantic_proposal_defer`, `semantic_proposals_apply`, `semantic_pass_stats` |
+| Gaps | `gap_list`, `gap_stats`, `answer_question` |
+| Semantic pass | `semantic_cleanup`, `semantic_pass_run`, `semantic_pass_stats` |
 | Routine cycle | `get_agenda`, `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 | Guardrails | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |
 

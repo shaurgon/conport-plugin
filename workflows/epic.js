@@ -493,7 +493,7 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.
 === BRANCH B (fallback: there is no base to build on) ===
 0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, read
    env CONPORT_PROJECT_NAME. If it is unset, stop and report: "CONPORT_PROJECT_NAME is not set". Load conport
-   MCP tools via ToolSearch and call init with that name; pass the project handle it returns as project=<handle> in every call.
+   MCP tools via ToolSearch and call init with that name and questions=false (no person answers here); pass the project handle it returns as project=<handle> in every call.
 1) Plan: ${planPath ? `use the plan file ${planPath}.` : `grep '<!-- conport-epic: ${epicId} -->'
    across docs/superpowers/plans/*.md; else the text 'task-${epicId}' there; else
    get_task(${epicId}) and a plan reference in its description.`} Multiple candidates ->

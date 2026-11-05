@@ -39,7 +39,7 @@ rest of `tasks`.
 
 | Group | Tools | What it holds |
 |---|---|---|
-| `core` | 21 | The entry points, search, create / get / list / update of tasks, decisions, progress and documents, the journal entry of a task, and the update of the active context |
+| `core` | 22 | The entry points, the answer to the questions of `init`, search, create / get / list / update of tasks, decisions, progress and documents, the journal entry of a task, and the update of the active context |
 | `session` | 1 | `init` |
 | `projects` | 2 | Listing and creating projects |
 | `tasks` | 10 | Tasks, their dependencies, deleting, tasks in a linked project, the task journal |
@@ -56,8 +56,8 @@ rest of `tasks`.
 | `graphrag` | 6 | Entities, communities and graph statistics |
 | `history` | 3 | Recent activity and item history |
 | `guardrails` | 4 | Conventions and error solutions |
-| `gaps` | 6 | Knowledge-base gaps |
-| `semantic` | 8 | The semantic pass and its proposals |
+| `gaps` | 3 | Knowledge-base gaps and the answer to the questions about them |
+| `semantic` | 3 | The semantic pass, its cleanup and statistics |
 | `recipes` | 4 | Context assembly and architecture rendering |
 | `routine` | 6 | Periodic cycles: policy, runs, estimation statistics |
 
@@ -68,7 +68,7 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 
 | Group | Tools |
 |---|---|
-| `core` | `init`, `create_project`, `list_projects`, `search`, `add_task`, `get_task`, `list_tasks`, `update_task`, `add_task_journal_entry`, `sync_decision`, `get_decision`, `list_decisions`, `update_decision`, `log_progress`, `list_progress`, `update_progress`, `add_document`, `get_document`, `list_documents`, `update_document`, `update_active_context` |
+| `core` | `init`, `answer_question`, `create_project`, `list_projects`, `search`, `add_task`, `get_task`, `list_tasks`, `update_task`, `add_task_journal_entry`, `sync_decision`, `get_decision`, `list_decisions`, `update_decision`, `log_progress`, `list_progress`, `update_progress`, `add_document`, `get_document`, `list_documents`, `update_document`, `update_active_context` |
 | `session` | `init` |
 | `projects` | `list_projects`, `create_project` |
 | `tasks` | `add_task`, `update_task`, `list_tasks`, `get_task`, `delete_task`, `add_task_dep`, `add_linked_task`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
@@ -85,8 +85,8 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 | `graphrag` | `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats` |
 | `history` | `recent_activity`, `item_history`, `context_history` |
 | `guardrails` | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |
-| `gaps` | `gap_list`, `gap_ack`, `gap_dismiss`, `gap_dismiss_bulk`, `gap_undismiss`, `gap_stats` |
-| `semantic` | `semantic_pass_run`, `semantic_proposals_list`, `semantic_proposal_approve`, `semantic_proposal_reject`, `semantic_proposal_defer`, `semantic_proposals_apply`, `semantic_pass_stats`, `semantic_cleanup` |
+| `gaps` | `gap_list`, `gap_stats`, `answer_question` |
+| `semantic` | `semantic_pass_run`, `semantic_pass_stats`, `semantic_cleanup` |
 | `recipes` | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage`, `render_current_architecture` |
 | `routine` | `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 
@@ -99,7 +99,7 @@ connect with the profile of what you run:
 | What you run | Profile |
 |---|---|
 | Skill `conport` | `full` |
-| Skill `conport-routine` | `core,tasks,milestones,agenda,gaps,semantic,routine` |
+| Skill `conport-routine` | `core,tasks,milestones,agenda,semantic,routine` |
 | Skill `superpowers-conport` | `core,links` |
 | Workflow `task` | `core,tasks,links` |
 | Workflow `epic` | `core,tasks` |

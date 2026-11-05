@@ -51,8 +51,8 @@ The plugin loads in Claude Code:
   discipline (init, search, tasks, decisions), one iteration of a periodic backlog
   routine, and the superpowers→ConPort spec/epic flow with its `finish` release verdict
 - MCP server `conport` pointing at `https://api.conport.app/mcp/` (Bearer auth)
-- 6 hooks (Node.js scripts under `scripts/`) — session start, command check,
-  epic tracking, prompt submit, epic tails at the end of a turn, session reflect
+- 5 hooks (Node.js scripts under `scripts/`) — session start, command check,
+  epic tracking, prompt submit, epic tails at the end of a turn
 
 The connection lists every tool of the server. To have only some groups of
 tools listed, see [tool-profiles.md](./tool-profiles.md).

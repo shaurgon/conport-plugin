@@ -24,14 +24,11 @@ const { parseProject } = createRequire(import.meta.url)('../_common.js')
 // Records the raw request line and headers of every call, and answers the
 // routes the hooks read; `conventions` is the deny-list served next.
 async function startApi() {
-  const api = { requests: [], bodies: [], waiting: [], conventions: [] }
+  const api = { requests: [], conventions: [] }
   const server = createServer((req, res) => {
-    let body = ''
-    req.on('data', (d) => { body += d })
+    req.resume()
     req.on('end', () => {
       api.requests.push({ url: req.url, team: req.headers[TEAM_HEADER] })
-      if (body) api.bodies.push(JSON.parse(body))
-      for (const resolve of api.waiting.splice(0)) resolve()
       res.setHeader('content-type', 'application/json')
       if (req.url.endsWith('/epic-tails')) res.end('{"tails": []}')
       else if (req.url.includes('/tasks?')) res.end('{"tasks": [], "total": 0}')
@@ -41,8 +38,6 @@ async function startApi() {
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   api.url = `http://127.0.0.1:${server.address().port}`
-  // The reflection is posted by a detached child after its hook has exited.
-  api.nextRequest = () => new Promise((resolve) => api.waiting.push(resolve))
   api.close = () => new Promise((resolve) => server.close(resolve))
   return api
 }
@@ -117,18 +112,6 @@ const prompt = (ctx, vars, session = 's1') =>
   runHook('user-prompt-submit.js', { session_id: session, prompt: 'hi' }, ctx, vars)
 const sessionStart = (ctx, vars, source = 'startup') => runHook('session-start.js', { source }, ctx, vars)
 
-// A transcript long enough for the SessionEnd hook to queue a reflection.
-function transcript(ctx) {
-  const file = join(ctx.root, 'transcript.jsonl')
-  const lines = [1, 2, 3, 4, 5, 6].map((n) => JSON.stringify({
-    type: 'user', message: { content: [{ type: 'text', text: `a meaningful prompt number ${n}` }] },
-  }))
-  writeFileSync(file, lines.join('\n') + '\n')
-  return file
-}
-const sessionEnd = (ctx, vars) =>
-  runHook('session-reflect.js', { session_id: 's1', transcript_path: transcript(ctx) }, ctx, vars)
-
 // The session record the PostToolUse hook leaves: one epic this session changed.
 function recordEpic(ctx, project, session = 's1') {
   mkdirSync(join(ctx.dataDir, 'hook_state'), { recursive: true })
@@ -179,20 +162,9 @@ test('the conventions hook sends the canonical name whole', () => withEnv(async 
   ])
 }))
 
-test('the reflection payload carries the canonical name whole', () => withEnv(async (ctx) => {
-  const posted = ctx.api.nextRequest()
-  const { code } = await sessionEnd(ctx, { CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' })
-  assert.equal(code, 0)
-  await posted
-  assert.deepEqual(ctx.api.requests, [{ url: '/api/v1/hooks/reflect-session', team: undefined }])
-  assert.equal(ctx.api.bodies[0].project, 'k7m2qx9d/my-proj')
-  assert.equal('project_id' in ctx.api.bodies[0], false)
-}))
-
 test('without CONPORT_PROJECT_NAME no hook calls the server', () => withEnv(async (ctx) => {
   assert.equal((await sessionStart(ctx)).code, 0)
   assert.equal((await prompt(ctx)).code, 0)
-  assert.equal((await sessionEnd(ctx)).code, 0)
   recordEpic(ctx, '99')
   const stopped = await stop(ctx)
   assert.equal(stopped.code, 0)
@@ -200,9 +172,6 @@ test('without CONPORT_PROJECT_NAME no hook calls the server', () => withEnv(asyn
 
   assert.deepEqual(ctx.api.requests, [])
   assert.deepEqual(projectGuesses(ctx), [], 'no hook may run git to guess a project')
-  assert.deepEqual(readdirSync(ctx.dataDir).filter((f) => f.startsWith('reflect-')), [],
-    'no reflection is queued for a session with no project')
-  assert.match(readFileSync(join(ctx.dataDir, 'session-end.log'), 'utf8'), /SKIP: no project identifier/)
   assert.deepEqual(hookState(ctx).filter((f) => /^(project_id|epic_tails)_/.test(f)), [])
   assert.deepEqual(denyLists(ctx), [])
 }))
@@ -297,13 +266,11 @@ test('CONPORT_PROJECT_ID alone names no project, and the session start says so i
   assert.equal(started.code, 0)
   assert.deepEqual(startNotice(started.out), { user: RETIRED, agent: null })
   assert.equal((await prompt(ctx, vars)).code, 0)
-  assert.equal((await sessionEnd(ctx, vars)).code, 0)
   recordEpic(ctx, '42')
   assert.equal((await stop(ctx, vars)).out, '')
   assert.equal((await bash(ctx, vars)).code, 0)
   assert.deepEqual(ctx.api.requests, [], 'no hook reaches the server by the number')
   assert.deepEqual(projectGuesses(ctx), [])
-  assert.match(readFileSync(join(ctx.dataDir, 'session-end.log'), 'utf8'), /SKIP: no project identifier/)
   assert.deepEqual(denyLists(ctx), [])
 }))
 
@@ -316,10 +283,6 @@ test('with both variables the name addresses the project and the session start s
     { url: '/api/v1/projects/my-proj/epic-tails', team: 'k7m2qx9d' },
     { url: '/api/v1/hooks/conventions?project=k7m2qx9d%2Fmy-proj', team: undefined },
   ])
-  const posted = ctx.api.nextRequest()
-  await sessionEnd(ctx, vars)
-  await posted
-  assert.equal(ctx.api.bodies[0].project, 'k7m2qx9d/my-proj')
 }))
 
 test('the line is said only when CONPORT_PROJECT_ID holds a value', () => withEnv(async (ctx) => {
@@ -343,10 +306,6 @@ test('a handle in CONPORT_PROJECT_NAME is the path segment, with no team header'
     { url: '/api/v1/projects/prk7m2qx9d/epic-tails', team: undefined },
     { url: '/api/v1/hooks/conventions?project=prk7m2qx9d', team: undefined },
   ])
-  const posted = ctx.api.nextRequest()
-  await sessionEnd(ctx, vars)
-  await posted
-  assert.equal(ctx.api.bodies[0].project, 'prk7m2qx9d')
 }))
 
 // The workflow helper cannot import the hooks' module, so the rule lives in
@@ -376,7 +335,6 @@ for (const name of ['a/b/c', '/my-proj', 'pers/', '/']) {
   test(`an invalid name is treated as no project: ${name}`, () => withEnv(async (ctx) => {
     assert.equal((await sessionStart(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
     assert.equal((await prompt(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
-    assert.equal((await sessionEnd(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
     assert.deepEqual(ctx.api.requests, [])
     assert.deepEqual(projectGuesses(ctx), [])
   }))

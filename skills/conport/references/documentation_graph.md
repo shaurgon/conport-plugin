@@ -18,8 +18,7 @@ links docs to one another:
 
 Authored callouts encode the relationships explicitly, so re-reading the
 old doc surfaces "moved here" / "resolved here" stubs instead of stale
-claims. They also tell the drift detector that two related docs are
-already linked — pairs of sections between them stop being flagged.
+claims.
 
 ## Picking the right callout
 
@@ -106,11 +105,11 @@ A callout in the document preamble (before any heading) applies to the
 whole document. A callout at the start of a section applies to that
 section only.
 
-For drift suppression, **one edge between two docs is enough** — you don't
-need to repeat callouts per section. So for cross-cutting clusters
+**One edge between two docs is enough** — you don't need to repeat callouts
+per section. So for cross-cutting clusters
 (Security ↔ Auth ↔ Multi-tenancy ↔ DB schema), a single doc-level
 `[!relates-to]` callout in each specific spec pointing at the cross-
-cutting hub closes all section-level drift between them.
+cutting hub links them all.
 
 For supersedes / resolves where you want render-time stubs at specific
 sections, use section-level callouts so the stubs land in the right place.
@@ -149,46 +148,24 @@ the Referenced-by panel without rendering stubs on the target.
 Targets resolve within the current project. Cross-project syntax
 (`[[project-X/doc-Y]]`) is reserved but not parsed yet.
 
-## Drift detection thresholds
+## Doc-graph gaps
 
-The `unmarked_supersession` detector emits a gap when two sections in
-different active docs:
-- Have a representative-chunk cosine similarity ≥ 0.90 (the
-  drift_score), AND
-- Have no authored document link between their docs (any direction,
-  any anchor combination).
+Three gaps watch the documentation graph. The server resolves them itself —
+there is no manual review queue:
 
-Severity high ≥ 0.95, low 0.90–0.95. Tunable per-project via
-`custom_data.gap_thresholds` keys: `drift_cosine_prefilter`,
-`drift_score_threshold_low`, `drift_score_threshold_high`.
+- `dangling_wikilink` triggers when a callout or wikilink target item or
+  section anchor doesn't resolve. The server's daily pass removes the link
+  markup and keeps the text.
+- `malformed_callout` triggers on lines that look like `> [!type] [[...]]`
+  but failed to parse (unknown type, missing target). The daily pass turns
+  the line into a plain quote.
+- `doc_stale_open_question` triggers on an "Open Questions" section that has
+  stayed unanswered too long. The user is asked in `init` whether to remove
+  the section or keep it open; pass the answer with `answer_question`.
 
-`stale_open_question` triggers on sections whose heading matches
-`/^open\s+questions?[:.!?]?\s*$/i` and whose containing doc is older than
-30 days with no incoming `resolves` edge.
-
-`dangling_wikilink` triggers when a callout or wikilink target item or
-section anchor doesn't resolve.
-
-`malformed_callout` triggers on lines that look like `> [!type] [[...]]`
-but failed to parse (unknown type, missing target).
-
-## Closing existing drift gaps
-
-Two paths, both spec-blessed:
-
-**Author the relationship.** Edit the right doc, add a callout. The next
-ingest cycle creates the document link, and the next detection run
-auto-resolves the gap.
-
-**Dismiss with a reason.** When two docs are independently authoritative
-on their own layer (cross-cutting concern), use `gap_dismiss` with a
-short reason. The dismissal is keyed on a stable hash of the gap
-identity, so it survives re-detection runs and threshold tuning.
-
-For mass dismissal of a known cross-cutting cluster, use
-`gap_dismiss_bulk(project, reason, category|gap_type|subject_type)` —
-one shared reason gets stamped on every affected gap. At least one filter
-is required so the call cannot wipe the whole backlog by accident.
+To link two documents that cover the same ground, author the relationship:
+edit the right doc and add a callout — the next ingest cycle creates the
+document link.
 
 ## Spec docs that contain example markup
 
@@ -210,11 +187,8 @@ drift or dangling wikilink gaps.
 - `get_document(project, document_id, raw=false)` — full markdown with
   render-time stubs from incoming supersedes/resolves/extends edges.
   Pass `raw=true` to bypass.
-- `gap_dismiss(project, gap_hash, reason)` — close a drift gap that
-  isn't actually drift; reason is mandatory for audit.
-- `gap_dismiss_bulk(project, reason, category|gap_type|subject_type)`
-  — close a whole cluster of gaps with one shared reason. At least one
-  filter is required.
+- `gap_list(project, category='doc_drift')` — the open doc-graph gaps,
+  read-only.
 
 ## Cross-references
 

@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 18.0.0
+  version: 19.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -33,7 +33,7 @@ structure on top.
 
 | Tool | Purpose |
 |------|---------|
-| `get_agenda(project, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`, `fresh_gaps`, `cleanup_hint`), `activity_delta`. Empty sections are omitted. |
+| `get_agenda(project, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`), `activity_delta`. Empty sections are omitted. |
 | `list_milestones(project, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
 | `update_milestone(project, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
 | `get_routine_config(project)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
@@ -55,6 +55,11 @@ structure on top.
 That suggestion is handled by the **conport** skill; this skill assumes the
 decision was already made and simply runs the cycle against whatever
 `get_routine_config` returns.
+
+**Gaps are not the run's.** The server resolves knowledge-base gaps and
+semantic-pass proposals itself, in a daily pass over every project. What only a
+person can decide is asked as a question in an interactive session's `init` — a
+run has nobody to ask, so it calls `init(questions=false)` and triages no gaps.
 
 ---
 
@@ -91,7 +96,7 @@ configured level.
 | Level | Name | What the run does |
 |-------|------|-------------------|
 | **0** | Report | Fetch the agenda, reconcile stale work, produce the digest. No changes beyond reconciliation. |
-| **1** | Housekeep | Level 0 + housekeeping: gap triage, semantic cleanup, unblocking/snoozing stuck tasks. |
+| **1** | Housekeep | Level 0 + housekeeping: weekly graph cleanup, unblocking/snoozing stuck tasks. |
 | **2** | Execute | Level 1 + actually executing ready tasks, up to `max_tasks_per_run`. |
 
 ---
@@ -100,7 +105,7 @@ configured level.
 
 ### Phase 1: Start
 
-1. `init` (per the conport skill) if not already done this session.
+1. `init(questions=false)` (per the conport skill) if not already done this session — a run has no person to answer questions.
 2. `get_routine_config(project)`.
    - `enabled=false` → **report that the routine is disabled and exit.** Do not
      start a run, do not touch the backlog.
@@ -144,10 +149,11 @@ by this date", the re-check itself **is** the task's work.
 
 Skip this phase entirely at level 0.
 
-- **`fresh_gaps`** — triage each one: `gap_ack` the meaningful ones (they become
-  acknowledged work signals), `gap_dismiss` the noise **with a reason**.
-- **`cleanup_hint`** — the graph accumulated enough drift → run
-  `semantic_cleanup`.
+- **Graph cleanup** (weekly cadence) — start `semantic_cleanup(project,
+  dry_run=false)` once per weekly run: it runs the semantic pass and settles
+  every proposal by rule, so nothing is left to review. It returns at once and
+  runs in the background; do not wait for it. A `rate_limited` answer means a
+  cleanup ran recently — skip it and name it in the digest.
 - **`blocked_too_long`** — for each chronically blocked task pick one:
   **unblock** (the blocker is resolved → status back to TODO), **decompose**
   (split out the unblocked part as a new task), or **snooze with a concrete
@@ -301,8 +307,6 @@ Explicitly forbidden on an empty day:
 A weekly run is the **same runbook** plus one extra reflection block between
 Phase 4 and the digest:
 
-- **Chronic gaps** — review gaps that stayed acknowledged-but-unresolved across
-  multiple runs; either turn them into tasks or dismiss with a reason.
 - **Estimate vs actual** — call `get_estimation_stats(project)` and compare
   `estimated_seconds` against actual durations on tasks closed this week; note
   systematic drift (`median_ratio` far from 1) in the digest so future
@@ -329,4 +333,5 @@ separate report entity.
 - [ ] Digest names the current milestone — and a release milestone was left for the owner to close?
 - [ ] Empty agenda → `routine_run_finish(outcome='empty')` and exit, no invented work?
 - [ ] `routine_run_finish` called exactly once — and no separate `log_progress` for the run?
-- [ ] Weekly cadence → reflection block (chronic gaps, estimate/actual, BLOCKED review) included?
+- [ ] `init` called with `questions=false`, and no gap triaged — the server resolves gaps itself?
+- [ ] Weekly cadence → reflection block (estimate/actual, BLOCKED review) included?

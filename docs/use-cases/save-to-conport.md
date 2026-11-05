@@ -25,8 +25,8 @@ picking the right tool for each piece:
 
 It deliberately does **not** write:
 - Code diffs (those live in git).
-- Minute-by-minute timeline (use the `session-reflect` hook for that — it
-  fires automatically on exit).
+- Minute-by-minute timeline — `log_progress` records finished steps, not a log
+  of the session.
 - Secrets, keys, or any credential material.
 
 ## Checkpoint cadence
