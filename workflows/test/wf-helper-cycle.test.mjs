@@ -13,7 +13,10 @@ import { JOURNAL_AUTHORS, JOURNAL_BODY_MAX, fitBody, journalBody } from '../wf-h
 // local stand-in for the tasks and journal REST surface that holds the server's
 // cycle rules — which entry a status takes, what REVIEW, the return and DONE
 // need — so a sequence of steps is checked against the same refusals the server
-// gives. The production API is never touched.
+// gives. By default the stand-in is the current server, whose entry moves its
+// task and says so in the answer (`status`, `move_refused`); with `legacy` it is
+// a server whose entry moves nothing and whose answer carries no `status`. The
+// production API is never touched.
 
 const HELPER = join(WORKFLOWS, 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
@@ -26,18 +29,40 @@ const KINDS_BY_STATUS = {
 }
 const refusal = (error, message) => ({ status: 409, body: { detail: { error, message, context: {} } } })
 
+// Where an entry moves its task once it is written, on the current server.
+const moveAfter = body => (['report', 'fix'].includes(body.kind) ? 'REVIEW'
+  : body.kind === 'review' && body.verdict === 'changes_requested' ? 'IN_PROGRESS' : null)
+
 const startMock = async (opts = {}) => {
   const state = { tasks: new Map(), journal: [], requests: [], nextEntry: 1 }
   for (const t of opts.tasks ?? [])
     state.tasks.set(t.id, { kind: 'task', description: '', review_round: 1, ...t })
   for (const e of opts.journal ?? []) state.journal.push({ id: state.nextEntry++, round: 1, ...e })
   const fail = opts.fail ?? (() => null)
+  const refuseMove = opts.refuseMove ?? (() => null)
 
   const round = t => state.journal.filter(e => e.task_id === t.id && e.round === t.review_round)
   const lastVerdict = t => round(t).filter(e => e.kind === 'review').map(e => e.verdict).pop() ?? null
   const cycled = t => state.journal.some(e => e.task_id === t.id && ['report', 'fix', 'review'].includes(e.kind))
 
   const addEntry = (t, body) => {
+    let started = false
+    if (!opts.legacy && body.kind === 'report' && ['TODO', 'BLOCKED'].includes(t.status)) {
+      const start = patch(t, { status: 'IN_PROGRESS' })
+      if (start.status !== 200) return start
+      started = true
+    }
+    const written = writeEntry(t, body)
+    if (opts.legacy || written.status !== 201) return written
+    if (opts.unmoved) return { status: 201, body: { ...written.body, status: null, move_refused: null } }
+    const target = moveAfter(body)
+    const moved = target && (refuseMove(t, target) ?? patch(t, { status: target }))
+    const move_refused = moved && moved.status !== 200 ? moved.body.detail : null
+    const status = target && !move_refused ? target : started ? 'IN_PROGRESS' : null
+    return { status: 201, body: { ...written.body, status, move_refused } }
+  }
+
+  const writeEntry = (t, body) => {
     if (['DONE', 'CANCELLED'].includes(t.status)) return refusal('journal_task_closed', 'Reopen the task first.')
     if (!KINDS_BY_STATUS[t.status].includes(body.kind)) return refusal('journal_kind_not_allowed', 'Move the task first.')
     if ((body.kind === 'review') !== (body.verdict != null)) return { status: 422, body: { detail: { error: 'invalid_verdict' } } }
@@ -202,18 +227,28 @@ test('brief: one journal entry on the task path, signed by the orchestrator', wi
   assert.equal(mock.tasks.get(7).status, 'TODO', 'a brief changes no status')
 }))
 
-test('report: a TODO task is started, the report written, and the task moved to REVIEW', withMock({ tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
+test('report: a TODO task is started, the report written, and the entry moves the task to REVIEW — no status change follows it', withMock({ tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
+  const out = await runStep(mock, { step: 'report', result: IMPL })
+  assert.deepEqual(results(out), ['start:done', 'report:done', 'to_review:done'])
+  assert.equal(out.actions[2].detail, 'moved to REVIEW')
+  const w = writes(mock)
+  assert.deepEqual(w.map(r => [r.method, r.path]), [
+    ['PATCH', `/api/v1/projects/${PROJECT}/tasks/7`], ['POST', `/api/v1/projects/${PROJECT}/tasks/7/journal`]])
+  assert.deepEqual(w[0].body, { status: 'IN_PROGRESS' })
+  assert.equal(w[1].body.kind, 'report')
+  assert.equal(w[1].body.author, 'implementer')
+  assert.equal(w[1].body.body, journalBody({ step: 'report', result: IMPL }))
+  assert.equal('verdict' in w[1].body, false, 'only a review carries a verdict')
+  assert.equal(mock.tasks.get(7).status, 'REVIEW')
+}))
+
+test('report on a server whose answer has no status: the helper moves the task to REVIEW itself', withMock({ legacy: true, tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
   const out = await runStep(mock, { step: 'report', result: IMPL })
   assert.deepEqual(results(out), ['start:done', 'report:done', 'to_review:done'])
   const w = writes(mock)
   assert.deepEqual(w.map(r => [r.method, r.path]), [
     ['PATCH', `/api/v1/projects/${PROJECT}/tasks/7`], ['POST', `/api/v1/projects/${PROJECT}/tasks/7/journal`],
     ['PATCH', `/api/v1/projects/${PROJECT}/tasks/7`]])
-  assert.deepEqual(w[0].body, { status: 'IN_PROGRESS' })
-  assert.equal(w[1].body.kind, 'report')
-  assert.equal(w[1].body.author, 'implementer')
-  assert.equal(w[1].body.body, journalBody({ step: 'report', result: IMPL }))
-  assert.equal('verdict' in w[1].body, false, 'only a review carries a verdict')
   assert.deepEqual(w[2].body, { status: 'REVIEW' })
   assert.equal(mock.tasks.get(7).status, 'REVIEW')
 }))
@@ -221,6 +256,7 @@ test('report: a TODO task is started, the report written, and the task moved to 
 test('report: a task already IN_PROGRESS is not moved before the report', withMock({ tasks: [{ id: 7, status: 'IN_PROGRESS' }] }, async mock => {
   const out = await runStep(mock, { step: 'report', result: IMPL })
   assert.deepEqual(results(out), ['report:done', 'to_review:done'])
+  assert.deepEqual(writes(mock).map(r => r.method), ['POST'])
 }))
 
 for (const status of ['DONE', 'CANCELLED', 'REVIEW'])
@@ -234,35 +270,51 @@ for (const status of ['DONE', 'CANCELLED', 'REVIEW'])
     assert.equal(mock.tasks.get(7).status, status)
   }))
 
-test('review approve: the verdict is written by the reviewer and the task stays in REVIEW', withMock({
-  tasks: [{ id: 7, status: 'REVIEW' }], journal: [{ task_id: 7, kind: 'report', author: 'implementer', body: 'r' }],
-}, async mock => {
-  const out = await runStep(mock, { step: 'review', verdict: 'approve', result: CLEAN })
-  assert.deepEqual(results(out), ['review:done'])
-  const [post] = writes(mock)
-  assert.deepEqual({ kind: post.body.kind, author: post.body.author, verdict: post.body.verdict },
-    { kind: 'review', author: 'reviewer', verdict: 'approve' })
-  assert.equal(mock.tasks.get(7).status, 'REVIEW')
-}))
+for (const legacy of [false, true])
+  test(`review approve${legacy ? ' on a server whose answer has no status' : ''}: the verdict is written by the reviewer and the task stays in REVIEW`, withMock({
+    legacy, tasks: [{ id: 7, status: 'REVIEW' }], journal: [{ task_id: 7, kind: 'report', author: 'implementer', body: 'r' }],
+  }, async mock => {
+    const out = await runStep(mock, { step: 'review', verdict: 'approve', result: CLEAN })
+    assert.deepEqual(results(out), ['review:done'])
+    assert.equal(writes(mock).length, 1, 'an approval moves nothing')
+    const [post] = writes(mock)
+    assert.deepEqual({ kind: post.body.kind, author: post.body.author, verdict: post.body.verdict },
+      { kind: 'review', author: 'reviewer', verdict: 'approve' })
+    assert.equal(mock.tasks.get(7).status, 'REVIEW')
+  }))
 
-test('review changes_requested: the verdict is written and the task returned to IN_PROGRESS in the next round', withMock({
+test('review changes_requested: the verdict is written and the entry returns the task to IN_PROGRESS in the next round', withMock({
   tasks: [{ id: 7, status: 'REVIEW' }], journal: [{ task_id: 7, kind: 'report', author: 'implementer', body: 'r' }],
 }, async mock => {
   const out = await runStep(mock, { step: 'review', verdict: 'changes_requested', result: HARD })
   assert.deepEqual(results(out), ['review:done', 'return:done'])
+  assert.equal(out.actions[1].detail, 'moved to IN_PROGRESS')
+  assert.deepEqual(writes(mock).map(r => r.method), ['POST'], 'no status change follows the entry')
+  assert.equal(mock.tasks.get(7).status, 'IN_PROGRESS')
+  assert.equal(mock.tasks.get(7).review_round, 2)
+}))
+
+test('review changes_requested on a server whose answer has no status: the helper returns the task itself', withMock({
+  legacy: true, tasks: [{ id: 7, status: 'REVIEW' }], journal: [{ task_id: 7, kind: 'report', author: 'implementer', body: 'r' }],
+}, async mock => {
+  const out = await runStep(mock, { step: 'review', verdict: 'changes_requested', result: HARD })
+  assert.deepEqual(results(out), ['review:done', 'return:done'])
+  assert.deepEqual(writes(mock).map(r => r.method), ['POST', 'PATCH'])
   assert.deepEqual(writes(mock)[1].body, { status: 'IN_PROGRESS' })
   assert.equal(mock.tasks.get(7).status, 'IN_PROGRESS')
   assert.equal(mock.tasks.get(7).review_round, 2)
 }))
 
-test('fix: the fix report is written by the implementer and the task moved back to REVIEW', withMock({
-  tasks: [{ id: 7, status: 'IN_PROGRESS', review_round: 2 }],
-}, async mock => {
-  const out = await runStep(mock, { step: 'fix', result: FIXED })
-  assert.deepEqual(results(out), ['fix:done', 'to_review:done'])
-  assert.deepEqual([writes(mock)[0].body.kind, writes(mock)[0].body.author], ['fix', 'implementer'])
-  assert.equal(mock.tasks.get(7).status, 'REVIEW')
-}))
+for (const legacy of [false, true])
+  test(`fix${legacy ? ' on a server whose answer has no status' : ''}: the fix report is written by the implementer and the task moved back to REVIEW`, withMock({
+    legacy, tasks: [{ id: 7, status: 'IN_PROGRESS', review_round: 2 }],
+  }, async mock => {
+    const out = await runStep(mock, { step: 'fix', result: FIXED })
+    assert.deepEqual(results(out), ['fix:done', 'to_review:done'])
+    assert.deepEqual([writes(mock)[0].body.kind, writes(mock)[0].body.author], ['fix', 'implementer'])
+    assert.deepEqual(writes(mock).map(r => r.method), legacy ? ['POST', 'PATCH'] : ['POST'])
+    assert.equal(mock.tasks.get(7).status, 'REVIEW')
+  }))
 
 test('full text: a report, a review and a fix given as body alone are written as that text, with the same moves', withMock({
   tasks: [{ id: 7, status: 'TODO' }],
@@ -301,16 +353,21 @@ test('a clean run: brief, report, REVIEW, approve, then the accounting close lan
     [['brief', 'orchestrator', null], ['report', 'implementer', null], ['review', 'reviewer', 'approve']])
 }))
 
-test('a run with a fix round: changes requested, the return, the fix, REVIEW, approve, then DONE', withMock({ tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
-  for (const step of [
-    { step: 'brief', body: 'b' }, { step: 'report', result: IMPL },
-    { step: 'review', verdict: 'changes_requested', result: HARD }, { step: 'fix', result: FIXED },
-    { step: 'review', verdict: 'approve', result: CLEAN, note: 'Re-review after the fix' },
-  ]) assert.ok((await runStep(mock, step)).actions.every(a => a.result === 'done'), step.step)
-  assert.equal((await runAccount(mock, CLOSE)).task_closed, true)
-  assert.deepEqual(mock.journal.map(e => [e.kind, e.round]),
-    [['brief', 1], ['report', 1], ['review', 1], ['fix', 2], ['review', 2]])
-}))
+for (const legacy of [false, true])
+  test(`a run with a fix round${legacy ? ' on a server whose answer has no status' : ''}: changes requested, the return, the fix, REVIEW, approve, then DONE`, withMock({ legacy, tasks: [{ id: 7, status: 'TODO' }] }, async mock => {
+    for (const step of [
+      { step: 'brief', body: 'b' }, { step: 'report', result: IMPL },
+      { step: 'review', verdict: 'changes_requested', result: HARD }, { step: 'fix', result: FIXED },
+      { step: 'review', verdict: 'approve', result: CLEAN, note: 'Re-review after the fix' },
+    ]) assert.ok((await runStep(mock, step)).actions.every(a => a.result === 'done'), step.step)
+    // The start of the TODO task is the only status change the steps send when the
+    // entries move the task; without that, one follows each moving entry.
+    assert.deepEqual(writes(mock).filter(r => r.method === 'PATCH').map(r => r.body.status),
+      legacy ? ['IN_PROGRESS', 'REVIEW', 'IN_PROGRESS', 'REVIEW'] : ['IN_PROGRESS'])
+    assert.equal((await runAccount(mock, CLOSE)).task_closed, true)
+    assert.deepEqual(mock.journal.map(e => [e.kind, e.round]),
+      [['brief', 1], ['report', 1], ['review', 1], ['fix', 2], ['review', 2]])
+  }))
 
 const MINORS = { verdict: 'NEEDS_FIXES', findings: [{ severity: 'MINOR', file: 'a.js', line: 9, what: 'a nit' }] }
 const allDone = async (mock, steps) => {
@@ -387,7 +444,31 @@ for (const code of ['review_needs_report', 'return_needs_review', 'reviewer_is_a
     assert.equal(writes(mock).length, 1, 'neither retried nor followed by the return')
   }))
 
-test('a refused status change after a written entry is reported as refused', withMock({
+test('a move the entry\'s answer reports as refused is reported as refused, and no status change is sent', withMock({
+  tasks: [{ id: 7, status: 'IN_PROGRESS' }],
+  refuseMove: () => refusal('review_needs_report', 'Add a report first.'),
+}, async mock => {
+  const out = await runStep(mock, { step: 'fix', result: FIXED })
+  assert.deepEqual(results(out), ['fix:done', 'to_review:failed'])
+  assert.equal(out.actions[1].detail, 'review_needs_report: the task keeps its status — Add a report first.')
+  assert.deepEqual(out.failed_calls, [])
+  assert.deepEqual(writes(mock).map(r => r.method), ['POST'])
+  assert.equal(mock.tasks.get(7).status, 'IN_PROGRESS')
+}))
+
+test('a return the entry\'s answer reports as refused is reported as refused, and no status change is sent', withMock({
+  tasks: [{ id: 7, status: 'REVIEW' }], journal: [{ task_id: 7, kind: 'report', author: 'implementer', body: 'r' }],
+  refuseMove: () => refusal('return_needs_review', 'Request changes first.'),
+}, async mock => {
+  const out = await runStep(mock, { step: 'review', verdict: 'changes_requested', result: HARD })
+  assert.deepEqual(results(out), ['review:done', 'return:failed'])
+  assert.equal(out.actions[1].detail, 'return_needs_review: the task keeps its status — Request changes first.')
+  assert.deepEqual(out.failed_calls, [])
+  assert.deepEqual(writes(mock).map(r => r.method), ['POST'])
+}))
+
+test('a refused status change after a written entry, on a server whose answer has no status, is reported as refused', withMock({
+  legacy: true,
   tasks: [{ id: 7, status: 'IN_PROGRESS' }],
   fail: rec => (rec.method === 'PATCH' ? refusal('review_needs_report', 'Add a report first.') : null),
 }, async mock => {
@@ -396,6 +477,40 @@ test('a refused status change after a written entry is reported as refused', wit
   assert.equal(out.actions[1].detail, 'review_needs_report: the task keeps its status — Add a report first.')
   assert.deepEqual(out.failed_calls, [])
 }))
+
+// An answer that carries `status` but names no move the step expects, and no
+// refusal either, proves nothing about the task: the step moves it itself.
+for (const [step, action, to, tasks, journal] of [
+  [{ step: 'fix', result: FIXED }, 'to_review', 'REVIEW', [{ id: 7, status: 'IN_PROGRESS' }], []],
+  [{ step: 'review', verdict: 'changes_requested', result: HARD }, 'return', 'IN_PROGRESS',
+    [{ id: 7, status: 'REVIEW' }], [{ task_id: 7, kind: 'report', author: 'implementer', body: 'r' }]],
+])
+  test(`${step.step}: an answer whose status is not ${to} and carries no refusal is followed by the status change`, withMock({
+    unmoved: true, tasks, journal,
+  }, async mock => {
+    const out = await runStep(mock, step)
+    assert.deepEqual(results(out), [`${step.step}:done`, `${action}:done`])
+    assert.deepEqual(writes(mock).map(r => r.method), ['POST', 'PATCH'])
+    assert.deepEqual(writes(mock)[1].body, { status: to })
+    assert.equal(mock.tasks.get(7).status, to)
+  }))
+
+// A refusal code outside the cycle is a failed call whichever way it arrives:
+// on the entry's answer, or on the status change of a server without `status`.
+for (const legacy of [false, true])
+  test(`a refused move with a code outside the cycle stays a failed call${legacy ? ' on a server whose answer has no status' : ''}`, withMock({
+    legacy,
+    tasks: [{ id: 7, status: 'IN_PROGRESS' }],
+    refuseMove: () => refusal('epic_not_ready', 'Close the children first.'),
+    fail: rec => (legacy && rec.method === 'PATCH' ? refusal('epic_not_ready', 'Close the children first.') : null),
+  }, async mock => {
+    const out = await runStep(mock, { step: 'fix', result: FIXED })
+    assert.deepEqual(results(out), ['fix:done', 'to_review:failed'])
+    assert.equal(out.failed_calls.length, 1)
+    assert.equal(out.failed_calls[0].call, 'move task-7 to REVIEW')
+    assert.match(out.failed_calls[0].error, /epic_not_ready/)
+    assert.deepEqual(writes(mock).map(r => r.method), legacy ? ['POST', 'PATCH'] : ['POST'])
+  }))
 
 test('a 409 with a code outside the cycle stays a failed call', withMock({
   tasks: [{ id: 7, status: 'TODO' }],

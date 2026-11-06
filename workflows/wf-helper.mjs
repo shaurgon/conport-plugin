@@ -860,6 +860,14 @@ const stepProblem = s => {
   return null
 }
 
+// A write of a step that did not land: a refusal of the cycle is reported as
+// the task's state, anything else as a failed call.
+const cycleFailure = (c, id, action, call, e, outcome) => {
+  if (e && CYCLE_REFUSALS.has(e.code)) refused(c, action, id, e, outcome)
+  else c.failed(action, id, call, e)
+  return false
+}
+
 // One write of a step. Returns whether it landed.
 const cycleWrite = async (c, id, action, call, write, done, outcome) => {
   try {
@@ -867,24 +875,42 @@ const cycleWrite = async (c, id, action, call, write, done, outcome) => {
     c.act(action, id, 'done', done)
     return true
   } catch (e) {
-    if (e && CYCLE_REFUSALS.has(e.code)) refused(c, action, id, e, outcome)
-    else c.failed(action, id, call, e)
-    return false
+    return cycleFailure(c, id, action, call, e, outcome)
   }
 }
 
 const runCycle = async (c, s) => {
   const id = s.task_id
+  // The answer of the entry. A server whose entry moves its task says so in
+  // `status` (null when it moved nothing) and puts a refused move under
+  // `move_refused`; an answer without `status` comes from a server whose entry
+  // moves nothing, and the step moves the task itself.
+  let written = null
   const entry = (kind, verdict) => cycleWrite(c, id, kind, `${kind} entry on task-${id}`,
-    () => c.api('POST', c.taskPath(id) + '/journal', {
-      kind, author: JOURNAL_AUTHORS[kind], body: fitBody(journalBody(s)), ...(verdict ? { verdict } : {}),
-    }),
+    async () => {
+      written = await c.api('POST', c.taskPath(id) + '/journal', {
+        kind, author: JOURNAL_AUTHORS[kind], body: fitBody(journalBody(s)), ...(verdict ? { verdict } : {}),
+      })
+    },
     `${kind} entry written as ${JOURNAL_AUTHORS[kind]}`, 'the entry is not written')
   const move = (action, status) => cycleWrite(c, id, action, `move task-${id} to ${status}`,
     () => c.api('PATCH', c.taskPath(id), { status }), 'moved to ' + status, 'the task keeps its status')
+  // The move that follows a written entry: reported from the entry's answer
+  // when the server made it or refused it, sent as a status change otherwise —
+  // an answer without `status`, or one naming another status and no refusal.
+  const after = (action, status) => {
+    if (!written || typeof written !== 'object' || !('status' in written)) return move(action, status)
+    const r = written.move_refused
+    if (!r && written.status !== status) return move(action, status)
+    if (!r) { c.act(action, id, 'done', 'moved to ' + status); return true }
+    const e = Object.assign(
+      new Error(`POST ${c.taskPath(id)}/journal -> the move to ${status} refused: ${r.error} ${r.message ?? ''}`.trim()),
+      { code: r.error, refusal: String(r.message ?? '') })
+    return cycleFailure(c, id, action, `move task-${id} to ${status}`, e, 'the task keeps its status')
+  }
 
   if (s.step === 'brief') return entry('brief')
-  if (s.step === 'review') return (await entry('review', s.verdict)) && s.verdict === 'changes_requested' && move('return', 'IN_PROGRESS')
+  if (s.step === 'review') return (await entry('review', s.verdict)) && s.verdict === 'changes_requested' && after('return', 'IN_PROGRESS')
   if (s.step === 'report') {
     // Read first: a closed task is never reopened by a report, and a task in
     // REVIEW is never returned by one — those are refused at the entry instead.
@@ -892,7 +918,7 @@ const runCycle = async (c, s) => {
     try { task = await c.api('GET', c.taskPath(id)) } catch (e) { c.failed('start', id, 'read task-' + id, e); return false }
     if ((task.status === 'TODO' || task.status === 'BLOCKED') && !(await move('start', 'IN_PROGRESS'))) return false
   }
-  return (await entry(s.step)) && move('to_review', 'REVIEW')
+  return (await entry(s.step)) && after('to_review', 'REVIEW')
 }
 
 // Writes one step of the review cycle over the REST API. No key -> the sentinel:
