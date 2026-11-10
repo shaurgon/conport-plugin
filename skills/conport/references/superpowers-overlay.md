@@ -30,15 +30,15 @@ creates).
    `.superpowers/drafts/<date>-<topic>-design.md`. The user reads it and
    approves it.
 2. **Upload the spec.**
-   `npx -y conport@^0.5 documents upload <draft> --doc-type spec` → `doc-N`.
+   `npx -y conport@^0.6 documents upload <draft> --doc-type spec` → `doc-N`.
    Delete the draft. From now on edit the spec with ConPort's block tools
    (`update_block`, `insert_block`, an `amend` change). For a local copy run
-   `npx -y conport@^0.5 documents get doc-N` → `.superpowers/docs/doc-N.md`.
+   `npx -y conport@^0.6 documents get doc-N` → `.superpowers/docs/doc-N.md`.
 3. **Gap hunt after the spec** works on the ConPort document; its findings go
    into that document.
 4. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
    the writing-plans format (`### Task N: <title>`). After the user approves it:
-   `npx -y conport@^0.5 plan import <draft> --spec doc-N [--epic <id>] [--milestone <id>]`
+   `npx -y conport@^0.6 plan import <draft> --spec doc-N [--epic <id>] [--milestone <id>]`
    — this creates the `plan` document, the epic and its tasks. Attach the epic
    to a milestone by the project's roadmap rules. Delete the draft and the
    `<draft>.conport.json` that `plan import` wrote beside it.
@@ -48,7 +48,7 @@ creates).
    directly below that line. `plan import` builds a new task's description
    from these two lines and refuses, before writing anything, a section that
    would create a task without them. The terminal finish section needs neither.
-5. **Execution.** `npx -y conport@^0.5 plan pull <epic>` →
+5. **Execution.** `npx -y conport@^0.6 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
    file path). If `/conport:task` or `/conport:epic` is used, pass it the same
@@ -95,17 +95,17 @@ creates).
      id.
    - **A closed task** refuses every entry with `journal_task_closed`: reopen
      the task, then write the entry.
-6. **Editing the plan during the work.** `npx -y conport@^0.5 plan pull <epic>`
+6. **Editing the plan during the work.** `npx -y conport@^0.6 plan pull <epic>`
    → edit the pulled file above the line `<!-- conport-pull-tail -->` →
-   `npx -y conport@^0.5 plan import <pulled file>` →
-   `npx -y conport@^0.5 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
+   `npx -y conport@^0.6 plan import <pulled file>` →
+   `npx -y conport@^0.6 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
    number) → continue SDD. Once execution has started, section numbers never
    change: a new section takes the next free number, and a section no longer
    needed is not removed from the plan — its task is set to `CANCELLED` in
    ConPort with a resolution. The SDD ledger and `task-brief` key on the
    section number. When `plan import` refuses because `<file>` and ConPort's
    plan have both changed since pull: move `<file>` aside to
-   `<file>.mine.md`, run `npx -y conport@^0.5 plan pull <epic> -o <file>`,
+   `<file>.mine.md`, run `npx -y conport@^0.6 plan pull <epic> -o <file>`,
    carry your edits over from `<file>.mine.md`, run `plan import` again.
 7. **Finish.** The final whole-branch review is clean and its fixes are
    merged → the terminal task of the pulled plan → `superpowers-conport` in
@@ -117,7 +117,7 @@ creates).
 
 The CLI reads its API key from `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`, never from the plugin's settings. When a
-`npx -y conport@^0.5 …` command fails with `CONPORT_API_KEY is not set`, the
+`npx -y conport@^0.6 …` command fails with `CONPORT_API_KEY is not set`, the
 one action is: set `CONPORT_API_KEY` (env or `~/.config/conport/.env`) and
 retry. When it fails with `No project specified`, or with
 `CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name`,

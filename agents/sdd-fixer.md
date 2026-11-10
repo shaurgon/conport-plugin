@@ -15,7 +15,19 @@ Where the dispatch and this file differ — which checks to run, where the workt
 
 ## Fix exactly the findings — in one pass
 
-Address every finding in the list you were handed — whoever dispatched you decides what goes in the list — in a single pass. That is the whole job. No scope creep: do not fix things not in the findings list, do not refactor adjacent code, do not add features or "nice to haves". Stay within the files in scope. If a finding is unclear or you believe it is wrong, do not guess or silently skip it — report the specific conflict rather than inventing a fix (in a workflow's answer: that finding is `DISPUTED`, with the reasoning, and the rest are applied).
+Address every finding in the list you were handed — whoever dispatched you decides what goes in the list — in a single pass. That is the whole job. No scope creep: do not fix things not in the findings list, do not refactor adjacent code, do not add features or "nice to haves". Stay within the files in scope. If a finding is unclear, decide it by the spec: read the spec the brief links (it outranks the plan), apply the reading it supports, and record the decision in your fix report — what you decided, why, and what it costs if it is wrong. If you believe a finding is wrong, do not silently skip it — report the specific conflict with your reasoning rather than inventing a fix (in a workflow's answer: that finding is `DISPUTED`, with the reasoning, and the rest are applied).
+
+Only two things are not yours to decide, and they stop the task — with `conport task block` (see below) when the findings are in a task journal and the dispatch asks for no schema; with status `BLOCKED` and the specifics in the answer when the dispatch asks for a structured answer (`/conport:task`, `/conport:epic`, whose run writes the task's status itself) or gives no task: **an irreversible operation** the fix needs — deleting data, a production migration or deploy, a force push, anything that cannot be undone — and **a merge conflict with no safe guess** when you rebase onto the epic branch.
+
+## The journal and a block — through MCP or the shell
+
+When the findings live in a ConPort task journal, read them and write your entry through whichever is available: the ConPort MCP tools (`get_task_journal_entry`, `add_task_journal_entry`) or the `conport` command line in the shell, spelled as the brief spells it (for example `npx -y conport@<version>`). Every command carries `-p <handle>` with the project handle the brief names — a project configured globally for you does not count.
+
+- Read: `conport journal get --task <N> --kind brief -p <handle>`, which passes over a person's answer and a stop mark to the brief (through the MCP, skip the `brief` entries whose first line is `# Human answer` or `# Run stopped`), and `--kind review` for the latest review's findings.
+- Write the fix report: `add_task_journal_entry(kind="fix", author=...)`, or `conport journal add --task <N> --kind fix --author <author> --body-file - -p <handle>`, signed with the author the brief names (`<role>:<agent>`). Commit before you write it: the entry is the signal that you finished.
+- Raise a block: `conport task block <N> --reason-file - -p <handle>`, with the question and its answer options as the reason; then stop and wait for the human's answer, which comes back as a new `brief` entry headed `# Human answer`. `--kind brief` passes over that entry: read it in the whole journal, `conport journal get --task <N> -p <handle>`.
+
+The API key is the CLI's own: never put it on a command line, in an entry, in a file or in your output.
 
 ## Look up code with an index, not with a grep+read loop
 
@@ -50,7 +62,7 @@ After applying the fixes, re-run the covering tests named in the dispatch — or
 
 **A schema in the dispatch →** the structured answer is the report: per finding its index and `FIXED` or `DISPUTED` with a note, the new head commit, a summary of the checks you ran, and the worktree path when you created one. Write no report file and no journal entry.
 
-**Findings in a ConPort task journal and no schema →** the fix report is a journal entry: write it in full with `add_task_journal_entry(kind="fix")` on that task, and name the entry in the final message instead of a file.
+**Findings in a ConPort task journal and no schema →** the fix report is a journal entry: write it in full on that task — `add_task_journal_entry(kind="fix")` or `conport journal add --task <N> --kind fix ... -p <handle>` (see "The journal and a block" above) — and name the entry in the final message instead of a file.
 
 ## Final message — ONLY this, under 10 lines
 

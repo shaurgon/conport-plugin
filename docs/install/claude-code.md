@@ -103,7 +103,7 @@ From the next session on, the session-start hook passes the overlay rules to
 Claude, which prints `[CONPORT] Superpowers overlay: on`; the command check
 reads the file on every commit and refuses one that adds a new file under
 `docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules call the `conport` CLI through
-`npx -y conport@^0.5` (`documents get`, `plan import`, `plan pull`,
+`npx -y conport@^0.6` (`documents get`, `plan import`, `plan pull`,
 `superpowers migrate`), so Node.js and network access are needed. The CLI does
 not see the plugin's `api_key`: put `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`. See the

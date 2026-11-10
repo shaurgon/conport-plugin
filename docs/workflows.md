@@ -15,10 +15,11 @@ which it ships under `agents/` and Claude Code lists under the plugin's name:
 | `conport:sdd-task-reviewer` | every review, re-review and review after a rebase, and the review of a gap fix | no |
 | `conport:sdd-fixer` | the fix round after a review | yes |
 | `conport:sdd-gap-hunter` | the gap hunt of an epic run | no |
+| `conport:sdd-final-reviewer` | the final review of a whole epic branch against its spec, in the dispatcher run of the `conport` CLI | no |
 
 Each carries the standing procedure of its role — read the brief first, test
 first, the checks before the commit, never `git stash`, no subagents of its
-own (the Agent tool is denied to all four) — while the run's prompt supplies
+own (the Agent tool is denied to all five) — while the run's prompt supplies
 the task and decides where the dispatch is more specific: which checks to run,
 the branch to create, the structured answer to return. None of them pins a
 model: they run on the model of your session. The other steps — the scout, the
@@ -36,9 +37,15 @@ then works from the run's prompt alone, without the standing procedure of its
 role. Any other refusal of a typed dispatch — a permission rule that denies
 the type, for one — is not caught and stops the run as before.
 
-The same four types serve subagent-driven development by hand: dispatch them
+The same types serve subagent-driven development by hand: dispatch them
 with a brief and a report path, or with a ConPort task whose journal holds the
-brief.
+brief. They serve the dispatcher run of the `conport` CLI (`conport epic run`)
+as well: there an agent of any kind works the task journal through the ConPort
+MCP tools or the `conport journal` commands, decides an ambiguity by the spec
+and records the decision, raises a block with `conport task block` only for an
+irreversible operation or a merge conflict it cannot resolve without guessing,
+and the gap hunter and the final reviewer submit their findings with
+`conport epic findings submit`.
 
 ## `/conport:task`
 
@@ -248,7 +255,7 @@ first, then pass that file's path as the `plan` argument — the run hands it to
 the helper as `--plan .superpowers/plans/doc-M.md`:
 
 ```
-npx -y conport@^0.5 plan pull <epic id>
+npx -y conport@^0.6 plan pull <epic id>
 /conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
 /conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
 ```

@@ -5,8 +5,9 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflow, taskRun, epicRun } from './run-workflow.mjs'
 
-// The plugin ships four typed agents under agents/, and the workflows dispatch
-// their implementer, reviewer, fixer and gap hunter by those types. Claude Code
+// The plugin ships five typed agents under agents/. The workflows dispatch
+// their implementer, reviewer, fixer and gap hunter by those types; the final
+// reviewer serves the dispatcher run of the conport CLI. Claude Code
 // names a plugin agent <plugin name>:<agent name>, so the type a workflow passes
 // must be the manifest's name and the name of a shipped definition — a type that
 // names nothing makes agent() throw and the run dies at its first dispatch.
@@ -15,7 +16,8 @@ const PLUGIN = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const AGENTS = join(PLUGIN, 'agents')
 const MANIFEST = JSON.parse(readFileSync(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
 
-const ROLES = ['sdd-implementer', 'sdd-task-reviewer', 'sdd-fixer', 'sdd-gap-hunter']
+const ROLES = ['sdd-implementer', 'sdd-task-reviewer', 'sdd-fixer', 'sdd-gap-hunter', 'sdd-final-reviewer']
+const READ_ONLY = ['sdd-task-reviewer', 'sdd-gap-hunter', 'sdd-final-reviewer']
 const typeOf = role => `${MANIFEST.name}:${role}`
 
 // The frontmatter of an agent file: the "key: value" lines between the two --- lines.
@@ -34,7 +36,7 @@ const list = v => (v ?? '').split(',').map(s => s.trim()).filter(Boolean)
 
 // ------------------------------------------------------------- the definitions
 
-test('agents/ ships exactly the four SDD agents, each named as its file', () => {
+test('agents/ ships exactly the five SDD agents, each named as its file', () => {
   const files = readdirSync(AGENTS).filter(f => f.endsWith('.md')).sort()
   assert.deepEqual(files, ROLES.map(r => r + '.md').sort())
   for (const role of ROLES) {
@@ -55,8 +57,8 @@ test('no agent can start subagents of its own: Agent is denied in every definiti
     assert.ok(list(frontmatter(role + '.md').fields.disallowedTools).includes('Agent'), role)
 })
 
-test('the reviewer and the gap hunter cannot edit files; the implementer and the fixer can', () => {
-  for (const role of ['sdd-task-reviewer', 'sdd-gap-hunter'])
+test('the reviewers and the gap hunter cannot edit files; the implementer and the fixer can', () => {
+  for (const role of READ_ONLY)
     for (const tool of ['Edit', 'Write', 'NotebookEdit'])
       assert.ok(list(frontmatter(role + '.md').fields.disallowedTools).includes(tool), `${role}: ${tool}`)
   for (const role of ['sdd-implementer', 'sdd-fixer'])
@@ -69,6 +71,49 @@ test('the reviewer and the gap hunter cannot edit files; the implementer and the
 test('no agent narrows its tools to an allowlist: the ConPort MCP tools stay reachable', () => {
   for (const role of ROLES)
     assert.equal(frontmatter(role + '.md').fields.tools, undefined, role)
+})
+
+// ------------------------------------------------------------- the dispatcher run
+
+// The dispatcher run of the conport CLI starts an agent of any kind in a role
+// and learns that it finished from the task journal, a block or the findings
+// it submitted — so each role names the shell command that does it, for an
+// agent without the ConPort MCP tools, and every command carries -p <handle>.
+const body = role => frontmatter(role + '.md').body
+
+test('the implementer, the reviewer and the fixer write the journal through MCP or `conport journal add -p <handle>`', () => {
+  for (const role of ['sdd-implementer', 'sdd-task-reviewer', 'sdd-fixer']) {
+    const text = body(role)
+    assert.match(text, /add_task_journal_entry/, `${role}: the MCP tool`)
+    assert.match(text, /conport journal add --task <N> --kind \w+[^`]* -p <handle>/, `${role}: the CLI command with -p <handle>`)
+    assert.match(text, /conport journal get --task <N>[^`]* -p <handle>/, `${role}: reading the journal from the shell`)
+  }
+})
+
+test('the implementer and the fixer decide an ambiguity by the spec and block only through `conport task block`', () => {
+  for (const role of ['sdd-implementer', 'sdd-fixer']) {
+    const text = body(role)
+    assert.match(text, /conport task block <N> --reason-file - -p <handle>/, `${role}: the block command`)
+    assert.match(text, /irreversible/i, `${role}: case 1 of the stop list`)
+    assert.match(text, /conflict[^.]*no (?:safe )?guess/i, `${role}: case 3 of the stop list`)
+    assert.match(text, /decide it by the spec/i, `${role}: an ambiguity is decided by the spec`)
+  }
+  assert.doesNotMatch(body('sdd-implementer'), /Stop and report back with status `NEEDS_CONTEXT`/,
+    'the implementer no longer stops on an ambiguity by default')
+})
+
+test('the gap hunter and the final reviewer submit findings with `conport epic findings submit` in the severities of their role', () => {
+  const cases = [
+    ['sdd-gap-hunter', 'gap-hunter', ['BLOCKER', 'SHOULD_FIX', 'NOTE']],
+    ['sdd-final-reviewer', 'final-reviewer', ['CRITICAL', 'IMPORTANT', 'MINOR']],
+  ]
+  for (const [role, flag, severities] of cases) {
+    const text = body(role)
+    assert.ok(text.includes(`conport epic findings submit <N> --role ${flag} -p <handle>`), `${role}: the submit command`)
+    for (const key of ['severity', 'title', 'spec_ref', 'evidence', 'acceptance'])
+      assert.ok(text.includes(`"${key}"`), `${role}: the finding field ${key}`)
+    assert.ok(text.includes(severities.join('|')), `${role}: its severities`)
+  }
 })
 
 // ------------------------------------------------------------- the dispatch

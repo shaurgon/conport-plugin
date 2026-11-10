@@ -237,7 +237,7 @@ function assertInjected(out) {
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.5 plan import/)
+  assert.match(text, /npx -y conport@\^0\.6 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })

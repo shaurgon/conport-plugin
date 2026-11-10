@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 19.0.1
+  version: 19.1.0
 ---
 
 # superpowers-conport — Bridge
@@ -65,7 +65,7 @@ with that single action and stops:
 ```
 [superpowers-conport]
   Superpowers overlay: on — nothing written
-  Do now: npx -y conport@^0.5 plan import <plan> --spec doc-N
+  Do now: npx -y conport@^0.6 plan import <plan> --spec doc-N
 ```
 
 `<plan>` is the plan draft the bridge was invoked on (`<plan_path>`); `doc-N` is the
@@ -88,7 +88,7 @@ pulled plan's epic exists, and the bridge, finding no anchors, would start a sec
 is never the answer on the anchor route with the overlay on either, because it writes
 nothing then. On the anchor route the overlay changes only the prescriptions that would name
 it: the missing-tasks item (last bullet below), and the no-epic-anchor report and the
-no-project case, which both prescribe `npx -y conport@^0.5 plan import <plan_path> --spec doc-N`
+no-project case, which both prescribe `npx -y conport@^0.6 plan import <plan_path> --spec doc-N`
 directly, then re-run `finish` on the file `plan pull` writes (see `### Sources` and
 `### Output — no epic anchor`). On the anchor route with the overlay off, the bridge's
 `import` stays the answer, as written in `## Mode: finish`.
@@ -103,14 +103,14 @@ inputs only, taken in this order:
 
 - **The sidecar is read first** — it is local, so it is read before any ConPort call. A
   sidecar that is missing, unreadable or carries no `epic_id` leaves the audit with no
-  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.5 plan pull …`, reported
+  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.6 plan pull …`, reported
   by `### Output — no sidecar`, and nothing else is checked. It is never read as "nothing left
   to close".
 - **Then the project.** `project` is resolved as in step 1. When `init` finds no project,
   or finds one whose handle is not the sidecar's `project`, the plan came from another
   project: RELEASE BLOCKED naming both (see the no-project case in `### Sources`). A sidecar
   whose `project` is a string of digits was written by an earlier CLI: RELEASE BLOCKED with
-  the single action `npx -y conport@^0.5 plan pull <epic_id> -o <plan_path>`.
+  the single action `npx -y conport@^0.6 plan pull <epic_id> -o <plan_path>`.
 - **Epic and spec come from the sidecar.** `epic_id` replaces the `conport-epic` anchor and
   `spec_doc_id` replaces the `conport-spec` anchor of the paired design file; no design file
   is read. A sidecar whose `spec_doc_id` is absent or null omits the spec header line,
@@ -124,8 +124,8 @@ inputs only, taken in this order:
 - **Missing tasks are answered by the CLI, not by the bridge's import** — on the pulled
   route always, and on the anchor route when the overlay is on.
   Wherever the audit would prescribe the bridge's import for plan tasks absent from the epic
-  `<M>`, it prescribes instead: `npx -y conport@^0.5 plan import <plan_path> --epic <M>`, then
-  `npx -y conport@^0.5 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
+  `<M>`, it prescribes instead: `npx -y conport@^0.6 plan import <plan_path> --epic <M>`, then
+  `npx -y conport@^0.6 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
   the tasks on the epic being audited; without it a plan never imported through the CLI
   would start a new epic.
 
@@ -501,7 +501,7 @@ and the input on the anchor route, the bridge's import writes nothing and asks n
 the prescription is the CLI command itself:
 
 ```
-  Сделай сейчас: npx -y conport@^0.5 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.6 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
 ```
 
 On the pulled route the order is fixed: the sidecar is read first, and with no usable
@@ -635,8 +635,8 @@ on the anchor route with the overlay on, the missing-tasks item names the CLI in
 bridge's import (see `## Overlay mode`):
 
 ```
-    1. npx -y conport@^0.5 plan import <plan_path> --epic <M>, затем
-       npx -y conport@^0.5 plan pull <M>, затем повтори finish на выгруженном файле
+    1. npx -y conport@^0.6 plan import <plan_path> --epic <M>, затем
+       npx -y conport@^0.6 plan pull <M>, затем повтори finish на выгруженном файле
 ```
 
 **The fix-round item prescribes finishing the round and nothing else.** An item that also
@@ -674,7 +674,7 @@ With the overlay on, the prescription line is the CLI command instead of the bri
 which writes nothing then:
 
 ```
-  Сделай сейчас: npx -y conport@^0.5 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.6 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
 ```
 
 `doc-N` is the spec's document — the plan's paired design file's `conport-spec` anchor when it
@@ -691,7 +691,7 @@ header line is omitted. The reason line names the case actually found, one of th
 [superpowers-conport finish]
   план: <plan_path> — RELEASE BLOCKED
   файл <plan_path>.conport.json <не найден | не читается | без epic_id> — план не выгружен из ConPort
-  Сделай сейчас: npx -y conport@^0.5 plan pull <target>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.6 plan pull <target>, затем повтори finish на выгруженном файле.
 ```
 
 `<target>` is filled from the first source that has it:
