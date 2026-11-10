@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 19.1.0
+  version: 19.2.0
 ---
 
 # ConPort — Project Management System

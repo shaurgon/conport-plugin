@@ -242,6 +242,31 @@ test('the rules file ships with the visibility line and the versioned CLI', () =
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
 
+test('the spec is reviewed and gap-hunted as a draft, approved, then uploaded once', () => {
+  const flow = rulesText().split('## The flow')[1].split('\n## ')[0]
+  const steps = [...flow.matchAll(/^(\d+)\. \*\*([^*]+)\*\*/gm)]
+  assert.deepEqual(steps.map((s) => Number(s[1])), steps.map((_, i) => i + 1), 'steps numbered 1..N')
+  const texts = steps.map((s, n) => flow.slice(s.index, steps[n + 1]?.index ?? flow.length))
+  const uploads = texts.filter((t) => /documents upload/.test(t))
+  assert.equal(uploads.length, 1, 'exactly one step uploads the spec')
+  for (const t of texts) {
+    if (!/spec review|gap hunt/i.test(t)) continue
+    assert.doesNotMatch(t, /ConPort document|doc-N|documents get/, `a review or gap hunt on the uploaded spec:\n${t}`)
+  }
+  const at = (re) => {
+    const i = texts.findIndex((t) => re.test(t))
+    assert.ok(i >= 0, `no step matches ${re}`)
+    return i
+  }
+  const review = at(/conport:sdd-gap-hunter/)
+  const approve = at(/approves the draft/)
+  const upload = at(/documents upload <draft> --doc-type spec/)
+  const plan = at(/plan import <draft> --spec doc-N/)
+  assert.ok(review < approve && approve < upload && upload < plan, `order: ${[review, approve, upload, plan]}`)
+  assert.match(texts[review], /\.superpowers\/drafts\/<date>-<topic>-design\.md/)
+  assert.match(texts[review], /goal\s+as\s+the\s+user\s+stated\s+it/, 'the gap hunter gets the goal from the user, not from the draft')
+})
+
 test('every journal tool call of the rules names its project', () => {
   const calls = rulesText().match(/\b(?:add_task_journal_entry|get_task_journal_entry|list_task_journal)\([^)]*\)/g) ?? []
   assert.ok(calls.length >= 3, `expected the brief, dispatch and history calls, got ${calls.length}`)

@@ -27,16 +27,21 @@ creates).
 ## The flow
 
 1. **Brainstorming.** Write the spec draft to
-   `.superpowers/drafts/<date>-<topic>-design.md`. The user reads it and
-   approves it.
-2. **Upload the spec.**
+   `.superpowers/drafts/<date>-<topic>-design.md`.
+2. **Spec review and gap hunt on the draft.** Both work on the draft file —
+   nothing is uploaded yet. Give the spec reviewer and the gap hunter
+   (`conport:sdd-gap-hunter`) the path
+   `.superpowers/drafts/<date>-<topic>-design.md` as their scope and the goal
+   as the user stated it — never a goal taken from the draft they check — and
+   put their findings into the draft.
+3. **Approval.** The user reads and approves the draft with the findings in it.
+4. **Upload the spec, once.**
    `npx -y conport@^0.6 documents upload <draft> --doc-type spec` → `doc-N`.
-   Delete the draft. From now on edit the spec with ConPort's block tools
-   (`update_block`, `insert_block`, an `amend` change). For a local copy run
+   Delete the draft. Until the plan, the spec is not edited; if it must be,
+   edit it with ConPort's block tools (`update_block`, `insert_block`, an
+   `amend` change). For a local copy run
    `npx -y conport@^0.6 documents get doc-N` → `.superpowers/docs/doc-N.md`.
-3. **Gap hunt after the spec** works on the ConPort document; its findings go
-   into that document.
-4. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
+5. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
    the writing-plans format (`### Task N: <title>`). After the user approves it:
    `npx -y conport@^0.6 plan import <draft> --spec doc-N [--epic <id>] [--milestone <id>]`
    — this creates the `plan` document, the epic and its tasks. Attach the epic
@@ -48,7 +53,7 @@ creates).
    directly below that line. `plan import` builds a new task's description
    from these two lines and refuses, before writing anything, a section that
    would create a task without them. The terminal finish section needs neither.
-5. **Execution.** `npx -y conport@^0.6 plan pull <epic>` →
+6. **Execution.** `npx -y conport@^0.6 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
    file path). If `/conport:task` or `/conport:epic` is used, pass it the same
@@ -95,7 +100,7 @@ creates).
      id.
    - **A closed task** refuses every entry with `journal_task_closed`: reopen
      the task, then write the entry.
-6. **Editing the plan during the work.** `npx -y conport@^0.6 plan pull <epic>`
+7. **Editing the plan during the work.** `npx -y conport@^0.6 plan pull <epic>`
    → edit the pulled file above the line `<!-- conport-pull-tail -->` →
    `npx -y conport@^0.6 plan import <pulled file>` →
    `npx -y conport@^0.6 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
@@ -107,7 +112,7 @@ creates).
    plan have both changed since pull: move `<file>` aside to
    `<file>.mine.md`, run `npx -y conport@^0.6 plan pull <epic> -o <file>`,
    carry your edits over from `<file>.mine.md`, run `plan import` again.
-7. **Finish.** The final whole-branch review is clean and its fixes are
+8. **Finish.** The final whole-branch review is clean and its fixes are
    merged → the terminal task of the pulled plan → `superpowers-conport` in
    `finish` mode on the pulled plan file → on a `READY` verdict the epic is
    closed, then the release follows the conport skill's section
