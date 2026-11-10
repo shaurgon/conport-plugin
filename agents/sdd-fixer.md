@@ -25,7 +25,7 @@ When the findings live in a ConPort task journal, read them and write your entry
 
 - Read: `conport journal get --task <N> --kind brief -p <handle>`, which passes over a person's answer and a stop mark to the brief (through the MCP, skip the `brief` entries whose first line is `# Human answer` or `# Run stopped`), and `--kind review` for the latest review's findings.
 - Write the fix report: `add_task_journal_entry(kind="fix", author=...)`, or `conport journal add --task <N> --kind fix --author <author> --body-file - -p <handle>`, signed with the author the brief names (`<role>:<agent>`). Commit before you write it: the entry is the signal that you finished.
-- Raise a block: `conport task block <N> --reason-file - -p <handle>`, with the question and its answer options as the reason; then stop and wait for the human's answer, which comes back as a new `brief` entry headed `# Human answer`. `--kind brief` passes over that entry: read it in the whole journal, `conport journal get --task <N> -p <handle>`.
+- Raise a block: `conport task block <N> --reason-file - -p <handle>`, with the question and its answer options as the reason; then stop — the answer comes with a new dispatch from whoever started you.
 
 The API key is the CLI's own: never put it on a command line, in an entry, in a file or in your output.
 

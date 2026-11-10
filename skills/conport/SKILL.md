@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 19.2.0
+  version: 20.0.0
 ---
 
 # ConPort — Project Management System
@@ -440,7 +440,8 @@ project turns it on.
 - **SDD's subagents** are the plugin's agent types in Claude Code:
   `conport:sdd-implementer`, `conport:sdd-task-reviewer`, `conport:sdd-fixer`
   and `conport:sdd-gap-hunter` — the same ones `/conport:task` and
-  `/conport:epic` dispatch. They run on the session's model and start no
+  `/conport:epic` dispatch — and `conport:sdd-final-reviewer` for the final
+  review of the whole branch. They run on the session's model and start no
   subagents of their own.
 - **Visibility.** When the overlay is on, print one line at the start of the
   session: `[CONPORT] Superpowers overlay: on`.

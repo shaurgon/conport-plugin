@@ -15,7 +15,7 @@ which it ships under `agents/` and Claude Code lists under the plugin's name:
 | `conport:sdd-task-reviewer` | every review, re-review and review after a rebase, and the review of a gap fix | no |
 | `conport:sdd-fixer` | the fix round after a review | yes |
 | `conport:sdd-gap-hunter` | the gap hunt of an epic run | no |
-| `conport:sdd-final-reviewer` | the final review of a whole epic branch against its spec, in the dispatcher run of the `conport` CLI | no |
+| `conport:sdd-final-reviewer` | the final review of a whole epic branch against its spec, started by the session that leads the epic | no |
 
 Each carries the standing procedure of its role — read the brief first, test
 first, the checks before the commit, never `git stash`, no subagents of its
@@ -39,13 +39,14 @@ the type, for one — is not caught and stops the run as before.
 
 The same types serve subagent-driven development by hand: dispatch them
 with a brief and a report path, or with a ConPort task whose journal holds the
-brief. They serve the dispatcher run of the `conport` CLI (`conport epic run`)
-as well: there an agent of any kind works the task journal through the ConPort
-MCP tools or the `conport journal` commands, decides an ambiguity by the spec
-and records the decision, raises a block with `conport task block` only for an
-irreversible operation or a merge conflict it cannot resolve without guessing,
-and the gap hunter and the final reviewer submit their findings with
-`conport epic findings submit`.
+brief. With the briefs in the task journal an agent of any kind works the
+journal through the ConPort MCP tools or the `conport journal` commands,
+decides an ambiguity by the spec and records the decision, and raises a block
+with `conport task block` only for an irreversible operation or a merge
+conflict it cannot resolve without guessing. The gap hunter and the final
+reviewer hand their findings back in their answer to whoever started them;
+the session that leads an epic starts the final reviewer once, after every
+task has merged.
 
 ## `/conport:task`
 
@@ -255,7 +256,7 @@ first, then pass that file's path as the `plan` argument — the run hands it to
 the helper as `--plan .superpowers/plans/doc-M.md`:
 
 ```
-npx -y conport@^0.6 plan pull <epic id>
+npx -y conport@^0.7 plan pull <epic id>
 /conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
 /conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
 ```

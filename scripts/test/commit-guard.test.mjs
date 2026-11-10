@@ -123,7 +123,7 @@ const statusCalls = (log) => gitCalls(log)
 function assertRefusedSpec(res, file) {
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err.trimEnd().split('\n').length, 1, 'the reason is one line')
-  assert.ok(res.err.includes(`npx -y conport@^0.6 documents upload ${file} --doc-type spec`), res.err)
+  assert.ok(res.err.includes(`npx -y conport@^0.7 documents upload ${file} --doc-type spec`), res.err)
   assert.match(res.err, /remove the file/)
 }
 
@@ -132,7 +132,7 @@ function assertRefusedSpec(res, file) {
 function assertRefusedPlan(res, file) {
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on ` +
-    `plans live in ConPort: run \`npx -y conport@^0.6 plan import ${file} --spec doc-N\` ` +
+    `plans live in ConPort: run \`npx -y conport@^0.7 plan import ${file} --spec doc-N\` ` +
     "with doc-N the plan's spec, then remove the file.\n")
 }
 

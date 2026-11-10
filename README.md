@@ -24,7 +24,7 @@ and skills work across many clients.
   - `conport:sdd-gap-hunter` — what a plan or a finished slice is missing; read-only
   - `conport:sdd-final-reviewer` — a whole epic branch against its spec, after every task has merged; read-only
 
-  None of them may start subagents of its own, and none pins a model: each runs on the model of your session. The workflows dispatch the first four; `conport:sdd-final-reviewer` serves the dispatcher run of the `conport` CLI (`conport epic run`). Dispatch any of them by hand the same way. See [docs/workflows.md](./docs/workflows.md#the-agents).
+  None of them may start subagents of its own, and none pins a model: each runs on the model of your session. The workflows dispatch the first four; `conport:sdd-final-reviewer` is started by the session that leads an epic with subagent-driven development and hands its findings back in its answer. Dispatch any of them by hand the same way. See [docs/workflows.md](./docs/workflows.md#the-agents).
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort; with the Superpowers overlay on, passes the overlay rules to the session
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns; with the Superpowers overlay on, refuses a commit that adds a new file under `docs/superpowers/specs/` or `docs/superpowers/plans/`
@@ -84,7 +84,7 @@ worktree's file is read only when the current worktree has none. Add one line
 to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
-they call the `conport` CLI as `npx -y conport@^0.6`. The CLI does not see the
+they call the `conport` CLI as `npx -y conport@^0.7`. The CLI does not see the
 plugin's `api_key`: it needs `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`.
 

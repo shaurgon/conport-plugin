@@ -297,10 +297,10 @@ function refusal(root, rel) {
   const file = shellWord(path.join(root, rel));
   if (rel.startsWith(`${PLANS_DIR}/`)) {
     return `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on plans live in ConPort: ` +
-      `run \`npx -y conport@^0.6 plan import ${file} --spec doc-N\` with doc-N the plan's spec, then remove the file.`;
+      `run \`npx -y conport@^0.7 plan import ${file} --spec doc-N\` with doc-N the plan's spec, then remove the file.`;
   }
   return `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.6 documents upload ${file} --doc-type spec\`, then remove the file.`;
+    `run \`npx -y conport@^0.7 documents upload ${file} --doc-type spec\`, then remove the file.`;
 }
 
 // The refusal for a command that commits a new spec or plan with the overlay

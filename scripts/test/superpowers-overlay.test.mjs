@@ -10,7 +10,8 @@ import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import {
-  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync,
+  chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
+  writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -237,7 +238,7 @@ function assertInjected(out) {
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.6 plan import/)
+  assert.match(text, /npx -y conport@\^0\.7 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
@@ -265,6 +266,27 @@ test('the spec is reviewed and gap-hunted as a draft, approved, then uploaded on
   assert.ok(review < approve && approve < upload && upload < plan, `order: ${[review, approve, upload, plan]}`)
   assert.match(texts[review], /\.superpowers\/drafts\/<date>-<topic>-design\.md/)
   assert.match(texts[review], /goal\s+as\s+the\s+user\s+stated\s+it/, 'the gap hunter gets the goal from the user, not from the draft')
+})
+
+test('the rules and the skill name every agent type the plugin ships, the final reviewer for the whole branch', () => {
+  const types = readdirSync(join(SCRIPTS, '..', 'agents'))
+    .filter((f) => /^sdd-.*\.md$/.test(f))
+    .map((f) => `conport:${f.slice(0, -3)}`)
+  assert.ok(types.length >= 5, `agent types found: ${types}`)
+  const oneLine = (text) => text.replace(/\s+/g, ' ')
+  const rules = rulesText()
+  const typeRule = oneLine(rules.slice(rules.indexOf('**The agent type.**'), rules.indexOf("**The subagent's answer**")))
+  const skill = readFileSync(join(SCRIPTS, '..', 'skills', 'conport', 'SKILL.md'), 'utf8')
+  const from = skill.indexOf("**SDD's subagents**")
+  const skillRule = oneLine(skill.slice(from, skill.indexOf('\n- **', from)))
+  for (const [name, text] of [['the rules', typeRule], ['the skill', skillRule]]) {
+    for (const type of types) assert.ok(text.includes(`\`${type}\``), `${name}: no ${type} in: ${text}`)
+    assert.match(text, /`conport:sdd-final-reviewer` for the final review of the whole branch/, name)
+  }
+  // The step that waits for the final review names who does it.
+  const flow = rules.split('## The flow')[1].split('\n## ')[0]
+  const finish = oneLine(flow.slice(flow.search(/^\d+\. \*\*Finish\.\*\*/m)))
+  assert.match(finish, /final whole-branch review \(`conport:sdd-final-reviewer` in Claude Code\)/)
 })
 
 test('every journal tool call of the rules names its project', () => {

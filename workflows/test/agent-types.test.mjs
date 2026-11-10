@@ -7,7 +7,7 @@ import { runWorkflow, taskRun, epicRun } from './run-workflow.mjs'
 
 // The plugin ships five typed agents under agents/. The workflows dispatch
 // their implementer, reviewer, fixer and gap hunter by those types; the final
-// reviewer serves the dispatcher run of the conport CLI. Claude Code
+// reviewer is started by the session that leads an epic. Claude Code
 // names a plugin agent <plugin name>:<agent name>, so the type a workflow passes
 // must be the manifest's name and the name of a shipped definition — a type that
 // names nothing makes agent() throw and the run dies at its first dispatch.
@@ -73,12 +73,12 @@ test('no agent narrows its tools to an allowlist: the ConPort MCP tools stay rea
     assert.equal(frontmatter(role + '.md').fields.tools, undefined, role)
 })
 
-// ------------------------------------------------------------- the dispatcher run
+// ------------------------------------------------------------- without a workflow
 
-// The dispatcher run of the conport CLI starts an agent of any kind in a role
-// and learns that it finished from the task journal, a block or the findings
-// it submitted — so each role names the shell command that does it, for an
-// agent without the ConPort MCP tools, and every command carries -p <handle>.
+// A session that leads an epic starts an agent of any kind in a role and reads
+// what it did from the task journal, a block or its answer — so each role names
+// the shell command that does it, for an agent without the ConPort MCP tools,
+// and every command carries -p <handle>.
 const body = role => frontmatter(role + '.md').body
 
 test('the implementer, the reviewer and the fixer write the journal through MCP or `conport journal add -p <handle>`', () => {
@@ -102,17 +102,32 @@ test('the implementer and the fixer decide an ambiguity by the spec and block on
     'the implementer no longer stops on an ambiguity by default')
 })
 
-test('the gap hunter and the final reviewer submit findings with `conport epic findings submit` in the severities of their role', () => {
+// Nothing runs the roles but a workflow or a session: no text of a role, and no
+// description of one, names a run that starts agents and collects from them.
+test('no role names the dispatcher run', () => {
+  const gone = [/dispatcher/i, /conport epic run/, /epic findings submit/, /conport epic status/,
+    /conport epic answer/, /conport epic stop/]
+  for (const role of ROLES) {
+    const { fields, body: text } = frontmatter(role + '.md')
+    for (const pattern of gone) {
+      assert.doesNotMatch(text, pattern, `${role}: the body`)
+      assert.doesNotMatch(fields.description, pattern, `${role}: the description`)
+    }
+  }
+})
+
+test('the gap hunter and the final reviewer hand their findings back in their answer, in the severities of their role', () => {
   const cases = [
-    ['sdd-gap-hunter', 'gap-hunter', ['BLOCKER', 'SHOULD_FIX', 'NOTE']],
-    ['sdd-final-reviewer', 'final-reviewer', ['CRITICAL', 'IMPORTANT', 'MINOR']],
+    ['sdd-gap-hunter', ['Blocker', 'Should-fix', 'Note']],
+    ['sdd-final-reviewer', ['Critical', 'Important', 'Minor']],
   ]
-  for (const [role, flag, severities] of cases) {
+  for (const [role, severities] of cases) {
     const text = body(role)
-    assert.ok(text.includes(`conport epic findings submit <N> --role ${flag} -p <handle>`), `${role}: the submit command`)
-    for (const key of ['severity', 'title', 'spec_ref', 'evidence', 'acceptance'])
-      assert.ok(text.includes(`"${key}"`), `${role}: the finding field ${key}`)
-    assert.ok(text.includes(severities.join('|')), `${role}: its severities`)
+    for (const severity of severities)
+      assert.match(text, new RegExp(`\\*\\*${severity}\\*\\*`), `${role}: the severity ${severity}`)
+    assert.match(text, /the findings go back in your answer/, `${role}: the findings are the answer`)
+    assert.match(text, /the full report is your answer/, `${role}: no file is written`)
+    assert.doesNotMatch(text, /\bsubmit/i, `${role}: nothing is submitted through a command`)
   }
 })
 
