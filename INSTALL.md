@@ -157,10 +157,11 @@ user to reload/restart the harness, then continue at Step 4.
 
 The `conport` skill carries ConPort's always-on rules (run `init` at session
 start, search before answering, save decisions and progress as they happen).
-Install it so you actually follow them.
+Install it so you actually follow them, together with `conport-roadmap`, the
+roadmap rules the `conport` skill sends you to.
 
 ```bash
-npx -y skills add shaurgon/conport-plugin --skill conport -a <your-agent>
+npx -y skills add shaurgon/conport-plugin --skill conport --skill conport-roadmap -a <your-agent>
 ```
 
 Replace `<your-agent>` with your harness (`codex`, `copilot`, `gemini`,
@@ -172,7 +173,7 @@ npx -y skills add shaurgon/conport-plugin --list
 
 Notes:
 
-- **Claude Code** already bundles this skill via the plugin (Path B) — you don't
+- **Claude Code** already bundles these skills via the plugin (Path B) — you don't
   need this command there.
 - **Cursor** can take the skill via `.cursor`/`.agents` skill paths or this
   command; see [docs/install/cursor.md](./docs/install/cursor.md).

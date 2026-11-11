@@ -6,7 +6,8 @@ name: Build skill zips
 #   1. Push to main under skills/** → rolling `skills-latest` release
 #   2. Tag push v*.*.* → versioned release (e.g. v2.0.0)
 #
-# Only the public `conport` skill is bundled here. conport-agent is a separate
+# The public `conport` skill and the `conport-roadmap` skill it points at are
+# bundled here. conport-agent is a separate
 # PRIVATE installable unit (its own private repo) and is NOT published from this
 # public mirror.
 
@@ -47,14 +48,17 @@ jobs:
         run: |
           conport_ver=$(grep -oP 'version:\s*\K\S+' skills/conport/SKILL.md | head -1)
           echo "conport=$conport_ver" >> "$GITHUB_OUTPUT"
+          roadmap_ver=$(grep -oP 'version:\s*\K\S+' skills/conport-roadmap/SKILL.md | head -1)
+          echo "conport_roadmap=$roadmap_ver" >> "$GITHUB_OUTPUT"
 
-      - name: Zip skill
+      - name: Zip skills
         run: |
           set -euo pipefail
           cd skills
           zip -qr ../conport-skill.zip conport
+          zip -qr ../conport-roadmap-skill.zip conport-roadmap
           cd ..
-          ls -lh conport-skill.zip
+          ls -lh conport-skill.zip conport-roadmap-skill.zip
 
       - name: Publish rolling release (on branch push)
         if: github.ref_type == 'branch'
@@ -63,16 +67,18 @@ jobs:
           tag_name: skills-latest
           name: Skills (latest)
           body: |
-            Auto-built zip bundle of the portable ConPort skill.
+            Auto-built zip bundles of the portable ConPort skills.
 
             **Plugin:** v${{ steps.version.outputs.plugin_version }}
-            **Skill:** conport v${{ steps.skill_versions.outputs.conport }}
+            **Skills:** conport v${{ steps.skill_versions.outputs.conport }}, conport-roadmap v${{ steps.skill_versions.outputs.conport_roadmap }}
 
             - `conport-skill.zip` — project context
+            - `conport-roadmap-skill.zip` — the roadmap rules
 
             Upload to Claude.ai via **Settings → Features → Skills → Upload Skill**.
           files: |
             conport-skill.zip
+            conport-roadmap-skill.zip
           make_latest: "false"
 
       - name: Publish versioned release (on tag push)
@@ -84,12 +90,14 @@ jobs:
           body: |
             ## ConPort Plugin v${{ steps.version.outputs.plugin_version }}
 
-            **Skill:** conport v${{ steps.skill_versions.outputs.conport }}
+            **Skills:** conport v${{ steps.skill_versions.outputs.conport }}, conport-roadmap v${{ steps.skill_versions.outputs.conport_roadmap }}
 
             ### Assets
             - `conport-skill.zip` — project context skill
+            - `conport-roadmap-skill.zip` — the roadmap rules skill
 
             Upload to Claude.ai via **Settings → Features → Skills → Upload Skill**.
           files: |
             conport-skill.zip
+            conport-roadmap-skill.zip
           make_latest: "true"

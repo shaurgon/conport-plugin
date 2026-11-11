@@ -23,17 +23,20 @@ plan (Pro, Max, Team, or Enterprise) with code execution enabled.
 
 ## 2. Skill — zip upload
 
-Download the prebuilt skill zip:
+Download the prebuilt skill zips:
 
 - https://github.com/shaurgon/conport-plugin/releases/download/skills-latest/conport-skill.zip
+- https://github.com/shaurgon/conport-plugin/releases/download/skills-latest/conport-roadmap-skill.zip
+  — the roadmap rules the `conport` skill sends the agent to
 
-The zip has `SKILL.md` at its root plus the `references/` subdirectory,
-exactly what Claude.ai expects.
+Each zip has the skill's folder with its `SKILL.md` (and, for `conport`, the
+`references/` subdirectory), exactly what Claude.ai expects.
 
-Upload it in Claude.ai:
+Upload each in Claude.ai:
 
 1. **Settings → Features → Skills → Upload Skill**.
-2. Select `conport-skill.zip`; accept the permissions prompt.
+2. Select `conport-skill.zip`, then `conport-roadmap-skill.zip`; accept the
+   permissions prompt.
 
 Claude.ai skills are per-user — every teammate uploads their own copy.
 
@@ -60,7 +63,8 @@ that works in the repository. See the
 
 ## Verify
 
-- **Skills**: **Settings → Features → Skills** lists `conport` as enabled.
+- **Skills**: **Settings → Features → Skills** lists `conport` and
+  `conport-roadmap` as enabled.
 - **Connector** (once OAuth is live): the connectors panel shows `ConPort`
   green. In a new chat ask Claude to call the ConPort `init` tool with your
   project name. `init` only finds a project, it never creates one: for a
@@ -85,7 +89,8 @@ To apply the update:
 1. Open the [releases page](https://github.com/shaurgon/conport-plugin/releases)
    and read the changelog for the entries between your version and the
    latest.
-2. Download the latest `SKILL.md` from `skills/conport/` in this repo.
+2. Download the latest `SKILL.md` from `skills/conport/` and
+   `skills/conport-roadmap/` in this repo.
 3. **Settings → Features → Skills** — find each ConPort skill, click ⋯, and
    replace the file with the new one.
 4. Reload any open chat or start a new session; the notice should disappear

@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 20.0.1
+  version: 20.1.0
 ---
 
 # ConPort — Project Management System
@@ -292,6 +292,7 @@ semantics of a surface, fetch the live-docs page named in the table.
 | The spec is approved | `add_task` with `kind='epic'` (description: the goal and the acceptance criterion from the spec; `milestone_id` by the project's roadmap rules), then `link_items` from the spec (`source_type='doc'`) to the epic (`target_type='task'`) with `relationship='clarifies'` — one spec per epic; close the task the design started from with a `resolution` naming the spec and the epic. An epic with no plan and no tasks is a normal state |
 | The plan is approved | the plan's tasks go into that epic: `add_task` with `parent_task_id`, or with the Superpowers overlay `plan import <draft> --spec doc-N --epic <id>` — the epic is not created again |
 | "Move task X under epic Y" / re-parent | `update_task` with `parent_task_id` (target must be `kind='epic'`; `0` detaches to root) |
+| Taking a task into work, filing or moving an epic or a task, calling a task waiting, closing an epic or a milestone, talking about a release, a bump or a deploy, reporting open work to the user | the **conport-roadmap** skill first — its rules decide the milestone, the epic and what may be said about the release |
 | "Roadmap" / "milestones" / "what ships in the release" | `list_milestones` (roadmap view, `include_closed=true` for history) |
 | "Plan a milestone / a release" | `add_milestone` with `title` (+ `sequence` to insert at a position, `is_release=true` for a release point) |
 | "Rename / move / close a milestone" | `update_milestone` (`sequence` moves it, `status`+`resolution` closes it) |
@@ -491,8 +492,10 @@ return it in the `roadmap` section.
   owner** — say which milestone the work sits in and ask before starting; never
   silently pull work forward because it looked convenient. Work attached to no
   milestone (`milestone_id: null`) is not off-limits, but say so when you take
-  it, so the owner can attach its epic to the roadmap or leave it aside
-  deliberately. (An autonomous routine run has no owner to ask: the
+  it. Every epic is attached to a milestone — its release, the waiting list or
+  the backlog without a date; an epic without one is an attachment error, so
+  attach it by the **conport-roadmap** rules, never leave it aside. (An
+  autonomous routine run has no owner to ask: the
   **conport-routine** skill overrides this rule with its own — unattached rows
   are fair game, later-milestone rows are not.)
 - **Closing a milestone always carries `resolution`** — what was delivered
@@ -502,10 +505,10 @@ return it in the `roadmap` section.
   actually happened.** "Every epic is DONE" is not a release; the resolution
   names the shipped version/artifact. If the release hasn't shipped, leave the
   milestone open and say so.
-- **A release milestone is a point, not a container.** Keep the work in
-  ordinary milestones before (and, when needed, after) the release point; an
-  empty release milestone is legal and closes with the resolution naming the
-  shipped artifact. Attaching epics to it stays legal as a compact form.
+- **A release milestone holds the epics that ship in it.** Create it with
+  `is_release=true` and attach those epics to it; an ordinary milestone
+  followed by an empty release point is used only when the user asks for that
+  shape. The full rules are the **conport-roadmap** skill.
 - **`milestone_not_ready` is a prescription, not an error to route around.**
   `update_milestone(status='DONE')` is refused while any epic of the milestone
   is open; `context.open_epics` lists exactly what to close first (an empty
@@ -630,6 +633,41 @@ mismatch.
 
 → Deep detail: live docs `projects/context-recipes`, `projects/gaps`,
 `projects/semantic-pass`.
+
+---
+
+## BACKLOG DISCIPLINE
+
+One line per rule; the full text with the reasons is
+`references/backlog-discipline.md` — read it before filing findings, growing an
+epic or reporting an epic's progress.
+
+- **Record** the decision and why, the options rejected, numbers with their
+  method — never a chronology, a retelling or a duplicate.
+- **A decision with a list of work** spawns one task per item in the same
+  message, and their numbers go into the decision.
+- **A question from the user** is not an instruction, a decision or a task:
+  answer it first, checked; file a task only when the answer showed a defect;
+  record a decision as the user's only for what the user stated.
+- **Two or more related tasks** — an epic first; work before a design is one
+  task (the Planning rows above).
+- **A finding** becomes a task after it is checked, not instead. A task of the
+  epic, done at once: a review's Critical/Important, a gap hunt's Blocker, a
+  confirmed behaviour defect. A gap hunt's Should-fix is listed for the user at
+  the end of the run and becomes a task of the next piece of work on the
+  user's word; a Note is one line in the report; a Minor is fixed in the same
+  pass or dropped with one line.
+- **Depth is one level:** a finding from a finding becomes a task only when it
+  is a behaviour defect.
+- **Epic growth ceiling:** more than 30% added to the plan's task count (at
+  least three tasks) — stop and ask the user whether to go on in this epic.
+- **Epic progress** is its open children in ConPort, not a plan file's list;
+  recount after every close; a report gives both numbers.
+- **A release epic is frozen at the version bump:** a later finding goes to an
+  epic of the next milestone, except a defect in this release's code.
+- **At session start** a task in IN_PROGRESS with no live executor and no
+  commit is an interrupted attempt: tell the user, then continue it from what
+  it left or return it to TODO.
 
 ---
 
@@ -935,4 +973,5 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 
 **Local references** (shipped with the skill): `references/command_list.md`
 (full MCP tool API), `references/documentation_graph.md` (long-form callout
-reference), `references/bootstrap.md` (fresh-project onboarding).
+reference), `references/bootstrap.md` (fresh-project onboarding),
+`references/backlog-discipline.md` (the backlog rules in full).

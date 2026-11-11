@@ -10,6 +10,7 @@ and skills work across many clients.
 - **Skills** (plain `SKILL.md`, portable)
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
+  - `conport-roadmap` — the roadmap rules: a release milestone holds its epics, waiting and undated work in standing milestones, what may be said about a release
   - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict. With the Superpowers overlay on, `import` writes nothing and names `plan import`; `finish` audits a pulled plan through its `.conport.json`, with the overlay on or off.
 - **Workflows** (Claude Code, paid plan)
   - `/conport:task` — deterministic execution of one ConPort task (worktree, independent review through REVIEW and the task journal, gated merge, close with resolution)

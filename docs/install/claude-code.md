@@ -47,9 +47,10 @@ Claude Code then prompts for the `api_key` credential; paste the
 
 The plugin loads in Claude Code:
 
-- 3 skills (`conport`, `conport-routine`, `superpowers-conport`) — project-context
-  discipline (init, search, tasks, decisions), one iteration of a periodic backlog
-  routine, and the superpowers→ConPort spec/epic flow with its `finish` release verdict
+- 4 skills (`conport`, `conport-routine`, `conport-roadmap`, `superpowers-conport`) —
+  project-context discipline (init, search, tasks, decisions), one iteration of a
+  periodic backlog routine, the roadmap rules (milestones, releases, waiting work),
+  and the superpowers→ConPort spec/epic flow with its `finish` release verdict
 - MCP server `conport` pointing at `https://api.conport.app/mcp/` (Bearer auth)
 - 5 hooks (Node.js scripts under `scripts/`) — session start, command check,
   epic tracking, prompt submit, epic tails at the end of a turn

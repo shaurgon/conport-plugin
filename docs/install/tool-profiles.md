@@ -100,6 +100,7 @@ connect with the profile of what you run:
 |---|---|
 | Skill `conport` | `full` |
 | Skill `conport-routine` | `core,tasks,milestones,agenda,semantic,routine` |
+| Skill `conport-roadmap` | `tasks,milestones` |
 | Skill `superpowers-conport` | `core,links` |
 | Workflow `task` | `core,tasks,links` |
 | Workflow `epic` | `core,tasks` |

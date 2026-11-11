@@ -1,8 +1,8 @@
 {
   "name": "conport",
-  "version": "20.0.1",
+  "version": "20.1.0",
   "description": "ConPort — project context for Claude Code (MCP + skills + hooks).",
-  "skills": ["./skills/conport", "./skills/conport-routine", "./skills/superpowers-conport"],
+  "skills": ["./skills/conport", "./skills/conport-routine", "./skills/conport-roadmap", "./skills/superpowers-conport"],
   "author": {
     "name": "shaurgon",
     "url": "https://github.com/shaurgon"

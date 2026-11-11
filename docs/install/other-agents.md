@@ -8,20 +8,21 @@ required for this tier; the CLI talks straight to the live API.
 ## 1. Install the skill
 
 Any harness that reads portable [Agent Skills](https://github.com/anthropics/skills)
-can install the ConPort skill directly from this repo with the
+can install the ConPort skills directly from this repo with the
 [skills CLI](https://github.com/anthropics/skills). It scans
 `skills/<name>/SKILL.md` and ignores the rest of the plugin (hooks, MCP config,
-scripts).
+scripts). Install `conport` with `conport-roadmap`, the roadmap rules the
+`conport` skill sends the agent to:
 
 ```bash
-npx skills add shaurgon/conport-plugin --skill conport
+npx skills add shaurgon/conport-plugin --skill conport --skill conport-roadmap
 ```
 
 Target a specific agent with `-a` (replace `codex` with `copilot` / `gemini` /
 your agent):
 
 ```bash
-npx skills add shaurgon/conport-plugin --skill conport -a codex
+npx skills add shaurgon/conport-plugin --skill conport --skill conport-roadmap -a codex
 ```
 
 ## 2. Get an API key

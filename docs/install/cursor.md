@@ -67,10 +67,10 @@ It *also* reads `.claude/skills/` and `~/.claude/skills/`, so if you already
 have the Claude Code plugin installed, Cursor inherits the same skills
 automatically.
 
-Otherwise, install all three ConPort skills into Cursor with one command:
+Otherwise, install all four ConPort skills into Cursor with one command:
 
 ```bash
-npx skills add shaurgon/conport-plugin --skill conport --skill conport-routine --skill superpowers-conport -a cursor
+npx skills add shaurgon/conport-plugin --skill conport --skill conport-routine --skill conport-roadmap --skill superpowers-conport -a cursor
 ```
 
 ## Verify
