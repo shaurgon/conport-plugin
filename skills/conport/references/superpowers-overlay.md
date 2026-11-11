@@ -26,7 +26,9 @@ creates).
 
 ## The flow
 
-1. **Brainstorming.** Write the spec draft to
+1. **Brainstorming.** Work that comes before the design is tracked as one task
+   (`kind='task'`): there is no epic yet. When no such task exists, the design
+   needs none — do not create one. Write the spec draft to
    `.superpowers/drafts/<date>-<topic>-design.md`.
 2. **Spec review and gap hunt on the draft.** Both work on the draft file —
    nothing is uploaded yet. Give the spec reviewer and the gap hunter
@@ -37,15 +39,28 @@ creates).
 3. **Approval.** The user reads and approves the draft with the findings in it.
 4. **Upload the spec, once.**
    `npx -y conport@^0.7 documents upload <draft> --doc-type spec` → `doc-N`.
-   Delete the draft. Until the plan, the spec is not edited; if it must be,
-   edit it with ConPort's block tools (`update_block`, `insert_block`, an
-   `amend` change). For a local copy run
+   Delete the draft. Right after the upload create the spec's epic —
+   `add_task(project=<project>, kind='epic', title=<the spec's title>, description=<the goal and the acceptance criterion from the spec>, milestone_id=<the milestone>)`
+   → `<id>`, with the milestone chosen by the project's roadmap rules and the
+   description within 2000 characters — and link the spec to it:
+   `link_items(project=<project>, source_type='doc', source_id=N, target_type='task', target_id=<id>, relationship='clarifies')`
+   — exactly one spec per epic. Then close the task the design started from,
+   when there is one:
+   `update_task(project=<project>, task_id=<the task>, status='DONE', resolution=<text>)`
+   with a resolution that names `doc-N` and the epic. The work may pause here:
+   an epic with no plan and no tasks is a normal state. Until the plan, the
+   spec is not edited; if it must be, edit it with ConPort's block tools
+   (`update_block`, `insert_block`, an `amend` change). For a local copy run
    `npx -y conport@^0.7 documents get doc-N` → `.superpowers/docs/doc-N.md`.
 5. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
    the writing-plans format (`### Task N: <title>`). After the user approves it:
-   `npx -y conport@^0.7 plan import <draft> --spec doc-N [--epic <id>] [--milestone <id>]`
-   — this creates the `plan` document, the epic and its tasks. Attach the epic
-   to a milestone by the project's roadmap rules. Delete the draft and the
+   `npx -y conport@^0.7 plan import <draft> --spec doc-N --epic <id>` — `<id>`
+   is the epic of step 4. This creates the `plan` document and the tasks of
+   that epic; the epic is not created again. A plan with no design behind it
+   has no spec and no epic:
+   `npx -y conport@^0.7 plan import <draft> [--milestone <id>]` creates the
+   `plan` document, the epic and its tasks — attach that epic to a milestone
+   by the project's roadmap rules. Delete the draft and the
    `<draft>.conport.json` that `plan import` wrote beside it.
 
    Every `### Task N:` section carries two lines: `**Goal:** <one sentence>`

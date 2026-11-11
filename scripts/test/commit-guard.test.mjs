@@ -127,13 +127,14 @@ function assertRefusedSpec(res, file) {
   assert.match(res.err, /remove the file/)
 }
 
-// The refusal names the spec link, so the import does not start an epic
-// without one; `doc-N` is left for the agent to fill.
+// The refusal names the spec and its epic, so the import neither leaves the
+// plan without a spec nor starts a second epic; `doc-N` and `<id>` are left
+// for the agent to fill.
 function assertRefusedPlan(res, file) {
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on ` +
-    `plans live in ConPort: run \`npx -y conport@^0.7 plan import ${file} --spec doc-N\` ` +
-    "with doc-N the plan's spec, then remove the file.\n")
+    `plans live in ConPort: run \`npx -y conport@^0.7 plan import ${file} --spec doc-N --epic <id>\` ` +
+    "with doc-N the plan's spec and <id> the spec's epic, then remove the file.\n")
 }
 
 function assertAllowed(res) {

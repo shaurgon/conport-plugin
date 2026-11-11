@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 20.0.0
+  version: 20.0.1
 ---
 
 # ConPort — Project Management System
@@ -288,6 +288,9 @@ semantics of a surface, fetch the live-docs page named in the table.
 | "X depends on Y" | `add_task_dep` |
 | "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` |
 | "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |
+| Work that needs a design, before the design | `add_task` (`kind='task'`) — one task and no epic yet; never an epic of design tasks before the spec |
+| The spec is approved | `add_task` with `kind='epic'` (description: the goal and the acceptance criterion from the spec; `milestone_id` by the project's roadmap rules), then `link_items` from the spec (`source_type='doc'`) to the epic (`target_type='task'`) with `relationship='clarifies'` — one spec per epic; close the task the design started from with a `resolution` naming the spec and the epic. An epic with no plan and no tasks is a normal state |
+| The plan is approved | the plan's tasks go into that epic: `add_task` with `parent_task_id`, or with the Superpowers overlay `plan import <draft> --spec doc-N --epic <id>` — the epic is not created again |
 | "Move task X under epic Y" / re-parent | `update_task` with `parent_task_id` (target must be `kind='epic'`; `0` detaches to root) |
 | "Roadmap" / "milestones" / "what ships in the release" | `list_milestones` (roadmap view, `include_closed=true` for history) |
 | "Plan a milestone / a release" | `add_milestone` with `title` (+ `sequence` to insert at a position, `is_release=true` for a release point) |

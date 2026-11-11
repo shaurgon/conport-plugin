@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 20.0.0
+  version: 20.0.1
 ---
 
 # superpowers-conport — Bridge
@@ -65,12 +65,13 @@ with that single action and stops:
 ```
 [superpowers-conport]
   Superpowers overlay: on — nothing written
-  Do now: npx -y conport@^0.7 plan import <plan> --spec doc-N
+  Do now: npx -y conport@^0.7 plan import <plan> --spec doc-N --epic <id>
 ```
 
 `<plan>` is the plan draft the bridge was invoked on (`<plan_path>`); `doc-N` is the
-ConPort document of the approved spec, the one `documents upload` returned. Neither is
-looked up or created here — an id the bridge does not know stays as the placeholder.
+ConPort document of the approved spec, the one `documents upload` returned; `<id>` is the
+spec's epic, the one created right after that upload. None of them is looked up or created
+here — an id the bridge does not know stays as the placeholder.
 
 **`finish` picks its route by the input file, with the overlay on or off** — never by the
 switch: a plan imported by this bridge before the overlay was turned on stays on disk while
@@ -88,7 +89,7 @@ pulled plan's epic exists, and the bridge, finding no anchors, would start a sec
 is never the answer on the anchor route with the overlay on either, because it writes
 nothing then. On the anchor route the overlay changes only the prescriptions that would name
 it: the missing-tasks item (last bullet below), and the no-epic-anchor report and the
-no-project case, which both prescribe `npx -y conport@^0.7 plan import <plan_path> --spec doc-N`
+no-project case, which both prescribe `npx -y conport@^0.7 plan import <plan_path> --spec doc-N --epic <id>`
 directly, then re-run `finish` on the file `plan pull` writes (see `### Sources` and
 `### Output — no epic anchor`). On the anchor route with the overlay off, the bridge's
 `import` stays the answer, as written in `## Mode: finish`.
@@ -210,24 +211,41 @@ The full plan body lives in the spec doc (`add_document.content` cap is 50 000 c
 
 Search for `<!--\s*conport-epic:\s*(\d+)\s*-->` outside fenced code blocks (see anchor cheat sheet).
 
-- Anchor found (captures `<epic_id>`):
-  ```
-  mcp__conport__update_task({
-    project, task_id: <epic_id>,
-    title: <H1>,
-    description: <short summary, ≤ 2000 chars>
-  })
-  ```
+- Anchor found (captures `<epic_id>`): read the epic's current description
+  (`mcp__conport__get_task({ project, task_id: <epic_id> })`). Whose epic it is shows in that
+  description, not in the `clarifies` link — step 5 writes that link to every epic, the
+  bridge's own included.
+  - The description carries `Full plan: <plan_path>`: the bridge made this epic from the plan,
+    so refresh it from the plan, keeping that reference:
+    ```
+    mcp__conport__update_task({
+      project, task_id: <epic_id>,
+      title: <H1>,
+      description: <short summary, ending with `See spec: doc-<doc_id>. Full plan: <plan_path>.`, ≤ 2000 chars>
+    })
+    ```
+  - The description carries no `Full plan: <plan_path>`: the epic was created with the spec
+    and holds its goal and acceptance criterion — leave its title and description as they
+    are; no `update_task` on the epic. A second run gives the same epic as the first.
   Do not change `kind` or `status` on re-import.
 
-- Anchor not found:
+- Anchor not found, and the spec already has its epic — the epic is created with the approved
+  spec, so look before creating:
+  `mcp__conport__get_linked({ project, item_type: 'doc', item_id: <doc_id>, relationship: 'clarifies', direction: 'outgoing' })`.
+  A link whose target is a task of `kind='epic'` (`mcp__conport__get_task`) names the plan's
+  epic: write `<!-- conport-epic: <id> -->` on a new line immediately after the H1 and take
+  that id as `<epic_id>` — never a second epic; its title and description stay as they are,
+  and no `Full plan: <plan_path>` is added to them.
+  Several such epics: ask the user which one takes the plan.
+
+- Anchor not found, and the spec has no epic:
   - Extract H1.
   - Call:
     ```
     mcp__conport__add_task({
       project,
       title: <H1>,
-      description: <short summary referencing doc-<doc_id> and the plan path>,
+      description: <short summary, ending with `See spec: doc-<doc_id>. Full plan: <plan_path>.`>,
       kind: 'epic',
       priority: 3
     })
@@ -501,7 +519,7 @@ and the input on the anchor route, the bridge's import writes nothing and asks n
 the prescription is the CLI command itself:
 
 ```
-  Сделай сейчас: npx -y conport@^0.7 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.7 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
 ```
 
 On the pulled route the order is fixed: the sidecar is read first, and with no usable
@@ -674,11 +692,12 @@ With the overlay on, the prescription line is the CLI command instead of the bri
 which writes nothing then:
 
 ```
-  Сделай сейчас: npx -y conport@^0.7 plan import <plan_path> --spec doc-N, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.7 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
 ```
 
 `doc-N` is the spec's document — the plan's paired design file's `conport-spec` anchor when it
-has one, otherwise the placeholder, as in the `import` answer of `## Overlay mode`.
+has one, otherwise the placeholder — and `<id>` the spec's epic, as in the `import` answer of
+`## Overlay mode`.
 
 ### Output — no sidecar
 

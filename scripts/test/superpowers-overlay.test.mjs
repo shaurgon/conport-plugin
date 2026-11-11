@@ -268,6 +268,84 @@ test('the spec is reviewed and gap-hunted as a draft, approved, then uploaded on
   assert.match(texts[review], /goal\s+as\s+the\s+user\s+stated\s+it/, 'the gap hunter gets the goal from the user, not from the draft')
 })
 
+// The cycle of a piece of work: one task before the design, the epic made with
+// the approved spec, the plan and its tasks put into that epic.
+test('a task comes before the design, the epic with the uploaded spec, the plan into that epic', () => {
+  const oneLine = (text) => text.replace(/\s+/g, ' ')
+  const flow = rulesText().split('## The flow')[1].split('\n## ')[0]
+  const steps = [...flow.matchAll(/^(\d+)\. \*\*([^*]+)\*\*/gm)]
+  const step = (title) => {
+    const n = steps.findIndex((s) => s[2].startsWith(title))
+    assert.ok(n >= 0, `no step ${title}`)
+    return oneLine(flow.slice(steps[n].index, steps[n + 1]?.index ?? flow.length))
+  }
+
+  const brainstorming = step('Brainstorming')
+  assert.match(brainstorming, /one task \(`kind='task'`\)/)
+  assert.match(brainstorming, /no epic yet/)
+  assert.match(brainstorming, /the design needs none/)
+
+  const upload = step('Upload the spec')
+  assert.match(upload, /add_task\(project=<project>, kind='epic'/)
+  assert.match(upload, /goal and the acceptance criterion/)
+  assert.match(upload, /roadmap rules/)
+  assert.match(upload, /link_items\(project=<project>, source_type='doc', source_id=N, target_type='task', target_id=<id>, relationship='clarifies'\)/)
+  assert.match(upload, /exactly one spec per epic/)
+  assert.match(upload, /update_task\(project=<project>, task_id=<the task>, status='DONE', resolution=/)
+  assert.match(upload, /names `doc-N` and the epic/)
+  assert.match(upload, /an epic with no plan and no tasks is a normal state/)
+  assert.ok(upload.indexOf('documents upload') < upload.indexOf("kind='epic'"), 'the epic follows the upload')
+
+  const plan = step('Plan')
+  assert.match(plan, /npx -y conport@\^0\.7 plan import <draft> --spec doc-N --epic <id>` /)
+  assert.match(plan, /the epic is not created again/)
+  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.7 plan import <draft> \[--milestone <id>\]`/)
+  assert.doesNotMatch(plan, /\[--epic <id>\]/, 'the epic of a designed plan is not optional')
+})
+
+test('the skill and the bridge follow the same cycle', () => {
+  const oneLine = (text) => text.replace(/\s+/g, ' ')
+  const skill = readFileSync(join(SCRIPTS, '..', 'skills', 'conport', 'SKILL.md'), 'utf8')
+  const planning = skill.slice(skill.indexOf('### Planning'), skill.indexOf('### Execution'))
+  const row = (re) => {
+    const found = planning.split('\n').filter((l) => l.startsWith('|') && re.test(l))
+    assert.equal(found.length, 1, `one Planning row matches ${re}, got ${found.length}`)
+    return found[0]
+  }
+  assert.match(row(/^\| Work that needs a design/), /`add_task` \(`kind='task'`\).*no epic/)
+  const spec = row(/^\| The spec is approved/)
+  assert.match(spec, /`add_task` with `kind='epic'`/)
+  assert.match(spec, /`link_items`.*`relationship='clarifies'`/)
+  assert.match(spec, /one spec per epic/)
+  assert.match(row(/^\| The plan is approved/), /`parent_task_id`.*--epic <id>/)
+
+  // Every `plan import` the bridge prescribes for a plan with a spec names the spec's epic.
+  const bridge = readFileSync(join(SCRIPTS, '..', 'skills', 'superpowers-conport', 'SKILL.md'), 'utf8')
+  const withSpec = oneLine(bridge).match(/plan import <plan(?:_path)?> --spec doc-N\S*( --epic <id>)?/g) ?? []
+  assert.ok(withSpec.length >= 4, `expected the import answer and the finish prescriptions, got ${withSpec.length}`)
+  for (const cmd of withSpec) assert.match(cmd, / --epic <id>$/, cmd)
+  // With the overlay off the bridge takes the epic the spec already has instead of a second one.
+  const epicStep = oneLine(bridge.slice(bridge.indexOf('### 4. Import plan as epic + tasks'), bridge.indexOf('**Tasks:**')))
+  assert.match(epicStep, /get_linked\(\{ project, item_type: 'doc', item_id: <doc_id>, relationship: 'clarifies', direction: 'outgoing' \}\)/)
+  assert.match(epicStep, /never a second epic/)
+  assert.match(epicStep, /title and description stay as they are/)
+  // A re-import through the anchor never rewrites the epic the spec made, and still
+  // refreshes the epic the bridge made. The sign is the bridge's own `Full plan:` line:
+  // the `clarifies` link cannot be it, because step 5 links every epic, the bridge's included.
+  const step5 = oneLine(bridge.slice(bridge.indexOf('### 5. Link spec ↔ epic'), bridge.indexOf('### 6.')))
+  assert.match(step5, /relationship: 'clarifies'/, 'step 5 links the spec to every epic')
+  const anchorFound = epicStep.slice(epicStep.indexOf('- Anchor found'), epicStep.indexOf('- Anchor not found'))
+  assert.doesNotMatch(anchorFound, /get_linked/, 'the clarifies link step 5 writes cannot tell the spec epic from the bridge epic')
+  assert.match(anchorFound, /get_task\(\{ project, task_id: <epic_id> \}\)/)
+  assert.match(anchorFound, /description carries `Full plan: <plan_path>`: the bridge made this epic.*update_task\(\{ project, task_id: <epic_id>, title: <H1>, description: <short summary, ending with `See spec: doc-<doc_id>\. Full plan: <plan_path>\.`, ≤ 2000 chars> \}\)/)
+  assert.match(anchorFound, /description carries no `Full plan: <plan_path>`: the epic was created with the spec.*leave its title and description as they are; no `update_task` on the epic/)
+  // The bridge's own epic carries the sign from its creation; the spec's epic never gets it.
+  const created = epicStep.slice(epicStep.indexOf('- Anchor not found, and the spec has no epic'))
+  assert.match(created, /add_task\(\{ project, title: <H1>, description: <short summary, ending with `See spec: doc-<doc_id>\. Full plan: <plan_path>\.`>, kind: 'epic'/)
+  const specEpic = epicStep.slice(epicStep.indexOf('- Anchor not found, and the spec already has its epic'), epicStep.indexOf('- Anchor not found, and the spec has no epic'))
+  assert.match(specEpic, /title and description stay as they are, and no `Full plan: <plan_path>` is added to them/)
+})
+
 test('the rules and the skill name every agent type the plugin ships, the final reviewer for the whole branch', () => {
   const types = readdirSync(join(SCRIPTS, '..', 'agents'))
     .filter((f) => /^sdd-.*\.md$/.test(f))
