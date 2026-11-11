@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 20.1.0
+  version: 20.2.0
 ---
 
 # ConPort — Project Management System
@@ -659,6 +659,9 @@ epic or reporting an epic's progress.
   pass or dropped with one line.
 - **Depth is one level:** a finding from a finding becomes a task only when it
   is a behaviour defect.
+- **A change to behaviour a spec describes** changes the spec in the same task,
+  by blocks (`update_block`, `insert_block`), before the task is closed — "the
+  epic is closed" is no reason to skip it.
 - **Epic growth ceiling:** more than 30% added to the plan's task count (at
   least three tasks) — stop and ask the user whether to go on in this epic.
 - **Epic progress** is its open children in ConPort, not a plan file's list;

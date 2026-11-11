@@ -79,6 +79,10 @@ creates).
    `REVIEW` status. Keep the `<file>.conport.json` written next to the pulled
    plan: import and finish read it.
 
+   A task that changes behaviour the spec describes changes the spec in the
+   same task, with the block tools (`update_block`, `insert_block`), before
+   the task is closed; its report names the blocks it changed.
+
    **Dispatching a subagent.** A brief, a report, a review and a fix live in
    the task's journal, never in files: nothing is written under
    `.superpowers/sdd/`, and a dispatch names no file there. Wherever SDD says to

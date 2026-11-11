@@ -367,6 +367,13 @@ test('the rules and the skill name every agent type the plugin ships, the final 
   assert.match(finish, /final whole-branch review \(`conport:sdd-final-reviewer` in Claude Code\)/)
 })
 
+test('during execution a task that changes behaviour the spec describes changes the spec by blocks in the same task', () => {
+  const flow = rulesText().split('## The flow')[1].split('\n## ')[0]
+  const execution = flow.slice(flow.search(/^6\. \*\*Execution\.\*\*/m), flow.search(/^7\. /m)).replace(/\s+/g, ' ')
+  assert.match(execution,
+    /A task that changes behaviour the spec describes changes the spec in the same task, with the block tools \(`update_block`, `insert_block`\), before the task is closed/)
+})
+
 test('every journal tool call of the rules names its project', () => {
   const calls = rulesText().match(/\b(?:add_task_journal_entry|get_task_journal_entry|list_task_journal)\([^)]*\)/g) ?? []
   assert.ok(calls.length >= 3, `expected the brief, dispatch and history calls, got ${calls.length}`)

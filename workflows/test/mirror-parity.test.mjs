@@ -24,6 +24,7 @@ const MIRRORED = {
   PIPE_JAN: ['const janPrompt ='],
   ACCOUNT_PIPE: ['const accountPipe =', 'node <helper> account'],
   AGENT_TYPES: ['const AGENT =', "'conport:sdd-implementer'", 'const NO_AGENT_TYPE =', 'const typed ='],
+  SPEC_EDIT: ['const specBrief =', 'const specImplRule =', 'const specFixRule =', 'const specReviewRule ='],
 }
 
 for (const [name, carries] of Object.entries(MIRRORED)) {

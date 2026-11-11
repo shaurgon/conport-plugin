@@ -86,6 +86,22 @@ A task filed from a finding is reviewed on its own diff only, and that review
 reports only Critical and Important findings. A finding from a finding becomes
 a task only when it is a defect of behaviour, never polish.
 
+## A change to behaviour a spec describes changes the spec
+
+A task that changes behaviour a spec describes — a text the spec quotes, an
+interface, the order of steps, a structure — changes the spec in the same task,
+with the block tools (`update_block`, `insert_block`), before the task is
+closed. Otherwise the spec and the code part ways without anyone noticing.
+
+- "The epic is closed" and "the code is the source of truth" are no reasons to
+  skip it: a spec stays the description of the system until another spec
+  replaces it.
+- A task filed from a finding — after its epic is closed too — names in its
+  acceptance the section of the spec it changes, or says "does not touch the
+  spec".
+
+When the work has no spec, this rule does not apply.
+
 ## Epic growth ceiling
 
 When the tasks added to an epic after its plan's tasks were filed exceed 30% of

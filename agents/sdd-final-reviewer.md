@@ -34,6 +34,7 @@ Mutate nothing: not the working tree, the index, `HEAD`, branch state, or the pr
 ## What to check
 
 - **Spec compliance across the branch** — every requirement of the spec is delivered, delivered once, and delivered the way the spec states it: exact names, formats, thresholds, messages. Missing, extra and misunderstood, as a task reviewer judges them, but for the whole spec.
+- **The spec and the branch, both ways** — described and not built, and built otherwise than described (a text, an interface, an order of steps or a structure the branch changed while the spec still describes the old one): both are **Important**, or Critical when the spec's goal is not achieved. You only report it; the spec is edited by whoever fixes the finding.
 - **Seams between tasks** — a contract one task changed and another task still calls the old way; a shared file rewritten twice with the second write undoing the first; the same logic implemented twice in two tasks; error paths that cross task boundaries and are handled on neither side.
 - **Behaviour of the whole** — the flow the spec describes, end to end through the merged code: does it run from its entry point to its result, with the degradations the spec names?
 - **Tests of the whole** — does any test walk the flow end to end, or does every test stop at its own task's boundary? A spec requirement that no test observes is a finding.

@@ -92,6 +92,7 @@ Five ways a green test guards nothing: the object under test is unreachable from
 
 - Touch ONLY the files the brief names, plus what is strictly required to make them work.
 - NEVER modify files the dispatch flags as off-limits.
+- When your change alters behaviour the spec describes, change the spec in the same task with its block tools (`update_block`, `insert_block`) — a text it quotes, an interface, the order of steps, a structure — and name the blocks you changed in your report. From the shell the same edits are `conport api document-blocks update-blocks --project <handle> --document_id <id> --block_ulid <ulid> --markdown <text>` and `conport api document-blocks blocks-post --project <handle> --document_id <id> --after <ulid> --markdown <text>`.
 - YAGNI: build only what the task asks. No speculative abstractions, no "nice to haves", no unrequested features.
 - In existing code, follow established patterns. Improve code you are already touching the way a good engineer would, but do not restructure things outside your task.
 - If a file you are creating grows beyond the plan's intent, do NOT split it on your own — stop and report `DONE_WITH_CONCERNS` noting it. If an existing file you must modify is already large or tangled, work carefully and record it as a concern.

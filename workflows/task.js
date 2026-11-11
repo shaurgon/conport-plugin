@@ -11,7 +11,7 @@ export const meta = {
 // mirror parity tests hold byte for byte alike exactly this: every region fenced
 // by a <NAME>_BEGIN / <NAME>_END marker pair that both files carry (PIPE_BASE,
 // FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE,
-// AGENT_TYPES) and the
+// AGENT_TYPES, SPEC_EDIT) and the
 // SKELETON_VERSION declaration. Everything else the two files share — the
 // judgement prompts included — is duplicated by hand and guarded by nothing.
 
@@ -109,6 +109,7 @@ const S_SCOUT = { type: 'object', required: ['project', 'task', 'brief'], proper
     plan_path: { type: ['string', 'null'] },
     lines: { type: ['object', 'null'], properties: { from: { type: 'integer' }, to: { type: 'integer' } } },
     description: { type: 'string' }, acceptance: { type: 'string' }, spec_digest: { type: 'string' },
+    spec_doc_id: { type: ['integer', 'null'] },
     files: { type: ['object', 'null'], properties: {
       modify: { type: 'array', items: { type: 'string' } },
       test: { type: 'array', items: { type: 'string' } } } },
@@ -122,7 +123,8 @@ const S_IMPL = { type: 'object', required: ['status', 'branch', 'head_sha', 'wor
   status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'BLOCKED', 'NEEDS_CONTEXT'] },
   branch: { type: 'string' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' },
   files_changed: { type: 'array', items: { type: 'string' } }, checks_summary: { type: 'string' },
-  concerns: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } } } }
+  concerns: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } },
+  spec_blocks: { type: 'array', items: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' } } } }
 
 const S_REV = { type: 'object', required: ['verdict', 'findings'], properties: {
   verdict: { type: 'string', enum: ['APPROVED', 'NEEDS_FIXES'] },
@@ -410,6 +412,7 @@ Fill the schema from the base:
 - brief.spec_digest: base.spec_doc_id is null -> empty string; otherwise exactly ONE
   MCP call — get_document(<base.spec_doc_id>) via conport tools (ToolSearch) —
   digested to <=40 lines (goal, invariants, contracts relevant to this task).
+- brief.spec_doc_id = base.spec_doc_id verbatim (null stays null).
 - gate = base.gate; it is null -> read the gate (working directory + full check
   commands) out of the constraints prose yourself; the prose names none -> gate=null
   (do NOT invent commands).
@@ -427,7 +430,7 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.
 === BRANCH B (fallback: there is no base to build on) ===
 0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, read
    env CONPORT_PROJECT_NAME. If it is unset, stop and report: "CONPORT_PROJECT_NAME is not set". Load conport
-   MCP tools via ToolSearch and call init with that name and questions=false (no person answers here); pass the project handle it returns as project=<handle> in every call.
+   MCP tools via ToolSearch and call init(name=<that name>, questions=false) (no person answers here); pass the project handle it returns as project=<handle> in every call.
 1) get_task(${taskId}): return id, kind, status, title, parent epic id if any, the
    description compressed to <=600 chars, and the acceptance criterion if the
    description carries one (an '## Acceptance' / 'Acceptance:' section or an explicit
@@ -442,8 +445,9 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.
    description — get_linked on the task: a document of type plan linked to it
    with clarifies is its plan; get_linked on that plan: the spec it is
    derived_from is its spec. No such link -> the doc the found plan's header
-   names. Found -> get_document and digest it to <=40 lines (goal, invariants,
-   contracts relevant to this task). None -> empty string.
+   names. Found -> brief.spec_doc_id = that document's id; get_document and digest it
+   to <=40 lines (goal, invariants, contracts relevant to this task). None -> empty
+   string and brief.spec_doc_id = null.
 4) Gate: if the found plan's Global Constraints name the project gate (working
    directory + full check commands), return {dir, commands}; otherwise gate=null
    (do NOT invent commands).
@@ -454,6 +458,48 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.`
 // source="plan" promises a plan file. A scout that names none is treated as a
 // ConPort brief everywhere, or the prompts would point the agents at "null".
 const hasPlan = b => b.source === 'plan' && typeof b.plan_path === 'string' && b.plan_path.trim() !== ''
+
+// SPEC_EDIT_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
+// A task that changes behaviour its spec describes changes the spec in the same
+// task, by blocks. The rule reaches the agents only when the run knows the spec
+// document's id; a run without one says nothing of a spec edit. A spec edit never
+// enters the git diff, so the reviewer is handed the blocks the implementer names
+// and reads them itself. Only a block id travels into a prompt: any other value
+// is text nobody on the run checked.
+const BLOCK_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
+const specBrief = (project, docId) => (Number.isInteger(docId)
+  ? [`Spec document: doc-${docId} of project ${project} — where a change to the behaviour it describes is made, by blocks, in this same task.`]
+  : [])
+const specImplRule = (project, docId) => (Number.isInteger(docId)
+  ? `\nThe spec is the ConPort document doc-${docId} (project=${project}). Your change alters
+behaviour it describes (a text it quotes, an interface, an order of steps, a structure)
+-> change the spec in this same task with its block tools: update_block / insert_block
+(document_id=${docId}); return the ULID of every block you changed or inserted as
+spec_blocks. Behaviour it does not describe -> spec_blocks empty.`
+  : '')
+const specFixRule = (project, docId) => (Number.isInteger(docId)
+  ? `\nA fix that alters behaviour the spec doc-${docId} describes changes the spec in this same
+task with update_block / insert_block (document_id=${docId}, project=${project}) and names
+the ULIDs of the blocks it changed in that finding's note.`
+  : '')
+// The blocks an implementer answered with: none when its answer names none; unknown
+// (null) for a branch an earlier run left, whose answer only its report entry holds.
+const specBlocksOf = impl => (impl.resumed ? null : (impl.spec_blocks ?? []))
+const specReviewRule = (project, docId, blocks) => {
+  if (!Number.isInteger(docId)) return ''
+  const named = Array.isArray(blocks) ? blocks.filter(b => BLOCK_ID.test(String(b))) : null
+  const which = named === null
+    ? 'The spec blocks the implementer changed are named in its latest report entry (Spec blocks changed:).'
+    : named.length
+      ? `The implementer names the spec blocks it changed: ${named.join(', ')}.`
+      : 'The implementer names no changed spec block.'
+  return `\nSPEC LEFT BEHIND — its edits never enter the git diff: the spec is the ConPort document
+doc-${docId}. ${which} Read each named block yourself — a named check outside the diff:
+get_block(project=${project}, document_id=${docId}, block_ulid=<ulid>), read only. The diff
+changes behaviour the spec describes and no changed block holds it, or a named block does
+not describe what the diff builds -> an IMPORTANT finding (specRef = the spec section).`
+}
+// SPEC_EDIT_END
 
 // The brief of the task: everything an agent of this run is told about the work,
 // written into the task's journal before the dispatch. Text nobody on the run
@@ -481,6 +527,7 @@ const briefBody = (sc, gate, extra) => {
     ...source,
     'Spec digest — the spec layer of a review; empty means there is no spec document and the acceptance criterion is the spec layer:',
     quoted('spec digest', b.spec_digest),
+    ...specBrief(sc.project, b.spec_doc_id),
     ...gc,
     `Gate after the merge: ${gate.commands.join('; ')} (in ${gate.dir}).`,
     ...(extra ? ['', extra] : []),
@@ -505,7 +552,7 @@ Unclear requirement — do not guess: return NEEDS_CONTEXT with concrete questio
 Dead end / architectural fork — BLOCKED. Bad work is worse than no work.
 A test must prove the mechanism: remove exactly the protected mechanism — the test
 fails (verify by observation, then restore the code); production path, not a fixture
-shortcut; a new threshold -> cases on both sides of the boundary.
+shortcut; a new threshold -> cases on both sides of the boundary.${specImplRule(sc.project, sc.brief.spec_doc_id)}
 Before finishing: run FOCUSED checks for your task only — lint and type checks from
 the project gate scoped to your area, and tests only for your task's test files.${ser}
 Never run the full test suite — project resources may be shared; the orchestrator
@@ -568,7 +615,7 @@ Calibration is strict, inflation is forbidden. CRITICAL requires all three at on
 MINOR does not block the merge and is GUARANTEED to land in the tails epic — do not
 inflate 'so it will not get lost': the ledger never loses a minor. Something absent
 from both spec and acceptance is not a finding.
-Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${re}${rb}`
+Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, sc.brief.spec_doc_id, specBlocksOf(impl))}${re}${rb}`
 }
 
 const fixPrompt = (sc, impl, serial) => {
@@ -581,7 +628,7 @@ leave the task's files.
 A finding unclear or, in your view, wrong — do not invent a fix and do not skip it
 silently: return action=DISPUTED for it with reasoning, apply the rest.
 A changed test inherits the rules: fails without the protected mechanism, threshold
-boundaries.
+boundaries.${specFixRule(sc.project, sc.brief.spec_doc_id)}
 After the edits: focused checks only (lint/types scoped to your area; tests only for
 the task's test files${ser}).
 Never the full suite. git stash is forbidden. Commit atomically. Return JSON per
@@ -721,7 +768,7 @@ if (sc.task.status === 'REVIEW') {
   const br = await retry('branch', l => piped(branchPrompt(BRANCH), { label: l, effort: 'low', schema: S_BR }))
   if (!br) return abort('ABORTED_BRANCH_CHECK')
   if (!br.exists || !br.branch) return abort('ABORTED_IN_REVIEW_NO_BRANCH', noBranchDetail(sc.task.id, BRANCH))
-  resumed = { status: 'DONE', branch: br.branch, head_sha: br.head_sha, worktree_path: null }
+  resumed = { status: 'DONE', branch: br.branch, head_sha: br.head_sha, worktree_path: null, resumed: true }
 }
 const cycleStep = (label, kind, fields) => cycle(label, { project: sc.project, task_id: sc.task.id, step: kind, ...fields })
 const reviewOf = (label, rev, note) => reviewStep(label, sc.project, sc.task.id, rev, note)

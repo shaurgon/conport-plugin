@@ -12,7 +12,7 @@ export const meta = {
 // mirror parity tests hold byte for byte alike exactly this: every region fenced
 // by a <NAME>_BEGIN / <NAME>_END marker pair that both files carry (PIPE_BASE,
 // FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE,
-// AGENT_TYPES) and the
+// AGENT_TYPES, SPEC_EDIT) and the
 // SKELETON_VERSION declaration. Everything else the two files share — the
 // judgement prompts included — is duplicated by hand and guarded by nothing.
 
@@ -125,7 +125,8 @@ const S_IMPL = { type: 'object', required: ['status', 'branch', 'head_sha', 'wor
   status: { type: 'string', enum: ['DONE', 'DONE_WITH_CONCERNS', 'BLOCKED', 'NEEDS_CONTEXT'] },
   branch: { type: 'string' }, head_sha: { type: 'string' }, worktree_path: { type: 'string' },
   files_changed: { type: 'array', items: { type: 'string' } }, checks_summary: { type: 'string' },
-  concerns: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } } } }
+  concerns: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } },
+  spec_blocks: { type: 'array', items: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' } } } }
 
 const S_REV = { type: 'object', required: ['verdict', 'findings'], properties: {
   verdict: { type: 'string', enum: ['APPROVED', 'NEEDS_FIXES'] },
@@ -471,7 +472,7 @@ project for every MCP call below (conport tools via ToolSearch).
    yourself: working directory and the full check commands (lint, types, full test
    run) as separate fields; the prose names none -> gate=null (do NOT invent commands).
 5) Spec: base.spec_doc_id, or a doc the plan header names when it is null ->
-   get_document once. Return: (a) spec.digest <=80 lines — goal, invariants, public
+   get_document once; spec.doc_id = the id of that document. Return: (a) spec.digest <=80 lines — goal, invariants, public
    contracts, definition of done; (b) spec_card <=20 lines PER TASK — only the spec
    claims this task must close, worded verbatim (via references in the task body and
    the plan's Self-Review matrix). No spec -> spec=null, empty cards, note it in notes.
@@ -493,7 +494,7 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.
 === BRANCH B (fallback: there is no base to build on) ===
 0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, read
    env CONPORT_PROJECT_NAME. If it is unset, stop and report: "CONPORT_PROJECT_NAME is not set". Load conport
-   MCP tools via ToolSearch and call init with that name and questions=false (no person answers here); pass the project handle it returns as project=<handle> in every call.
+   MCP tools via ToolSearch and call init(name=<that name>, questions=false) (no person answers here); pass the project handle it returns as project=<handle> in every call.
 1) Plan: ${planPath ? `use the plan file ${planPath}.` : `grep '<!-- conport-epic: ${epicId} -->'
    across docs/superpowers/plans/*.md; else the text 'task-${epicId}' there; else
    get_task(${epicId}) and a plan reference in its description.`} Multiple candidates ->
@@ -513,7 +514,8 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.
    prohibition). Extract the project gate if the plan names one: working directory and
    the full check commands (lint, types, full test run) as separate fields; if the
    plan names none -> gate=null (do NOT invent commands).
-5) Spec from the plan header (**Spec:** / a ConPort doc id): get_document. Return:
+5) Spec from the plan header (**Spec:** / a ConPort doc id): get_document;
+   spec.doc_id = the id of that document. Return:
    (a) spec.digest <=80 lines — goal, invariants, public contracts, definition of
    done; (b) spec_card <=20 lines PER TASK — only the spec claims this task must
    close, worded verbatim (via references in the task body and the plan's
@@ -555,6 +557,50 @@ const constraintsBlock = sc => sc.global_constraints && sc.global_constraints.tr
 // The spec digest as a block; `none` is what an agent reads when there is no spec.
 const digestBlock = (sc, none) => sc.spec ? fenced('spec digest', sc.spec.digest) : ` ${none}\n`
 
+// SPEC_EDIT_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
+// A task that changes behaviour its spec describes changes the spec in the same
+// task, by blocks. The rule reaches the agents only when the run knows the spec
+// document's id; a run without one says nothing of a spec edit. A spec edit never
+// enters the git diff, so the reviewer is handed the blocks the implementer names
+// and reads them itself. Only a block id travels into a prompt: any other value
+// is text nobody on the run checked.
+const BLOCK_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/
+const specBrief = (project, docId) => (Number.isInteger(docId)
+  ? [`Spec document: doc-${docId} of project ${project} — where a change to the behaviour it describes is made, by blocks, in this same task.`]
+  : [])
+const specImplRule = (project, docId) => (Number.isInteger(docId)
+  ? `\nThe spec is the ConPort document doc-${docId} (project=${project}). Your change alters
+behaviour it describes (a text it quotes, an interface, an order of steps, a structure)
+-> change the spec in this same task with its block tools: update_block / insert_block
+(document_id=${docId}); return the ULID of every block you changed or inserted as
+spec_blocks. Behaviour it does not describe -> spec_blocks empty.`
+  : '')
+const specFixRule = (project, docId) => (Number.isInteger(docId)
+  ? `\nA fix that alters behaviour the spec doc-${docId} describes changes the spec in this same
+task with update_block / insert_block (document_id=${docId}, project=${project}) and names
+the ULIDs of the blocks it changed in that finding's note.`
+  : '')
+// The blocks an implementer answered with: none when its answer names none; unknown
+// (null) for a branch an earlier run left, whose answer only its report entry holds.
+const specBlocksOf = impl => (impl.resumed ? null : (impl.spec_blocks ?? []))
+const specReviewRule = (project, docId, blocks) => {
+  if (!Number.isInteger(docId)) return ''
+  const named = Array.isArray(blocks) ? blocks.filter(b => BLOCK_ID.test(String(b))) : null
+  const which = named === null
+    ? 'The spec blocks the implementer changed are named in its latest report entry (Spec blocks changed:).'
+    : named.length
+      ? `The implementer names the spec blocks it changed: ${named.join(', ')}.`
+      : 'The implementer names no changed spec block.'
+  return `\nSPEC LEFT BEHIND — its edits never enter the git diff: the spec is the ConPort document
+doc-${docId}. ${which} Read each named block yourself — a named check outside the diff:
+get_block(project=${project}, document_id=${docId}, block_ulid=<ulid>), read only. The diff
+changes behaviour the spec describes and no changed block holds it, or a named block does
+not describe what the diff builds -> an IMPORTANT finding (specRef = the spec section).`
+}
+// SPEC_EDIT_END
+// The spec document of the epic: its id when the scout returned one.
+const specDocOf = sc => (sc.spec ? sc.spec.doc_id : null)
+
 // The brief of one child: everything an agent of this run is told about its work,
 // written into the child's journal before the dispatch. Text nobody on the run
 // wrote travels quoted. `extra` is what one dispatch adds to it (ASKED, TO_FIX,
@@ -577,6 +623,7 @@ const briefBody = (t, sc, gate, extra) => {
     quoted('spec card', t.spec_card ?? ''),
     'Spec digest:',
     quoted('spec digest', sc.spec ? sc.spec.digest : ''),
+    ...specBrief(sc.project, specDocOf(sc)),
     `Interfaces from earlier tasks are contracts, do not change them: ${JSON.stringify(t.consumes ?? [])}.`,
     // An empty constraints block would ship a bare heading with nothing under it.
     ...(sc.global_constraints && sc.global_constraints.trim()
@@ -605,7 +652,7 @@ Unclear requirement — do not guess: return NEEDS_CONTEXT with concrete questio
 Dead end / architectural fork — BLOCKED. Bad work is worse than no work.
 A test must prove the mechanism: remove exactly the protected mechanism — the test
 fails (verify by observation, then restore the code); production path, not a fixture
-shortcut; a new threshold -> cases on both sides of the boundary.
+shortcut; a new threshold -> cases on both sides of the boundary.${specImplRule(sc.project, specDocOf(sc))}
 Before finishing: run FOCUSED checks for your task only — lint and type checks from
 the project gate scoped to your area, and tests only for your task's test files.${ser}
 Never run the full test suite — project resources may be shared; the orchestrator
@@ -669,7 +716,7 @@ Calibration is strict, inflation is forbidden. CRITICAL requires all three at on
 MINOR does not block the merge and is GUARANTEED to land in the tails epic — do not
 inflate 'so it will not get lost': the ledger never loses a minor. Something absent
 from both spec and acceptance is not a finding.
-Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${re}${rb}`
+Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, specDocOf(sc), specBlocksOf(impl))}${re}${rb}`
 }
 
 const fixPrompt = (t, sc, impl, serial) => {
@@ -682,7 +729,7 @@ leave the task's files.
 A finding unclear or, in your view, wrong — do not invent a fix and do not skip it
 silently: return action=DISPUTED for it with reasoning, apply the rest.
 A changed test inherits the rules: fails without the protected mechanism, threshold
-boundaries.
+boundaries.${specFixRule(sc.project, specDocOf(sc))}
 After the edits: focused checks only (lint/types scoped to your area; tests only for
 the task's test files${ser}).
 Never the full suite. git stash is forbidden. Commit atomically. Return JSON per
@@ -750,7 +797,7 @@ Apply the minimal action and NOTHING else: no adjacent refactoring, no scope gro
 Additionally: git stash is forbidden; git add only with explicit paths; never push;
 no AI mentions in commits; atomic commits, message of 1-2 sentences.
 A test must prove the mechanism: remove exactly the protected mechanism — the test
-fails (verify by observation, then restore the code).
+fails (verify by observation, then restore the code).${specImplRule(sc.project, specDocOf(sc))}
 Dead end -> BLOCKED. Before finishing: focused checks only (lint/types scoped to
 your area, tests only for your changed test files).${ser}
 Never run the full test suite. Commit everything; return JSON per schema.`
@@ -765,7 +812,7 @@ quality: would the test fail without exactly the protected mechanism; is it the
 production path; no scope growth beyond the minimal action.
 Calibration is strict. CRITICAL requires: the gap is NOT closed, with a concrete
 scenario. IMPORTANT = the fix cannot be trusted. MINOR = polish, does not block.
-Each finding: file:line + scenario + minimal fix (<=3 lines).`
+Each finding: file:line + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, specDocOf(sc), specBlocksOf(impl))}`
 
 const goalPrompt = (sc, ledgerBrief, gate, MAIN) => `You are the acceptor of epic task-${sc.epic.id}. One question: is the GOAL achieved — not
 whether the tasks are closed.

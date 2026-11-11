@@ -102,8 +102,8 @@ connect with the profile of what you run:
 | Skill `conport-routine` | `core,tasks,milestones,agenda,semantic,routine` |
 | Skill `conport-roadmap` | `tasks,milestones` |
 | Skill `superpowers-conport` | `core,links` |
-| Workflow `task` | `core,tasks,links` |
-| Workflow `epic` | `core,tasks` |
+| Workflow `task` | `core,tasks,documents,links` |
+| Workflow `epic` | `core,tasks,documents` |
 | Hooks | `core,milestones` |
 
 Each profile is the fewest groups that list every tool the files of that part

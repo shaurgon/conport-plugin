@@ -826,6 +826,8 @@ export const journalBody = s => {
     'Implementer report: ' + r.status,
     `Branch: ${r.branch} at ${r.head_sha}`,
     ...(texts(r.files_changed).length ? ['Files changed: ' + texts(r.files_changed).join(', ')] : []),
+    // A spec edit never enters the diff: the reviewer reads these blocks itself.
+    ...(texts(r.spec_blocks).length ? ['Spec blocks changed: ' + texts(r.spec_blocks).join(', ')] : []),
     ...(r.checks_summary ? ['Checks: ' + r.checks_summary] : []),
     ...section('Concerns:', texts(r.concerns)),
     ...section('Questions:', texts(r.questions)),

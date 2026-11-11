@@ -208,6 +208,14 @@ test('journalBody: the report, the review and the fix are written from the agent
   assert.equal(journalBody({ step: 'brief', body: 'the assignment' }), 'the assignment')
 })
 
+test('journalBody: the report names the spec blocks the implementer changed, and only when it changed some', () => {
+  const blocks = ['01JABCDEFGHJKMNPQRSTVWXYZ0', '01JABCDEFGHJKMNPQRSTVWXYZ1']
+  const report = journalBody({ step: 'report', result: { ...IMPL, spec_blocks: blocks } })
+  assert.ok(report.includes('Spec blocks changed: ' + blocks.join(', ')), report)
+  for (const result of [IMPL, { ...IMPL, spec_blocks: [] }])
+    assert.doesNotMatch(journalBody({ step: 'report', result }), /Spec blocks changed/)
+})
+
 test('journalBody: a full text in body is the entry of every step, ahead of the structured result', () => {
   const text = '# Report\n\nWritten by the agent itself.'
   assert.equal(journalBody({ step: 'report', body: text }), text)

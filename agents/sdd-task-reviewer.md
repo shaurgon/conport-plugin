@@ -63,6 +63,7 @@ Compare the diff against what was requested. Where the brief is ambiguous, judge
 - **Missing:** requirements skipped, missed, or claimed but not implemented.
 - **Extra:** features not requested, over-engineering, unneeded "nice to haves".
 - **Misunderstood:** right feature built wrong, or wrong problem solved.
+- **Spec left behind:** a spec is edited in ConPort by blocks, and the edit never enters the git diff, so this is a named check outside the diff. The report names where to look; read each block the report names yourself (`get_block`, or `conport api document-blocks get-blocks --project <handle> --document_id <id> --block_ulid <ulid>`) — reading only. When the diff changes behaviour the spec describes and the spec is not changed in this same task, that is an Important finding: the report names no changed block, or a block it names does not describe what the diff builds. You only find it; the spec is edited by whoever fixes the task.
 
 If a requirement cannot be verified from this diff alone (it lives in unchanged code or spans tasks), report it as a ⚠️ item alongside your ✅/❌ verdict — do not broaden your search to chase it.
 

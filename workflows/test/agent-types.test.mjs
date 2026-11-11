@@ -131,6 +131,42 @@ test('the gap hunter and the final reviewer hand their findings back in their an
   }
 })
 
+// A task that changes behaviour a spec describes changes the spec in the same
+// task: the roles that write edit it by blocks and name the blocks; the roles
+// that only read find the miss and never take the edit on.
+test('a change to behaviour the spec describes changes the spec in the same task: writers edit it, reviewers find the miss', () => {
+  const oneLine = role => body(role).replace(/\s+/g, ' ')
+  for (const role of ['sdd-implementer', 'sdd-fixer']) {
+    const text = oneLine(role)
+    assert.match(text, /behaviour the spec describes, change the spec in the same task with its block tools \(`update_block`, `insert_block`\)/,
+      `${role}: edits the spec by blocks in the same task`)
+    assert.match(text, /name the blocks you changed in your report/, `${role}: names the changed blocks`)
+    // An agent without the ConPort MCP tools edits the spec from the shell, as it writes the journal.
+    assert.match(text, /`conport api document-blocks update-blocks --project <handle> --document_id <id> --block_ulid <ulid> --markdown <text>`/,
+      `${role}: the shell form of update_block`)
+    assert.match(text, /`conport api document-blocks blocks-post --project <handle> --document_id <id> --after <ulid> --markdown <text>`/,
+      `${role}: the shell form of insert_block`)
+  }
+  const reviewer = oneLine('sdd-task-reviewer')
+  assert.match(reviewer, /diff changes behaviour the spec describes and the spec is not changed in this same task, that is an Important finding/,
+    'the task reviewer: an unchanged spec is Important')
+  // A spec edit never enters the git diff: the reviewer reads the blocks the report names itself.
+  assert.match(reviewer, /never enters the git diff, so this is a named check outside the diff/,
+    'the task reviewer: the spec check is a named check outside the diff')
+  assert.match(reviewer, /read each block the report names yourself \(`get_block`, or `conport api document-blocks get-blocks --project <handle> --document_id <id> --block_ulid <ulid>`\)/,
+    'the task reviewer: reads the named blocks itself, through MCP or the shell')
+  assert.match(reviewer, /the report names no changed block, or a block it names does not describe what the diff builds/,
+    'the task reviewer: when the finding is raised')
+  const final = oneLine('sdd-final-reviewer')
+  assert.match(final, /both ways/, 'the final reviewer checks the branch against the spec both ways')
+  assert.match(final, /described and not built/, 'the final reviewer: described and not built')
+  assert.match(final, /built otherwise than described/, 'the final reviewer: built otherwise than described')
+  assert.match(final, /both are \*\*Important\*\*/, 'the final reviewer: both directions are Important')
+  for (const role of READ_ONLY)
+    assert.doesNotMatch(oneLine(role), /(?:change|edit|correct|fix) the spec yourself|update_block|insert_block/,
+      `${role}: a reviewer only finds the miss, it never edits the spec`)
+})
+
 // ------------------------------------------------------------- the dispatch
 
 // Every agent() call of a run, with the type it was dispatched as.
