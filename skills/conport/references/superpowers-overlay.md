@@ -76,14 +76,21 @@ creates).
    the life of one thing, a process with branches — goes in the same portion,
    as its `scenarios` (the part "Scenarios" of that section). Read the names
    of the model (`arch_names`, every page), the scenarios (`arch_scenarios`)
-   and the blocks of the spec (`list_blocks` of `doc-N`), write the portion with
-   `"source": "doc-N"` to `.superpowers/drafts/<date>-<topic>-portion.json`
-   and submit it: `arch_submit(project=<project>, portion=<the portion>)` or
-   `npx -y conport@^0.8.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
+   and the blocks of the spec (`list_blocks` of `doc-N`), and write the portion
+   with `"source": "doc-N"` to `.superpowers/drafts/<date>-<topic>-portion.json`.
+   Before submitting it, review it in the order the part *The review of a
+   document portion* of that section gives: build the
+   reviewer's input with
+   `npx -y conport@^0.9.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
+   run the reviewer (`conport:model-reviewer` in Claude Code), resolve every
+   finding, recheck once when something was fixed, and put the report into
+   `review` of the portion. Then submit it:
+   `arch_submit(project=<project>, portion=<the portion>)` or
+   `npx -y conport@^0.9.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
    A refusal lists every error with its action: take them all and submit
-   again. Delete the file once the portion is accepted. If the spec is
-   amended later, read the portion back with `arch_source`, bring it in line
-   and submit it again.
+   again. Delete the file and the input directory once the portion is
+   accepted. If the spec is amended later, read the portion back with
+   `arch_source`, bring it in line, review it again and submit it again.
 6. **Execution.** `npx -y conport@^0.8.0 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan

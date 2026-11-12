@@ -42,8 +42,8 @@ function skillRefusals() {
 
 test('the conport skill names every write-time refusal of the model', () => {
   const codes = referenceCodes()
-  // Fourteen codes of the entities and eight of the scenarios.
-  assert.equal(codes.length, 22, `the reference lists ${codes.length} codes: ${codes}`)
+  // Fourteen codes of the entities, eight of the scenarios and four of the reviewer's report.
+  assert.equal(codes.length, 26, `the reference lists ${codes.length} codes: ${codes}`)
   const refusals = skillRefusals()
   for (const code of codes) {
     assert.ok(refusals.has(code), `the skill has no row for ${code}`)
@@ -84,7 +84,15 @@ test('the overlay submits the portion right after plan import', () => {
   assert.ok(portion > imported, 'the portion is submitted after the plan import, in the same step')
   const submit = plan.slice(portion)
   assert.match(submit, /arch_submit\(project=<project>, portion=/)
-  assert.match(submit, /npx -y conport@\^0\.8\.0 arch submit /)
+  // The portion is reviewed before it is submitted, by the order the skill gives.
+  const flat = submit.replace(/\s+/g, ' ')
+  const submitted = flat.indexOf('arch_submit(')
+  for (const step of ['*The review of a document portion*', 'npx -y conport@^0.9.0 arch review-input doc-N']) {
+    const at = flat.indexOf(step)
+    assert.ok(at >= 0, `the step has no ${step}`)
+    assert.ok(at < submitted, `${step} comes after arch_submit(`)
+  }
+  assert.match(submit, /npx -y conport@\^0\.9\.0 arch submit /)
   assert.match(submit, /"source": "doc-N"/)
   // Nothing submits a portion before the plan is imported.
   for (const step of steps.slice(0, steps.findIndex((s) => s.title === 'Plan'))) {
@@ -173,13 +181,63 @@ test('the scenario part points a missing kind to the agent-report section', () =
   assert.ok(section(read('SKILL.md'), '## REPORTING TO THE SERVICE DEVELOPERS').includes('No scenario kind fits'))
 })
 
-test('the skill dismisses a whole-scenario finding for a missing kind', () => {
+test('the skill dismisses a whole-scenario finding for a missing kind in the review', () => {
   const part = scenariosPart()
-  const record = jsonBlocks(part).flatMap((block) => block.dismissed ?? []).find((d) => d.where === 'whole_scenario')
-  assert.ok(record, 'no dismissal with where: "whole_scenario"')
+  const record = jsonBlocks(part).flatMap((block) => block.review?.findings ?? []).find((f) => f.where === 'whole_scenario')
+  assert.ok(record, 'no finding with where: "whole_scenario" in `review.findings`')
   assert.equal(record.subject, 'scenario')
   assert.equal(record.kind, 'missing')
+  assert.equal(record.resolution, 'dismissed')
+  assert.ok(record.evidence, 'the finding carries no evidence')
   assert.match(record.reason, /no scenario kind fits/i)
+  // `dismissed` of a portion is for the debt of a step only.
+  assert.deepEqual(jsonBlocks(part).flatMap((block) => block.dismissed ?? []).map((d) => d.kind)
+    .filter((kind) => kind !== 'step_without_relation'), [])
+})
+
+test('the skill runs the reviewer before a document portion is submitted', () => {
+  const model = section(read('SKILL.md'), '## PROJECT MODEL').replace(/\s+/g, ' ')
+  // The input directory, then the reviewer: a subagent, or a separate process by a ready command.
+  assert.match(model, /npx -y conport@\^0\.9\.0 arch review-input doc-N --portion <draft> -o <dir>/)
+  assert.match(model, /`conport:model-reviewer`/)
+  assert.match(model, /npx -y conport@\^0\.9\.0 agent model-reviewer/)
+  for (const command of ['claude -p', 'codex exec --sandbox read-only --output-last-message', 'cursor-agent -p']) {
+    assert.ok(model.includes(command), `no ready command ${command}`)
+  }
+  // One recheck when something was fixed, then the portion goes with `review`.
+  assert.match(model, /--findings <file>/)
+  assert.match(model, /`recheck`/)
+  // A run that fails is repeated once; then the portion goes without a review and the user is told.
+  assert.match(model, /repeat the run once/i)
+  assert.match(model, /never invent a report/i)
+  assert.match(model, /tell the user/i)
+  // A report belongs to one submission.
+  assert.match(model, /read with `arch_source` and submitted back unchanged/)
+  // The report read back, sent again, is refused by layer 1 with its own action, never "fix it by the schema".
+  assert.match(model, /a portion sent back with it is\s+refused as `review_reused` — run the reviewer again, or submit the portion\s+without `review`/)
+  assert.doesNotMatch(model, /sent back with it is\s+`portion_invalid`/)
+  // The file of `arch source -o` holds no `review`: sent back unreviewed, the portion owes the debt.
+  assert.match(model, /`npx -y conport@\^0\.9\.0 arch source <source>` prints `review` the same way, but with `-o <file>` it writes the portion without `review`: that file submitted back without a new review is accepted, and the portion owes `unchecked_portion`/)
+  // A dismissal holds while its evidence stands, so the evidence is carried over as the reviewer gave it.
+  assert.match(model, /`evidence` exactly as the reviewer gave it/)
+  // A ULID stands as the `ulid` of a block or of an item of a list block: reviewers cite item ULIDs too.
+  assert.match(model, /while its evidence stands: the quote word for word in `document\.md`, or its ULID in `blocks\.json` as the `ulid` of a block or of an item of a block \(`attrs\.items\[\]\.ulid`\)/)
+  assert.doesNotMatch(model, /the ULID of its block in `blocks\.json`/)
+  assert.match(model, /comes back, the text of the document changed in that place: resolve it again/)
+  assert.doesNotMatch(model, /the class the finding belongs to/)
+  // The example dismisses a finding the model rightly leaves out, not a true one.
+  const example = jsonBlocks(section(section(read('SKILL.md'), '## PROJECT MODEL'), '### The review of a document portion'))
+    .flatMap((block) => block.review?.findings ?? []).find((f) => f.resolution === 'dismissed')
+  assert.ok(example, 'the review part shows no dismissed finding')
+  assert.match(example.reason, /smaller than the model/)
+  // The fields of `review` and the debt of a portion without one.
+  for (const field of ['reviewer', 'model', 'findings', 'recheck', 'subject', 'kind', 'name', 'where', 'evidence', 'resolution', 'reason']) {
+    assert.match(model, new RegExp('`' + field + '`'), field)
+  }
+  // Only the required fields are `review_malformed` when left out; the others take their defaults.
+  assert.match(model, /so is a required field left out: `reviewer` and `model` of the report, `kind`, `name`, `evidence` and `resolution` of a finding\. Any other field left out takes its default: `findings` empty, `recheck` `false`, `subject` `entity`, `where` and `reason` empty/)
+  assert.doesNotMatch(model, /A rule broken or a field left out is/)
+  assert.match(model, /`unchecked_portion`/)
 })
 
 test('the skill tells to remove a debt dismissal record after it is accepted', () => {

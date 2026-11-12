@@ -6,8 +6,10 @@ ships them under `workflows/` and Claude Code exposes them as slash commands.
 
 ## The agents
 
-The judgement steps of a run are dispatched as the plugin's own agent types,
-which it ships under `agents/` and Claude Code lists under the plugin's name:
+The plugin ships its own agent types under `agents/`, and Claude Code lists
+them under the plugin's name. The judgement steps of a run are dispatched as
+the SDD types. The model reviewer is no step of a run: the session that submits
+a portion of the project model starts it.
 
 | Agent type | Dispatched for | Can edit files |
 |---|---|---|
@@ -16,13 +18,14 @@ which it ships under `agents/` and Claude Code lists under the plugin's name:
 | `conport:sdd-fixer` | the fix round after a review | yes |
 | `conport:sdd-gap-hunter` | the gap hunt of an epic run | no |
 | `conport:sdd-final-reviewer` | the final review of a whole epic branch against its spec, started by the session that leads the epic | no |
+| `conport:model-reviewer` | the review of a document's draft portion of the project model against the document's text, before it is submitted; started by the session that submits the portion | no |
 
-Each carries the standing procedure of its role — read the brief first, test
-first, the checks before the commit, never `git stash`, no subagents of its
-own (the Agent tool is denied to all five) — while the run's prompt supplies
-the task and decides where the dispatch is more specific: which checks to run,
-the branch to create, the structured answer to return. None of them pins a
-model: they run on the model of your session. The other steps — the scout, the
+Each carries the standing procedure of its role — for the SDD roles: read the
+brief first, test first, the checks before the commit, never `git stash`; for
+all of them: no subagents of its own (the Agent tool is denied to all six) —
+while the run's prompt supplies the task and decides where the dispatch is more
+specific: which checks to run, the branch to create, the structured answer to
+return. None of them pins a model: they run on the model of your session. The other steps — the scout, the
 helper's mechanical steps, the rebase, the verification of the hunter's
 findings, the acceptance and the accounting — run as general agents.
 

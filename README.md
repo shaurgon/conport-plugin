@@ -18,12 +18,13 @@ and skills work across many clients.
   - bundled helper `workflows/wf-helper.mjs` — the mechanical half of both (preflight, gate, merge, cleanup, accounting, the review cycle, scouting), so no step of a run depends on a model's mood
 
   See [docs/workflows.md](./docs/workflows.md).
-- **Agents** (Claude Code) — typed subagents for subagent-driven development, listed among your agent types under the plugin's name:
+- **Agents** (Claude Code) — typed subagents for subagent-driven development and for the review of the project model, listed among your agent types under the plugin's name:
   - `conport:sdd-implementer` — one plan task end to end: TDD, commits, a report
   - `conport:sdd-task-reviewer` — one task's diff, two verdicts (spec compliance, code quality); read-only
   - `conport:sdd-fixer` — applies a review's findings to one task, nothing else
   - `conport:sdd-gap-hunter` — what a plan or a finished slice is missing; read-only
   - `conport:sdd-final-reviewer` — a whole epic branch against its spec, after every task has merged; read-only
+  - `conport:model-reviewer` — a document's draft portion of the project model against the document's text, before it is submitted; read-only; started by the session that submits the portion
 
   None of them may start subagents of its own, and none pins a model: each runs on the model of your session. The workflows dispatch the first four; `conport:sdd-final-reviewer` is started by the session that leads an epic with subagent-driven development and hands its findings back in its answer. Dispatch any of them by hand the same way. See [docs/workflows.md](./docs/workflows.md#the-agents).
 - **Hooks** (Claude Code only, Node.js, zero deps)

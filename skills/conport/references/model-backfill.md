@@ -35,8 +35,10 @@ Six steps, in this order:
 - **Documents are not rewritten.** A document created after the inventory is
   approved is not part of the backfill: it lives by the ordinary rules of the
   model.
-- **The cost.** Every document portion gets a background check by an LLM,
-  counted in the team's usage; step 3 starts with an estimate for the user.
+- **The cost.** Every document portion is reviewed before it is submitted,
+  on the user's side: up to two reviewer runs per document on the user's
+  model, not counted in the usage of the team; step 3 starts with an
+  estimate for the user.
 
 ## Step 1. Skeleton
 
@@ -159,17 +161,24 @@ the backfill: only that call does.
 ## Step 3. Pass
 
 **Before the pass** tell the user the estimate: the number of documents with
-a role, their total length in characters, and up to two submissions per
-document. The server measures a document in characters, as in the limit of
-60 000 below, while `content_length` of `list_documents` counts bytes — one
-to four per character, two for a Cyrillic letter. So the sum of
+a role, their total length in characters, and up to two reviewer runs per
+document on the user's model. `content_length` of `list_documents` counts
+bytes — one to four per character, two for a Cyrillic letter — so the sum of
 `content_length` bounds the total length from above: give it as "at most N
-characters". A document whose `content_length` is over 60 000 may still be
-within the limit: its length in characters is the length of the `content` of
-`get_document(project, document_id, raw=true)` — the raw text the server
-measures, without the stubs added on reading.
+characters".
 
 **The order** — by date of creation, then by number.
+
+**The review.** Every document portion is reviewed before it is submitted,
+in the order of the part *The review of a document portion* of the skill's
+section *PROJECT MODEL*: the input directory
+(`npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`),
+the reviewer, every finding fixed or dismissed with a reason, one recheck
+when something was fixed, and the portion submitted with `review`. A long
+document is reviewed like any other: the reviewer reads it block by block.
+When the reviewer fails twice on a document, submit the portion without
+`review`, tell the user, and go on with the pass: the portion owes
+`unchecked_portion`, and the result names it.
 
 **A thing of the document** is looked for in the code (`codegraph` or the
 files), not only in the skeleton: the skeleton is two levels deep. Found —
@@ -181,7 +190,7 @@ scenarios. Its claims set no current state: they go into the history of the
 card. A portion of a document with the role `history` that carries a
 non-empty `scenarios` is refused `scenario_malformed` by the rule
 `history_source`; its action: Submit the portion of a document with the role
-history again without the field `scenarios`. The background check raises no
+history again without the field `scenarios`. The reviewer raises no
 whole-scenario finding for such a document.
 
 **Two documents of the structure contradict each other** — the later one
@@ -193,22 +202,12 @@ result document (step 4), and the contradiction goes into its table.
 - A document that yields more than 150 entities or 30 scenarios: the portion
   carries the top level, and the rest goes into the row "did not fit" of the
   result.
-- A document longer than 60 000 characters is submitted; its background check
-  is `skipped` with the reason `document_too_long`, and the result names that
-  unchecked portion. The same holds for a portion whose whole request to the
-  LLM, with the extraction, is over its limit: its check is `skipped` with
-  `document_too_long` too, and the result names it the same way.
 - A document with nothing to extract submits an empty portion: it closes the
   debt.
 
 **Decisions on the way.** A portion names the decisions its document refers
 to — the document's links to decisions and the numbers in its text — in
 `decisions` of the entity.
-
-**A check `skipped` because the call was not admitted** — the team's usage
-refused it, or the author is no longer a member of the team: stop the pass and
-tell the user. Once the admission is restored, submit the portions of those
-documents again.
 
 ## Step 4. What is gone
 
@@ -259,9 +258,9 @@ not about the structure is a row of the table "decisions without an entity".
 | 2. **Without epic and without code** | entity, type, document |
 | 3. **Contradictions of documents** | entity, documents, what they say, what the code says |
 | 4. **Did not fit** | document, what did not fit into its portion |
-| 5. **Unchecked portions** | document, reason |
+| 5. **Unchecked portions** | document, why its portion went without a review |
 | 6. **Decisions without an entity** | decision, why it is not about the structure |
-| 7. **Trust summary** | the number of entities, the share of built entities, the number of removed entities, the number of unchecked portions, the number of documents without an epic, the number of decisions without an entity |
+| 7. **Trust summary** | the number of entities, the share of built entities, the number of removed entities, the number of unchecked portions (submitted without a review), the number of documents without an epic, the number of decisions without an entity |
 
 When the dates were not set before the pass: one line naming the documents
 with disputed dates, from the list of the inventory (step 2).
@@ -273,26 +272,18 @@ call `arch_backfill(project, state='completed')`. A refusal
 `backfill_not_ready` names what blocks the completion in `blockers`; clear
 each item and call again:
 
-- `debts` — the model still owes work: clear the debts of `arch_status`;
-- `unchecked_portion` — the latest background check of a document portion is
-  neither `done` nor skipped for its size. A `pending` check: wait for it to
-  close; one with `retry_at` failed an attempt and the nightly run checks it
-  again at that time — it is not hung, do not resubmit it. A check `failed`
-  with `answer_truncated`: take the blocker's `action` — it splits the
-  document, so that each check answers about a part. A portion whose `state` is `none`, `failed` or `skipped` for another
-  reason: submit the portion again — the submission starts a new check;
+- `debts` — the model still owes work: clear the debts of `arch_status`. A
+  document portion submitted without a review owes `unchecked_portion` like
+  any other debt: run the reviewer on the portion and submit it again with
+  `review`;
 - `code_source_unchecked` — a `code` source was submitted after the latest
   anchor check: run `npx -y conport@^0.8.0 arch check`.
-
-A portion whose check was skipped for its size (`document_too_long`) does not
-block the completion, nor does a document longer than 60 000 characters whose
-check has not closed yet.
 
 ## Refusals
 
 | Code | When | Do exactly this |
 |---|---|---|
-| `backfill_not_ready` | `completed` while a debt, an unchecked document portion or a `code` source newer than the anchor check is left; `blockers` names each | Clear each item of `blockers` by its kind, as the backfill procedure says, then repeat the call. |
+| `backfill_not_ready` | `completed` while a debt of the model or a `code` source newer than the anchor check is left; `blockers` names each | Clear each item of `blockers` by its kind, as the backfill procedure says, then repeat the call. |
 | `backfill_not_started` | `completed` before the backfill started | Start the backfill first: arch_backfill with state 'in_progress', right after the inventory is approved. |
 | `backfill_already_started` | `declined` after the backfill started | The backfill has started and cannot be declined; leave its state as it is and go on with the session's work. |
 

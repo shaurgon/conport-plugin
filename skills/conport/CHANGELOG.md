@@ -1,5 +1,70 @@
 # conport changelog
 
+## 23.0.0
+
+**Breaking: a document portion is reviewed on your side before it is
+submitted; the server no longer checks portions in the background.** A new
+read-only role, `model-reviewer` (`conport:model-reviewer` in Claude Code,
+`npx -y conport@^0.9.0 agent model-reviewer` for a client without subagents),
+compares a draft portion with its document and answers `missing` and
+`invented` findings, each with its evidence. `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
+writes its input directory outside the working tree. The author resolves
+every finding as `fixed` or `dismissed` with a reason, reruns the reviewer
+once on the fixed findings when there are any, and submits the portion with
+the report in `review` (`reviewer`, `model`, `findings`, `recheck`). When the
+reviewer fails twice, the portion goes without `review` and the user is told;
+a report is never invented. The section PROJECT MODEL of the skill gives the
+order, the ready commands `claude -p`, `codex exec --sandbox read-only
+--output-last-message` and `cursor-agent -p`, the fields of `review` and
+their limits; the Superpowers overlay and the backfill procedure review every
+document portion before `arch_submit`. Both commands need the `conport` CLI
+0.9.0, the first release with the role and `arch review-input`, and so do
+`arch source` and `arch submit`, now named as `npx -y conport@^0.9.0`:
+`arch source -o` of 0.9.0 leaves out the `review` the read answers beside the
+portion, while 0.8 writes it into the file and that file submitted back is
+refused. The other commands stay on `^0.8.0`.
+
+As its last step before the answer, the reviewer checks every finding against
+the `dismissed` findings of `previous-review.json` (in the recheck mode, of
+`findings.json`) and drops each repeat — the same `subject`, `kind` and `name`
+or the same thing under another name, a relation or a scenario as well as an
+entity — while its evidence still stands. A ULID stands as evidence when
+`blocks.json` holds it as the `ulid` of a block or of an item of a block
+(`attrs.items[].ulid`).
+
+The reviewer checks a document whose role in `meta.json` is `null` (no role
+in the inventory) as `structure`, its scenarios included.
+
+`arch_submit` takes `review` on a document portion and answers `review_id`,
+the number of the stored report, instead of `check_id`. Four refusals are
+new: `review_not_for_code` (a `code:` portion takes no `review`),
+`dismissal_moved` (a `missing` or `invented` finding in `dismissed`: move it
+into `review.findings` with `resolution: dismissed`), `review_reused` (the
+report `arch_source` gave back, sent again: run the reviewer again, or submit
+the portion without `review`) and `review_malformed` (a field of `review` left
+out or off its rule). `dismissed` now carries only the
+dismissal of the debt `step_without_relation`. A report belongs to one
+submission: every later submission, even of a portion read back and sent
+unchanged, is reviewed again. `arch_source` gives the current report beside
+the portion under `review`; `arch_sources` and the source of `arch_scenario`
+carry its summary under `review` instead of `check`.
+
+The section PROJECT MODEL of the skill, the command list and the docs page of
+the project model now say that `arch source` printed gives `review` as
+`arch_source` does, while the file of `arch source -o` holds the portion
+without `review`: that file submitted back without a new review is accepted,
+and the portion owes `unchecked_portion`. They also name the required fields of
+`review` — `reviewer` and `model`, and `kind`, `name`, `evidence` and
+`resolution` of a finding — whose absence is `review_malformed`, and the
+defaults of the others: `findings` empty, `recheck` `false`, `subject`
+`entity`, `where` and `reason` empty.
+
+The debt `mismatch` is gone, and a document portion submitted without a
+review owes the debt `unchecked_portion` until it is reviewed and submitted
+again. `arch_status` has no `checks` and no `retries`; the backfill blocker
+`unchecked_portion`, with its `retry_at`, `action` and the exception for long
+documents, is gone too — such a portion blocks the completion as a debt.
+
 ## 22.0.0
 
 **Breaking: the server refuses ordinary growth past the epic ceiling; update

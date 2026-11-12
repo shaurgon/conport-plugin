@@ -1408,17 +1408,31 @@ name existing entities by their names, and take the block ULIDs of the
 document from `list_blocks`. To change a portion, read it (`arch_source`),
 edit it and submit it again.
 
+A document portion is reviewed before every submission: the reviewer
+(`conport:model-reviewer`, or the prompt `npx -y conport@^0.9.0 agent model-reviewer`
+in a separate process) compares the draft with the document, the author
+resolves each finding as `fixed` or `dismissed`, and the report goes with the
+portion in `review`. The server stores the report, trusts it and runs no check
+of its own; a document portion submitted without `review` owes the debt
+`unchecked_portion`. A `code:` portion takes no `review`.
+
 A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.8.0 arch submit <file.json>`,
+`npx -y conport@^0.9.0 arch submit <file.json>`,
 `npx -y conport@^0.8.0 arch withdraw <source>`,
-`npx -y conport@^0.8.0 arch source <source> [-o <file>]` — and one thing no tool
+`npx -y conport@^0.9.0 arch source <source> [-o <file>]` (printed, the portion
+comes with `review` as from `arch_source`; the file of `-o` holds it without
+`review`) — and two things no tool
 does: `npx -y conport@^0.8.0 arch check` in the repository root checks the
-anchors of the model against the code there and sends only the outcome. When
-to submit a portion, which type a thing takes and what each refusal asks for:
-the section *PROJECT MODEL* of the conport skill.
+anchors of the model against the code there and sends only the outcome, and
+`npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
+writes the reviewer's input directory — the document, its blocks, the draft,
+the names and scenarios of the model, the previous report — outside the
+working tree. When to submit a portion, how to review it, which type a thing
+takes and what each refusal asks for: the section *PROJECT MODEL* of the
+conport skill.
 
 **Filling the model of an existing project** — the backfill — is the
 procedure `references/model-backfill.md` of the conport skill; no tool of its
@@ -1449,7 +1463,14 @@ mcp__conport__arch_submit({
     ],
     relations: [
       {type: "contains", source: "Gateway", target: "Search", action: "introduced", block: "<block ULID>"}
-    ]
+    ],
+    review: {
+      reviewer: "model-reviewer@<version>", model: "<model>", recheck: false,
+      findings: [
+        {subject: "entity", kind: "missing", name: "Cache", where: "", evidence: "<block ULID>",
+         resolution: "dismissed", reason: "A library, not a part of the system"}
+      ]
+    }
   }
 })
 ```
@@ -1457,7 +1478,7 @@ mcp__conport__arch_submit({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| portion | object | yes | `source` (`doc-N` or `code:<label>`), `entities`, `relations`, `dismissed`, `scenarios` |
+| portion | object | yes | `source` (`doc-N` or `code:<label>`), `entities`, `relations`, `dismissed`, `scenarios`, `review` |
 
 An entity: `name`, `type` (required for a new one), `action` (introduced \|
 changed \| removed \| replaced \| mentioned), `block` (a block ULID of the
@@ -1468,19 +1489,32 @@ optionally `description`, `aliases`, `technologies`, `properties` (`name`,
 `replaced` only) and `decisions` (decision numbers). A relation: `type`,
 `source`, `target` (names or aliases), `action`, `block`, and optionally
 `label` and `constraints`. A code portion takes only `introduced`. `dismissed`
-lists findings of the background check the agent rejects: `subject` (entity \|
-scenario, entity by default), `kind` (missing \| invented, and
-step_without_relation for the debt of a scenario), `name`, `where` (for a
-scenario: the text of the step, or `whole_scenario`; empty for an entity),
-`reason`. A relation is dismissed as an entity named `Source type Target`
-(`relation` is no subject). A dismissal also takes a later finding of the same
-`subject` and `kind` under another spelling: arrows and colons aside, and an
-entity's `X (y)` with `y` as code (`_`, `/`, `.`, `{}`) taken for the whole `X`
-or the whole `y`. A plain word in brackets makes another thing (`API_HOST
-(agent)` is not `API_HOST`); a relation, `Source type Target` or `Source →
-Target`, is never unwrapped. `X (y)` is unwrapped, on either side, for a
-`missing` finding only: an `invented` finding and its dismissal are compared by
-their whole names.
+lists only the dismissals of the debt `step_without_relation` of a scenario:
+`subject` `scenario`, `kind` `step_without_relation`, `name` (the scenario),
+`where` (the text of the step), `reason`.
+
+`review` is the reviewer's report of a document portion, and a code portion
+takes none: `reviewer` (`model-reviewer@<version>`, from the reviewer's answer;
+at most 200 characters), `model` (at most 200), `findings` (at most 500; empty when left out) and
+`recheck` (true only when the reviewer checked the fixes again, and then at
+least one finding is `fixed`; false when left out). A finding: `subject` (entity \| scenario, entity
+by default), `kind` (missing \| invented), `name` (at most 500; a relation is
+named `Source type Target`, a scenario by its name), `where` (empty for an
+entity; for a scenario the text of the step or `whole_scenario`; at most 500;
+empty by default),
+`evidence` (a block ULID or a quote; at most 500), `resolution` (fixed \|
+dismissed) and `reason` (required with `dismissed`; at most 1000; empty by
+default). A text of
+blank space is empty. A portion without `review` is accepted and owes a review.
+The report belongs to one submission: a portion read with `arch_source` and
+submitted again goes through the reviewer again. The report read back carries
+`id` and `at`, and sent again it is `review_reused`: run the reviewer again, or
+submit the portion without `review`. The file of `arch source -o` holds the
+portion without `review`: submitted back without a new review, it is accepted
+and the portion owes `unchecked_portion`. A required field left out —
+`reviewer` and `model` of the report, `kind`, `name`, `evidence` and
+`resolution` of a finding — is `review_malformed`; any other field left out
+takes its default.
 
 `scenarios` lists the behaviour scenarios of the source: without the field
 the scenarios of the source stay, an empty list deletes them, a list replaces
@@ -1501,8 +1535,8 @@ Entities are named by a name or an alias of the portion or of `arch_names`.
 
 **Returns:** `source`, `entities` and `relations` (`created`, `updated`,
 `deleted`), `scenarios` (`created`, `updated`, `deleted`; null when the
-portion has no field `scenarios`), `check_id` — the background check of a
-document portion (null for code).
+portion has no field `scenarios`), `review_id` — the number of the stored
+report (null for a portion without `review` and for code).
 
 **Refusals:** a portion the write-time check refuses answers
 `{"error": "portion_rejected", "errors": [{code, subject, message, action}]}`
@@ -1514,8 +1548,9 @@ with every error at once, and nothing is written. The codes:
 `portion_too_large`, `entity_reference_missing`, `unknown_scenario_kind`,
 `unknown_node_kind`, `scenario_participant_missing`,
 `scenario_participant_removed`, `scenario_ref_unknown`, `scenario_malformed`,
-`scenario_name_taken`, `scenario_too_large`. A portion off the schema is
-`portion_invalid`.
+`scenario_name_taken`, `scenario_too_large`, `review_not_for_code`,
+`dismissal_moved`, `review_reused`, `review_malformed`.
+A portion off the schema is `portion_invalid`.
 
 ### arch_withdraw
 
@@ -1557,10 +1592,15 @@ mcp__conport__arch_source({
 | project | string | yes | Project handle or name |
 | source | string | yes | `doc-N` or `code:<label>` |
 
-**Returns:** `source`, `entities`, `relations`, `dismissed`, `scenarios` (in
-the form of a submission; empty for a source without scenarios). A dismissal
-of the debt `step_without_relation` is kept on its scenario and is not given
-back.
+**Returns:** the portion — `source`, `entities`, `relations`, `dismissed`,
+`scenarios` (in the form of a submission; empty for a source without
+scenarios) — and beside it `review`: the reviewer's report of the current
+submission (`id`, `reviewer`, `model`, `recheck`, `findings` — each with its
+`resolution` and `reason` —, `at`), null for a portion submitted without one.
+`review` is not part of the portion: submit the portion without it, with the
+report of a new review. `dismissed` carries only the dismissals of the debt
+`step_without_relation` its scenarios keep; submitted again with the same
+reason they change nothing.
 
 **Refusals:** `source_malformed`, `portion_not_found`.
 
@@ -1579,8 +1619,11 @@ mcp__conport__arch_sources({
 | project | string | yes | Project handle or name |
 
 **Returns:** `sources` (`source`, `kind`, `document_id`, `title`, `author`,
-`submitted_at`, `stale` — the document changed after the submission, `check`
-— the state and reason of its latest background check).
+`submitted_at`, `stale` — the document changed after the submission,
+`review` — the summary of the reviewer's report of the current submission:
+`reviewer`, `model`, `found` (the findings of both passes), `fixed`,
+`dismissed`, `recheck`, `at`; null for the code and for a portion submitted
+without one).
 
 ### arch_names
 
@@ -1706,14 +1749,10 @@ mcp__conport__arch_status({
 | unlinked_after | integer | no | While the backfill runs: the page of `unlinked_decisions` starts after this decision number, 0 to 2147483647 |
 
 **Returns:** `total`, `debts` (`kind` — no_portion \| portion_stale \|
-mismatch \| anchor_missing \| check_stale \| removed_but_present \|
+unchecked_portion \| anchor_missing \| check_stale \| removed_but_present \|
 step_without_relation \| scenario_participant_gone, `subject`, `detail`,
 `action`, a `no_portion` debt its `role`, and for a debt of a scenario its
-`scenario_id`), `checks` (the latest background checks that were skipped or
-failed: `source`, `state`, `reason`, and for one failed with
-`answer_truncated` its `action`), `retries` (the latest background checks
-whose attempt failed and that wait for the nightly retry: `source`, `reason`,
-`retry_at` — when that run checks them again), `backfill` (`state`, `completed_at`,
+`scenario_id`), `backfill` (`state`, `completed_at`,
 `documents` — the documents with the role structure or history, `submitted`
 — those of them with a portion, `code_sources`, `filled`, `offer`). While the
 backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,
@@ -1766,8 +1805,10 @@ mcp__conport__arch_scenario({
 | scenario_id | integer | yes | The number of the scenario |
 
 **Returns:** `id`, `name`, `kind`, `description`, `source` (`source`,
-`kind`, `document_id`, `title`, `submitted_at`, `stale`, `check`,
-`document_state`), `block`, `block_missing`, `anchor`, `anchor_status`
+`kind`, `document_id`, `title`, `submitted_at`, `stale`, `review` — the
+summary of the current report: `reviewer`, `model`, `found`, `fixed`,
+`dismissed`, `recheck`, `at`, null without one — `document_state`), `block`,
+`block_missing`, `anchor`, `anchor_status`
 (found \| missing \| unchecked, null without a check), `debt_dismissal`
 (`reason`, null without one), `subject`, `nodes`, `steps`.
 
@@ -1793,9 +1834,9 @@ mcp__conport__arch_backfill({
 `in_progress` starts the backfill from any state, right after the inventory of
 the documents is approved and their roles are written. `completed` closes it,
 from `in_progress`, and again on a completed backfill, which keeps its date of
-completion: the server accepts it only without a debt of the model, with every
-document portion passed by its background check or skipped for its size, and
-every code source no newer than the last anchor check.
+completion: the server accepts it only without a debt of the model — a
+document portion submitted without a review is one, `unchecked_portion` — and
+with every code source no newer than the last anchor check.
 `declined` — only on the user's refusal, before the start.
 
 **Returns:** `state`, `completed_at`, `documents`, `submitted`,
@@ -1803,9 +1844,6 @@ every code source no newer than the last anchor check.
 
 **Refusals:** `{"error", "action", "blockers"}` —
 `backfill_not_ready` (`blockers`: `debts` with their `count`,
-`unchecked_portion` with its `subject`, `state` and `reason`, `retry_at`
-when its check waits for the nightly retry and `action` when it failed with
-`answer_truncated`,
 `code_source_unchecked` with its `subject`), `backfill_not_started`,
 `backfill_already_started`.
 

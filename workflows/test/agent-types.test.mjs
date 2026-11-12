@@ -5,9 +5,11 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflow, taskRun, epicRun } from './run-workflow.mjs'
 
-// The plugin ships five typed agents under agents/. The workflows dispatch
-// their implementer, reviewer, fixer and gap hunter by those types; the final
-// reviewer is started by the session that leads an epic. Claude Code
+// The plugin ships six typed agents under agents/: the five SDD roles and the
+// model reviewer. The workflows dispatch their implementer, reviewer, fixer and
+// gap hunter by those types; the final reviewer is started by the session that
+// leads an epic, the model reviewer by the session that submits a portion of the
+// project model. Claude Code
 // names a plugin agent <plugin name>:<agent name>, so the type a workflow passes
 // must be the manifest's name and the name of a shipped definition — a type that
 // names nothing makes agent() throw and the run dies at its first dispatch.
@@ -17,6 +19,8 @@ const AGENTS = join(PLUGIN, 'agents')
 const MANIFEST = JSON.parse(readFileSync(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'))
 
 const ROLES = ['sdd-implementer', 'sdd-task-reviewer', 'sdd-fixer', 'sdd-gap-hunter', 'sdd-final-reviewer']
+// SDD roles stay a constant of their own; the shipped set is SDD + the reviewer
+const OTHER_ROLES = ['model-reviewer']
 const READ_ONLY = ['sdd-task-reviewer', 'sdd-gap-hunter', 'sdd-final-reviewer']
 const typeOf = role => `${MANIFEST.name}:${role}`
 
@@ -36,10 +40,10 @@ const list = v => (v ?? '').split(',').map(s => s.trim()).filter(Boolean)
 
 // ------------------------------------------------------------- the definitions
 
-test('agents/ ships exactly the five SDD agents, each named as its file', () => {
+test('agents/ ships the five SDD agents and the model reviewer, each named as its file', () => {
   const files = readdirSync(AGENTS).filter(f => f.endsWith('.md')).sort()
-  assert.deepEqual(files, ROLES.map(r => r + '.md').sort())
-  for (const role of ROLES) {
+  assert.deepEqual(files, [...ROLES, ...OTHER_ROLES].map(r => r + '.md').sort())
+  for (const role of [...ROLES, ...OTHER_ROLES]) {
     const { fields, body } = frontmatter(role + '.md')
     assert.equal(fields.name, role, `${role}: the name is the file name`)
     assert.ok(fields.description && fields.description.length > 40, `${role}: a description says when to dispatch it`)
@@ -73,6 +77,14 @@ test('no agent narrows its tools to an allowlist: the ConPort MCP tools stay rea
     assert.equal(frontmatter(role + '.md').fields.tools, undefined, role)
 })
 
+test('the model reviewer pins no model, starts no agent and edits nothing', () => {
+  const { fields } = frontmatter('model-reviewer.md')
+  assert.equal(fields.model, undefined)
+  assert.equal(fields.tools, undefined)
+  for (const tool of ['Agent', 'Edit', 'Write', 'NotebookEdit'])
+    assert.ok(list(fields.disallowedTools).includes(tool), tool)
+})
+
 // ------------------------------------------------------------- without a workflow
 
 // A session that leads an epic starts an agent of any kind in a role and reads
@@ -80,6 +92,70 @@ test('no agent narrows its tools to an allowlist: the ConPort MCP tools stay rea
 // the shell command that does it, for an agent without the ConPort MCP tools,
 // and every command carries -p <handle>.
 const body = role => frontmatter(role + '.md').body
+
+test('the model reviewer reads only its input directory and answers in the fixed form', () => {
+  const text = body('model-reviewer')
+  for (const file of ['document.md', 'blocks.json', 'portion.json', 'names.json', 'scenarios.json',
+                      'previous-review.json', 'meta.json', 'findings.json'])
+    assert.match(text, new RegExp('`' + file.replace('.', '\\.') + '`'), file)
+  assert.doesNotMatch(text, /mcp__|add_task_journal_entry|npx |conport (journal|arch|task)/)
+  const version = /^Role version: (\d+\.\d+\.\d+)$/m.exec(text)?.[1]
+  assert.ok(version, 'no version line')
+  const answer = [...text.matchAll(/```json\n([\s\S]*?)```/g)].map(m => JSON.parse(m[1])).find(b => b.findings)
+  assert.equal(answer.reviewer, `model-reviewer@${version}`)
+  assert.deepEqual(Object.keys(answer.findings[0]).sort(), ['evidence', 'kind', 'name', 'subject', 'where'])
+})
+
+// A reviewer that raises a dismissed finding again makes the author dismiss it
+// a second time; the rule alone in "The findings" was skipped, for relations
+// most of all. So the answer starts with a check of every finding against the
+// dismissed ones, for relations and scenarios as for entities, in both modes.
+test('the model reviewer drops every repeat of a dismissed finding as the last step before its answer', () => {
+  const text = body('model-reviewer')
+  const answer = text.slice(text.indexOf('## The answer')).split('```json')[0].replace(/\s+/g, ' ')
+  assert.match(answer, /\*\*Before you answer, drop every repeat\.\*\*/, 'a step of its own before the JSON')
+  assert.match(answer, /check each finding of your answer against `previous-review\.json`/, 'every finding is checked')
+  assert.match(answer, /resolution `dismissed` and the same `subject`, `kind` and `name`, or the same thing under another name/,
+    'what a repeat is')
+  assert.match(answer, /its quote stands verbatim in `document\.md`, or its ULID stands in `blocks\.json`/,
+    'while its evidence stands')
+  assert.match(answer, /remove your finding from the answer/, 'the repeat is removed, not reported')
+  assert.match(answer, /a relation and a scenario exactly as for an entity/, 'relations and scenarios too')
+  assert.match(answer, /In the recheck mode, check the same against `findings\.json`: remove every finding that repeats one whose resolution there is `dismissed`/,
+    'the recheck mode too')
+})
+
+// A list block of blocks.json carries a ULID for each of its items
+// (`attrs.items[].ulid`), and a reviewer cites those as evidence. A role that
+// counted only the top-level `ulid` read such evidence as gone and raised the
+// dismissed finding again. One definition says both stand; every place that
+// asks whether a ULID stands uses it.
+test('the model reviewer counts the ULID of an item of a block as standing evidence', () => {
+  const text = body('model-reviewer').replace(/\s+/g, ' ')
+  assert.match(text, /\*\*A ULID stands in `blocks\.json`\*\* when a block there has it as its `ulid` or holds it as the `ulid` of one of its items \(`attrs\.items\[\]\.ulid`\)/,
+    'one definition of a standing ULID')
+  assert.match(text, /\| `blocks\.json` \| The blocks of the document, each with its ULID and its text; a list block also gives each of its items a ULID \(`attrs\.items\[\]\.ulid`\)\. \|/,
+    'the input table names the item ULIDs')
+  const previous = text.slice(text.indexOf('**The previous review.**'), text.indexOf('## The recheck mode'))
+  assert.match(previous, /or its ULID stands in `blocks\.json`/, 'the previous review uses the definition')
+  assert.match(text, /- Every finding carries its evidence: the ULID of a block of the document or of an item of a block, or a verbatim quote/,
+    'a finding may cite an item ULID')
+  assert.match(text, /- `evidence` is the ULID of a block or of an item of a block from `blocks\.json`/,
+    'the answer field names the item ULID')
+  assert.doesNotMatch(text, /the block of its ULID is in|its ULID is in `blocks\.json`/, 'no narrower wording is left')
+})
+
+// `meta.json` carries `role: null` for a document the inventory gave no role.
+// A role that named only `structure` and `history` left the reviewer to guess
+// whether such a document has scenarios; `null` is checked as `structure`.
+test('the model reviewer checks a document whose role is null as structure', () => {
+  const text = body('model-reviewer').replace(/\s+/g, ' ')
+  assert.match(text, /\| `meta\.json` \| The project, the document and the document's role in the model: `structure`, `history`, or `null` for a document without a role in the inventory\. \|/,
+    'the input table names the null role')
+  const model = text.slice(text.indexOf('## What the model holds'), text.indexOf('The boundary of the model'))
+  assert.match(model, /A document whose role is `null` is checked as `structure`: its scenarios are checked too\./,
+    'a null role is checked as structure')
+})
 
 test('the implementer, the reviewer and the fixer write the journal through MCP or `conport journal add -p <handle>`', () => {
   for (const role of ['sdd-implementer', 'sdd-task-reviewer', 'sdd-fixer']) {

@@ -64,6 +64,9 @@ test('the procedure names the six steps in their order', () => {
   const frame = oneLine(procedure().slice(0, procedure().indexOf('## Step 1.')))
   for (const n of [1, 2, 3, 4, 5, 6]) assert.match(frame, new RegExp(`\\| ${n}\\. `), `the frame has no row of step ${n}`)
   assert.match(frame, /Done when/)
+  // The cost is the user's: the reviewer runs on their model, not on the team's usage.
+  assert.match(frame, /up to two reviewer runs per document on the user's model/)
+  assert.doesNotMatch(frame, /team's usage/)
 })
 
 test('the procedure names the inventory and the result document by their exact titles', () => {
@@ -142,26 +145,32 @@ test('the procedure tells how to build a code label and when to split it', () =>
   assert.match(skeleton, /no tool of its own builds the skeleton/i)
 })
 
-test('the procedure carries the limits 150, 30 and 60 000', () => {
+test('the procedure carries the limits 150 and 30', () => {
   const pass = step(3)
   assert.match(pass, /more than 150 entities or 30 scenarios/)
   assert.match(pass, /"did not fit"/)
-  assert.match(pass, /longer than 60 000 characters/)
-  // The second case of a check skipped for its size: the whole request is over its limit.
-  assert.match(pass, /whole request[^.]*over its limit/)
-  assert.match(pass, /`document_too_long`/)
   assert.match(pass, /an empty portion/)
+  // No limit of a background check is left: a long document is reviewed like any other.
+  assert.doesNotMatch(pass, /`document_too_long`|60 000/)
 })
 
-test('the estimate of the pass counts characters, the unit of the limit of the check', () => {
+test('the estimate of the pass counts characters and the reviewer runs', () => {
   const pass = step(3)
-  // The server measures `document_too_long` in characters; `content_length` counts bytes.
+  // `content_length` counts bytes, so it bounds the length in characters from above.
   assert.match(pass, /their total length in characters/)
   assert.match(pass, /`content_length` of `list_documents` counts bytes/)
   assert.match(pass, /"at most N characters"/)
-  // The server measures the raw text: `get_document` without `raw=true` adds render-time stubs.
-  assert.match(pass, /the length of the `content` of `get_document\(project, document_id, raw=true\)`/)
+  assert.match(pass, /up to two reviewer runs per document/)
   assert.doesNotMatch(pass, /their total length \(`content_length`/)
+})
+
+test('the pass reviews every document portion before it is submitted', () => {
+  const pass = step(3)
+  assert.match(pass, /reviewed before it is submitted/)
+  assert.match(pass, /\*The review of a document portion\*/)
+  assert.match(pass, /npx -y conport@\^0\.9\.0 arch review-input/)
+  // A check refused by the team's usage is gone with the check itself.
+  assert.doesNotMatch(pass, /not admitted|team's usage/)
 })
 
 test('the pass goes by the current dates when no operator of the server can set them', () => {
@@ -172,13 +181,6 @@ test('the pass goes by the current dates when no operator of the server can set 
   // The result is written by step 4 and its tables: they name that line too.
   const tables = oneLine(section(procedure(), '## The tables of the result'))
   assert.match(tables, /When the dates were not set before the pass: one line naming the documents with disputed dates, from the list of the inventory/)
-})
-
-test('the procedure tells to stop the pass on a refused admission', () => {
-  const pass = step(3)
-  assert.match(pass, /`skipped` because the call was not admitted/)
-  assert.match(pass, /stop the pass and tell the user/)
-  assert.match(pass, /submit the portions of those documents again/)
 })
 
 test('the procedure grounds a result claim on the block of its table', () => {
@@ -217,8 +219,9 @@ test('the procedure names every refusal of the backfill with its action', () => 
   for (const [code, action] of Object.entries(actions)) assert.equal(rows.get(code), action, code)
   const debts = oneLine(step(6))
   assert.match(debts, /`backfill_not_ready` names what blocks the completion/)
-  // A portion with no check at all (`state` `none`) has its own action too.
-  assert.match(debts, /a portion whose `state` is `none`, `failed` or `skipped` for another reason: submit the portion again/i)
+  // A portion submitted without a review is a debt like any other: the reviewer and a new submission clear it.
+  assert.match(debts, /`unchecked_portion`[^.]*run the reviewer on the portion and submit it again with `review`/i)
+  assert.doesNotMatch(debts, /retry_at|answer_truncated|60 000|`state` is `none`/)
 })
 
 test('the procedure warns that the none role withdraws the portion of a document', () => {
@@ -293,7 +296,7 @@ test("the skill's no_portion debt names the role rule", () => {
 
 test('the skill says a history source gets no whole-scenario finding', () => {
   const model = oneLine(modelSection())
-  assert.match(model, /A document with the role `history` submits no scenarios, and the background check raises no whole-scenario finding for it/)
+  assert.match(model, /A document with the role `history` submits no scenarios, and the reviewer raises no whole-scenario finding for it/)
   assert.match(model, /Submit the portion of a document with the role history again without the field `scenarios`\./)
   // The dismissal of a whole-scenario finding for a missing kind stays as it was.
   assert.match(model, /When no scenario kind fits that behaviour, dismiss the whole-scenario finding for that reason/)

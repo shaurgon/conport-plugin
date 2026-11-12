@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 22.0.0
+  version: 23.0.0
 ---
 
 # ConPort — Project Management System
@@ -727,16 +727,18 @@ epic or reporting an epic's progress.
 ## PROJECT MODEL
 
 The project model is the graph of what the system is made of: entities and
-the relations between them, each of a closed set of types. You write it, the
-server checks it, and the Architecture section of the dashboard draws its views
-from it. The model is made of **portions**: what one source says about the
-system. A source is a `spec` or `architecture` document (`doc-N`), a document
-of any type the backfill inventory gave the role `structure` or `history`, or
-a part of the code (`code:<label>`, as many labels as you need); a document
-with the role `none` is never a source. A new submission of a
-source replaces its earlier portion as a whole and leaves the other sources
-alone. A portion also carries the **scenarios** of its source — how the system
-behaves, drawn from entities of the model: see *Scenarios* below.
+the relations between them, each of a closed set of types. You write it, a
+reviewer on your side checks a document portion against its document before
+you submit it, the server checks its form, and the Architecture section of the
+dashboard draws its views from it. The model is made of **portions**: what one
+source says about the system. A source is a `spec` or `architecture`
+document (`doc-N`), a document of any type the backfill inventory gave the
+role `structure` or `history`, or a part of the code (`code:<label>`, as many
+labels as you need); a document with the role `none` is never a source. A new
+submission of a source replaces its earlier portion as a whole and leaves the
+other sources alone. A portion also carries the **scenarios** of its source —
+how the system behaves, drawn from entities of the model: see *Scenarios*
+below.
 
 | Trigger | Tool |
 |---------|------|
@@ -745,8 +747,9 @@ behaves, drawn from entities of the model: see *Scenarios* below.
 | "What did these specs bring in?" | `arch_get` with `view='contribution'` (one to three `documents`) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
-| Submit or replace a portion | `arch_submit` (or `npx -y conport@^0.8.0 arch submit <file.json>`) |
-| Change a portion | `arch_source` (or `npx -y conport@^0.8.0 arch source <source>`), edit, `arch_submit` |
+| Review a document portion before submitting it | `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
+| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.9.0 arch submit <file.json>`) |
+| Change a portion | `arch_source` (or `npx -y conport@^0.9.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
 | Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.8.0 arch withdraw <source>`) |
 | "Which behaviour scenarios does the project have?" | `arch_scenarios` |
 | One scenario with its participants, states or nodes and steps | `arch_scenario` |
@@ -812,15 +815,17 @@ with the block that states it.
 ### When to submit a portion
 
 - **A spec gets its plan.** Once the plan of a `spec` document is imported,
-  submit the spec's portion. A spec still changes while it is written and
-  checked; it settles when its plan is imported, so the portion comes then,
-  before the implementation. Its scenarios go in the same portion. In the
+  review the spec's portion and submit it with its `review`. A spec still
+  changes while it is written and checked; it settles when its plan is
+  imported, so the portion comes then, before the implementation. Its
+  scenarios go in the same portion. Before `arch_submit` the portion goes
+  through the review (*The review of a document portion*). In the
   Superpowers overlay this is the step right after `plan import`; without the
   overlay the rule is the same.
 - **A spec is amended after its plan.** Read its portion (`arch_source`),
-  bring it in line with the document and submit it again.
-- **An `architecture` document** has no plan: submit its portion whenever it
-  is written or changed.
+  bring it in line with the document, review it and submit it again.
+- **An `architecture` document** has no plan: review and submit its portion
+  whenever it is written or changed.
 - **The code.** Write the skeleton yourself, reading the code through
   `codegraph` or the files: one unit per source `code:<label>`. Submitting one
   label leaves the others as they are; to add to a skeleton, read its portion,
@@ -846,46 +851,139 @@ runs or after it is completed; before that it owes nothing.
    `replaced` (with `replaced_by`) or `mentioned`. A relation carries `type`,
    `source`, `target` (names or aliases), `action` and `block`. A `code`
    portion takes only `introduced` and carries anchors, not blocks.
-4. **Submit it** with `arch_submit(project, portion)`, or write it to a file
-   and run `npx -y conport@^0.8.0 arch submit <file.json>`.
-5. **A refusal** is `portion_rejected` with every error at once, each with its
+4. **Review a document portion** before you submit it: write the portion to
+   a file and run the reviewer on it — *The review of a document portion*
+   below. A `code:` portion is not reviewed: the anchor check checks it.
+5. **Submit it** with `arch_submit(project, portion)`, the report of the
+   reviewer in `review` of the portion, or write it to a file and run
+   `npx -y conport@^0.9.0 arch submit <file.json>`. The answer carries
+   `review_id`, the number of the stored report (null without one).
+6. **A refusal** is `portion_rejected` with every error at once, each with its
    `code`, `subject` and `action`; nothing was written. Take the action of each
    error and submit again. `portion_invalid` is a portion off the schema: its
    message names the field.
-6. **The background check.** A document portion is checked against the text
-   of its document by an LLM after the answer: what the document names and the
-   portion misses, and what the portion holds and the document does not. Open
-   findings come back as the debt `mismatch`. A finding you judge wrong goes
-   into `dismissed` of the next submission — `subject` (`entity`, the default,
-   or `scenario`), `kind` (`missing` or `invented`), `name`, `where` (for a
-   scenario: the text of the step, or `whole_scenario`) and `reason` — and is
-   not raised again. A finding about a relation is a finding about an entity
-   named `Source type Target`: dismiss it without `subject` or with `entity`;
-   `relation` is no subject and makes the portion `portion_invalid`. The server
-   drops a later finding of the same `subject` and `kind` under another
-   spelling of a dismissed name: arrows and colons aside (`FACT :Entity →
-   :Entity` is `FACT Entity → Entity`), and an entity written `X (y)` with `y`
-   as code (it holds `_`, `/`, `.` or `{}`) taken for the whole `X` or the
-   whole `y` — `agent_event` goes with `Agent event (agent_event)`. A plain
-   word in brackets makes another thing (`API_HOST (agent)` is not
-   `API_HOST`), as do two wrapped names sharing only a part, a word more or
-   less and another end of a relation; a relation — `Source type Target` or
-   `Source → Target` — is never unwrapped. `X (y)` is unwrapped, on either
-   side, for a `missing` finding only. An `invented` finding and its
-   dismissal both name entities the portion holds, so they are compared by
-   their whole names: a dismissal of `Точка входа (cli/conport)` takes
-   `missing: cli/conport` but not `invented: cli/conport`, and a dismissal of
-   `cli/conport` does not take `invented: Точка входа (cli/conport)`. The next check shows the model your dismissals with
-   their reasons and tells it to raise none of them under another name, nor
-   another finding a reason covers just as well. So write the reason as the
-   class the finding belongs to — "a function, smaller than the model", "a
-   file", "a reference to a ConPort record" — and one reason keeps away the
-   other findings of that class too. A finding the model still raises under
-   another name goes into `dismissed` like any other.
 
 A decision about an entity is linked by its number in `decisions` of the
 entity, or with `link_items` (`decision` → `entity`, `clarifies`). A
 submission only adds such links; it removes none.
+
+### The review of a document portion
+
+The reviewer is a separate agent that reads only a directory of files: the
+document, its blocks, your draft, the names and scenarios of the model and the
+report of the previous submission. It needs neither the network nor ConPort
+and runs read-only, on the user's default model: pass it no model. It answers
+with findings: `missing` — a thing the document names as part of the system and
+the draft does not claim under any name; `invented` — a thing of the draft the
+document does not state. The server stores the report you submit and trusts
+it: no check of a portion runs on the server.
+
+1. **Write the draft** of the portion to a file.
+2. **Build the input directory**:
+   `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`,
+   with `<dir>` outside the working tree. It holds `document.md`,
+   `blocks.json`, `portion.json`, `names.json`, `scenarios.json`, `meta.json`
+   and, when the document has a report, `previous-review.json`.
+3. **Run the reviewer** on `<dir>`. In Claude Code dispatch the subagent
+   `conport:model-reviewer` with the path of `<dir>`. A client without
+   subagents starts a separate process whose prompt is the output of
+   `npx -y conport@^0.9.0 agent model-reviewer` followed by the path of
+   `<dir>`, and writes its answer to a file:
+
+   ```
+   PROMPT="$(npx -y conport@^0.9.0 agent model-reviewer)
+
+   Input directory: <dir>"
+   claude -p --add-dir <dir> "$PROMPT" > <answer.json>
+   codex exec --sandbox read-only --output-last-message <answer.json> "$PROMPT"
+   cursor-agent -p "$PROMPT" > <answer.json>
+   ```
+
+   The answer is one JSON object: `reviewer` (`model-reviewer@<version>`),
+   `model` and `findings`, each finding with `subject`, `kind`, `name`, `where`
+   and `evidence` (the ULID of a block or a quote of the document).
+   **When the answer is not that JSON, is empty, or the run did not finish**
+   (a limit, a timeout), repeat the run once. When it fails again, submit the
+   portion without `review` — it owes the debt `unchecked_portion` — and tell
+   the user that the portion went unreviewed and why. Never invent a report.
+4. **Resolve every finding.** Fix the draft and mark the finding
+   `resolution: fixed`, or mark it `resolution: dismissed` with its `reason`.
+   No finding stays open. Carry each finding over with its `subject`, `kind`,
+   `name`, `where` and `evidence` exactly as the reviewer gave it: never
+   retell or shorten the evidence. The next review reads your dismissals in
+   `previous-review.json` and does not raise a dismissed finding (the same
+   `subject`, `kind` and `name`) again while its evidence stands: the quote
+   word for word in `document.md`, or its ULID in `blocks.json` as the `ulid`
+   of a block or of an item of a block (`attrs.items[].ulid`).
+   When a dismissed finding comes back, the text of the document changed in
+   that place: resolve it again. The reason explains your decision to the
+   reader; it keeps no other finding away.
+5. **Recheck once when something was fixed.** Write the findings with their
+   resolutions to a file, build the directory again with the new draft —
+   `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
+   — and run the reviewer once more. It checks only the fixed findings: did the
+   fix close the finding and break no neighbouring entity, relation or
+   scenario. Resolve its findings the same way; they go into the same report,
+   and `recheck` is `true`. There is no third run. When nothing was fixed —
+   no findings, or all dismissed — there is no recheck and `recheck` is
+   `false`.
+6. **Submit the portion with `review`**: `reviewer` and `model` from the
+   answer, `findings` — every finding of both runs with its `resolution` and
+   `reason` — and `recheck`.
+
+```json
+{"review": {
+  "reviewer": "model-reviewer@1.0.0",
+  "model": "<the reviewer's model, from its answer>",
+  "recheck": true,
+  "findings": [
+    {"subject": "entity", "kind": "missing", "name": "Payment events", "where": "",
+     "evidence": "<block ULID>", "resolution": "fixed"},
+    {"subject": "entity", "kind": "missing", "name": "charge_with_retry", "where": "",
+     "evidence": "<block ULID>", "resolution": "dismissed",
+     "reason": "A function, smaller than the model: the Payment service that runs it is in the portion"}
+  ]
+}}
+```
+
+**A report belongs to one submission.** Every later submission of the
+portion — even one read with `arch_source` and submitted back unchanged —
+goes through the review again, or the portion owes `unchecked_portion`.
+`arch_source` gives the current report back under the key `review`, beside
+the portion: it carries `id` and `at`, and a portion sent back with it is
+refused as `review_reused` — run the reviewer again, or submit the portion
+without `review`. Never strip `id` and `at` to send the old report as new.
+`npx -y conport@^0.9.0 arch source <source>` prints `review` the same way, but
+with `-o <file>` it writes the portion without `review`: that file submitted
+back without a new review is accepted, and the portion owes `unchecked_portion`.
+
+**The fields of `review`:**
+
+| Field | Rule |
+|---|---|
+| `reviewer`, `model` | Not empty, at most 200 characters each; taken from the reviewer's answer |
+| `findings` | At most 500 findings; may be empty, and empty when left out |
+| `recheck` | `true` only when at least one finding is `fixed`; `false` when left out |
+| `subject` | `entity` (the default) or `scenario` |
+| `kind` | `missing` or `invented` |
+| `name` | Not empty, at most 500 characters. A relation is named `Source type Target` with the subject `entity`; a scenario by its name, or by the heading of its section when the draft has no such scenario |
+| `where` | Empty for an `entity`; for a `scenario` the text of the step or `whole_scenario`; at most 500 characters; empty when left out |
+| `evidence` | Not empty, at most 500 characters |
+| `resolution` | `fixed` or `dismissed` |
+| `reason` | Not empty when `dismissed`, at most 1000 characters; empty when left out |
+
+A string of spaces only counts as empty. A rule broken is `review_malformed`,
+whose subject names the field and the finding, and so is a required field left
+out: `reviewer` and `model` of the report, `kind`, `name`, `evidence` and
+`resolution` of a finding. Any other field left out takes its default:
+`findings` empty, `recheck` `false`, `subject` `entity`, `where` and `reason`
+empty — so a `dismissed` finding without `reason` is `review_malformed` too.
+A `code:` portion with `review`
+is `review_not_for_code`. `dismissed` of a portion is only for the debt
+`step_without_relation` of a scenario (*Scenarios* below): a `missing` or
+`invented` finding there is `dismissal_moved` — dismiss it in
+`review.findings`. A portion without `review` is accepted and owes the debt
+`unchecked_portion` until it is reviewed and submitted again.
 
 ### Scenarios
 
@@ -897,8 +995,8 @@ Scenarios travel in `scenarios` of the portion of their source, next to its
 entities and relations: the portion of a spec submitted right after
 `plan import` carries them, and so may a `code:` portion. A runbook is not a
 source of scenarios. A document with the role `history` submits no scenarios,
-and the background check raises no whole-scenario finding for it: its claims
-set no current state, and a scenario is one.
+and the reviewer raises no whole-scenario finding for it: its claims set no
+current state, and a scenario is one.
 
 - No field `scenarios` in the portion: the scenarios of the source stay as
   they are. An empty list deletes them. A list replaces them as a whole.
@@ -925,8 +1023,8 @@ value turns into another; a list of values alone is a property of its entity.
 
 When no kind fits what the project needs to show, do not submit the scenario
 and do not bend it into another kind: file a `missing` report as the section
-*REPORTING TO THE SERVICE DEVELOPERS* says, and dismiss the whole-scenario
-finding of the background check about it (below).
+*REPORTING TO THE SERVICE DEVELOPERS* says, and dismiss the reviewer's
+whole-scenario finding about it (below).
 
 **The fields.** Every scenario has `name` (in the user's language, unique in
 the project case aside, apart from the names of entities), `kind`,
@@ -1141,22 +1239,28 @@ where. A few codes the entities share prescribe another action for a scenario:
   find the anchor of a scenario of a `code:` portion. Correct the anchor and
   submit that portion again.
 
-**The background check** compares the scenarios of a document portion with the
-document too; those of a `code:` portion are not checked. A finding about a
+**The reviewer** compares the scenarios of a document portion with the
+document too; those of a `code:` portion are not reviewed. A finding about a
 scenario has `subject: "scenario"`: `missing` — the document has a step the
 scenario lacks (`name` is the scenario, `where` the text of the step);
 `invented` — the other way round; `missing` with `where: "whole_scenario"` —
 the document describes an order or states and the portion has no scenario of
 them (`name` is the heading of the section of the document). Fix the portion,
-or dismiss the finding with its `subject`, `kind`, `name` and `where` and a
+or dismiss the finding in `review.findings` with `resolution: dismissed` and a
 reason. When no scenario kind fits that behaviour, dismiss the whole-scenario
 finding for that reason:
 
 ```json
-{"dismissed": [
-  {"subject": "scenario", "kind": "missing", "name": "Nightly reconciliation", "where": "whole_scenario",
-   "reason": "No scenario kind fits: the section is a timing chart; reported to the service developers"}
-]}
+{"review": {
+  "reviewer": "model-reviewer@1.0.0",
+  "model": "<the reviewer's model, from its answer>",
+  "recheck": false,
+  "findings": [
+    {"subject": "scenario", "kind": "missing", "name": "Nightly reconciliation", "where": "whole_scenario",
+     "evidence": "<block ULID>", "resolution": "dismissed",
+     "reason": "No scenario kind fits: the section is a timing chart; reported to the service developers"}
+  ]
+}}
 ```
 
 ### Refusals of a portion
@@ -1175,7 +1279,7 @@ finding for that reason:
 | `anchor_malformed` | An anchor of an unknown kind, an absolute path or a path with a line number | Write the anchor as one of the kinds path, symbol, command, route, table with a non-empty value, a path relative to the repository root and without a line number. |
 | `source_not_found` | The project has no such document, or the document is no source: its role in the model is `none`, or it has no role and is neither `spec` nor `architecture` | Name a document that is a source of the model: type spec or architecture, or a document the backfill inventory gave a role. |
 | `decision_not_found` | The project has no decision of that number | Name the decision by a number `list_decisions` returns for the project. |
-| `portion_too_large` | More than 150 entities for a document, more than 400 for one `code:` label | Move whole units, each with the entities it contains, or the components of a unit over 150 entities, each with what it contains, into a new `architecture` document that describes them and submit its portion first, with the blocks `list_blocks` returns for that document; then submit this portion without those entities but with all their relations, and with them in `dismissed` as `missing` for the reason that the `architecture` document holds them, so that it carries at most 150 entities. |
+| `portion_too_large` | More than 150 entities for a document, more than 400 for one `code:` label | Move whole units, each with the entities it contains, or the components of a unit over 150 entities, each with what it contains, into a new `architecture` document that describes them and submit its portion first, with the blocks `list_blocks` returns for that document; then submit this portion without those entities but with all their relations, and dismiss them in `review.findings` with `resolution: dismissed` for the reason that the `architecture` document holds them, so that it carries at most 150 entities. |
 | `entity_reference_missing` | `renamed_from` or `replaced_by` names no entity | Name in `renamed_from` a name of `arch_names` and in `replaced_by` an entity of the portion or of `arch_names`. |
 | `unknown_scenario_kind` | The kind of a scenario, a step or a branch is not one of its set | Give the scenario one of the kinds sequence, states, activity, a step one of call, reply, async and a branch one of alt, opt, loop. |
 | `unknown_node_kind` | The kind of a node of an activity is not one of the seven | Give the node one of the kinds start, end, action, decision, fork, join, wait. |
@@ -1185,6 +1289,10 @@ finding for that reason:
 | `scenario_malformed` | A rule of the scenario's kind is broken; the message names the rule and the place | Correct the scenario at the place its message names so that it keeps the rule. |
 | `scenario_name_taken` | The name is the name of a scenario of another source | Submit the scenario with `takes_over` naming it when this source changes that behaviour, or leave it out when the source repeats it. |
 | `scenario_too_large` | A limit of the scenario is passed | Split the scenario into parts within the limit, linked by an `action` whose `scenario` names the next part or by the name of the next part ending in (part 2). |
+| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.8.0 arch check`. |
+| `dismissal_moved` | `dismissed` holds a finding of the kind `missing` or `invented` | Move the dismissal into `review.findings` with `resolution: dismissed` and its `reason`. |
+| `review_reused` | `review` is the report `arch_source` gave back: it carries `id` or `at` | Run the reviewer on the portion again and submit it with the new report, or submit it without `review`. |
+| `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
 
 When the end a relation names is an entity only the submitted source held and the portion no longer carries, `relation_endpoint_missing` prescribes instead: Return entity <name> to `entities` of the portion.
 
@@ -1252,7 +1360,7 @@ For a `code:` portion `portion_too_large` prescribes instead: Split the portion 
 
 A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
-`npx -y conport@^0.8.0 arch submit <file.json>`, then
+`npx -y conport@^0.9.0 arch submit <file.json>`, then
 `npx -y conport@^0.8.0 arch check`.
 
 ### The anchor check
@@ -1293,21 +1401,12 @@ one. When `total` is above five, `arch_status` lists them all.
 |---|---|---|
 | `no_portion` | A `spec` whose plan was imported after the model was on has no portion; while the backfill runs or after it is completed, also a document with the role `structure` or `history` and no portion, whatever its type | Extract the portion of the document and submit it with `arch_submit`. |
 | `portion_stale` | The document changed after its portion was submitted | Read the portion with `arch_source`, bring it in line with the document and submit it again. |
-| `mismatch` | The latest background check of the document's portion has findings nobody dismissed | Submit the portion again with the findings fixed or listed in `dismissed` with a reason. |
+| `unchecked_portion` | The document's portion was submitted without the reviewer's report (`review`) | Run the reviewer on the portion and submit it again with `review`. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
 | `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none | Run `npx -y conport@^0.8.0 arch check` in the repository root. |
 | `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.8.0 arch check`. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names was removed or replaced, or the scenario an action runs was deleted | Resubmit the scenario: drop the removed entity or name the one that replaced it. |
-
-`arch_status` also lists the background checks that were `skipped` or
-`failed`, each with its `reason`. They are not debts: the portion stands, it
-was only not checked. Under `retries` it lists the checks whose attempt failed
-(`reason`: `model_error` or `answer_off_schema`) and that the nightly run
-checks again at `retry_at`. Such a check is not hung: leave it, and read
-`arch_status` again after `retry_at`. A check `failed` with
-`answer_truncated` — the LLM's answer ran past its limit — is not retried:
-its entry carries the one `action` to take, which splits the document.
 
 ### Filling the model of an existing project
 
@@ -1654,7 +1753,7 @@ claim it was posted.
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
-- [ ] A spec got its plan imported → its portion submitted with `arch_submit`? An epic merged into the main branch or a `code` portion submitted → `npx -y conport@^0.8.0 arch check` run (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
+- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch or a `code` portion submitted → `npx -y conport@^0.8.0 arch check` run (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] A problem of the service itself → showed the user the title and body and posted only after they agreed (a run with no person: the report in its summary, nothing posted), searched the open `[agent-report]` issues first, no project content, and told the user the URL — or gave the search and form links and said the report is not sent until they submit it?
@@ -1684,7 +1783,7 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Roadmap milestones | `projects/roadmap` |
 | Full per-tool parameter reference | `projects/tool-reference` |
 | Tool profiles — a connection that lists only some tool groups | `projects/tool-profiles` |
-| The project model — portions, checks, views, debts | `projects/architecture-model` |
+| The project model — portions, reviews, views, debts | `projects/architecture-model` |
 
 **Local references** (shipped with the skill): `references/command_list.md`
 (full MCP tool API), `references/documentation_graph.md` (long-form callout
