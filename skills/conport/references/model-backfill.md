@@ -82,7 +82,7 @@ submitted: the documents bring it.
 migrations, routes against the API description or the route files, tools
 against their registry. A difference goes into the inventory.
 
-**After every `code` portion** run `npx -y conport@^0.7.3 arch check` in the
+**After every `code` portion** run `npx -y conport@^0.8.0 arch check` in the
 repository root. A skeleton submitted earlier grows by submitting the same
 source again: read it with `arch_source`, add to it, submit it. No tool of its
 own builds the skeleton: it is this step.
@@ -282,7 +282,7 @@ each item and call again:
   document, so that each check answers about a part. A portion whose `state` is `none`, `failed` or `skipped` for another
   reason: submit the portion again — the submission starts a new check;
 - `code_source_unchecked` — a `code` source was submitted after the latest
-  anchor check: run `npx -y conport@^0.7.3 arch check`.
+  anchor check: run `npx -y conport@^0.8.0 arch check`.
 
 A portion whose check was skipped for its size (`document_too_long`) does not
 block the completion, nor does a document longer than 60 000 characters whose
@@ -299,7 +299,7 @@ check has not closed yet.
 ## Rollback
 
 The rollback runs only on the user's word, never as a step of your own; no
-refusal prescribes it. `npx -y conport@^0.7.3 arch withdraw --all` shows what
+refusal prescribes it. `npx -y conport@^0.8.0 arch withdraw --all` shows what
 would be removed — without `--apply` it removes nothing. With `--apply` it
 withdraws every source of the project, documents and code alike: the state of
 the backfill returns to the start. The roles, types and links of the documents
@@ -310,4 +310,4 @@ and step 5 attaches them again on the next pass.
 
 In a project whose model has `code` sources: after an epic that changed the
 code is merged, submit the skeleton of the units it touched again and run
-`npx -y conport@^0.7.3 arch check`.
+`npx -y conport@^0.8.0 arch check`.

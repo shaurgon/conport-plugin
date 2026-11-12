@@ -138,7 +138,7 @@ test('epic.js: a finding the creation agent did not settle holds the epic open a
   const table = accountTable(prompt('account'))
   assert.equal(table.may_close, false)
   // Not a line only: the accounting files it as a child of this epic, one per finding, none in the tails epic.
-  assert.deepEqual(table.minors, [{ title: 'Review minors left on task-501', description: unfiled.brief, priority: 3, parent: 500 }])
+  assert.deepEqual(table.minors, [{ kind: 'task', title: 'Review minors left on task-501', description: unfiled.brief, priority: 3, parent: 500 }])
   assert.match(table.close_resolution, /findings filed at the accounting 1;/)
 })
 
@@ -530,7 +530,7 @@ test('epic.js: an unmet criterion of the acceptance becomes a task of this epic 
   const { prompt } = await run({ goal: { verdict: 'NOT_READY', checks: [], unmet: ['the export is not observed'] } })
   assert.ok(prompt('goal').replace(/\s+/g, ' ').includes('unmet names only what the goal lacks that no task of the ledger carries'))
   const table = accountTable(prompt('account'))
-  assert.deepEqual(table.minors, [{ title: 'Acceptance unmet: the export is not observed', priority: 2, parent: 500,
+  assert.deepEqual(table.minors, [{ kind: 'bug', title: 'Acceptance unmet: the export is not observed', priority: 2, parent: 500,
     description: 'The acceptance of epic task-500 observed this criterion of its goal unmet: the export is not observed' }])
   assert.match(table.close_resolution, /findings filed at the accounting 1;/)
 })
@@ -571,7 +571,7 @@ test('epic.js: a defect is never sent to the tails epic; the accountant keeps it
   assert.ok(props.tails_epic_id && props.tails_epic_needs_milestone)
 })
 
-test('epic.js: branch B files the tails epic only in a release milestone right after a release, at priority 1, and asks otherwise', async () => {
+test('epic.js: branch B files release tails in the next release or without a milestone and asks', async () => {
   const { prompt } = await run({ hunt: { gaps: [BLOCKER] }, gapverify: { verdicts: [critical(1)] } })
   const text = prompt('account').replace(/\s+/g, ' ')
   assert.ok(!text.includes('Tails of release of epic'), 'no title without a release milestone')
@@ -579,8 +579,8 @@ test('epic.js: branch B files the tails epic only in a release milestone right a
     "M is a release milestone (is_release=true)",
     "the title 'Tails of release <title of M>' written literally, never translated",
     'add_task(kind="epic", priority=1,',
-    'only when N is a release milestone too (is_release=true)',
-    'M is missing or not a release, N is missing or a standing list (is_release=false: the waiting milestone, the backlog without a date)',
+    'If N is not a release, treat N as absent',
+    'M is missing or not a release',
     'create no tails epic and file none of these entries: set tails_epic_id=null and tails_epic_needs_milestone=true',
     // the waiting work is kept in ConPort, and the resolution says where the work went
     "log_progress(description='[epic-run:500] tails waiting for a milestone: the owner is asked which milestone the tails epic of the release goes to;",
@@ -588,7 +588,7 @@ test('epic.js: branch B files the tails epic only in a release milestone right a
     'tails_waiting_progress_id=<its id>',
     "'; ordinary work filed in the tails epic task-<id>: <n>'",
     "'; ordinary work filed in the tails epic task-<id>: <k> of <n>, the rest not filed: a call failed'",
-    'counting only the entries filed or found already filed there (k)',
+    'counting only the entries filed or found already filed there (k, including entries filed through suggestions after a refusal)',
     "'; ordinary work waiting for the owner's answer on its milestone: <n>, recorded in progress-<id>'",
     "'; ordinary work not filed: <n>, the tails epic could not be found or made'",
   ]) assert.ok(text.includes(part), part)
@@ -619,10 +619,29 @@ test('epic.js: an answer that no work is needed never cancels the tails epic of 
   ledger.questions_action)
 })
 
+const planRun = (n, left, over = {}, extra = [], { noPlan = false } = {}) => {
+  const ids = Array.from({ length: n }, (_, i) => 501 + i)
+  const answers = { growth: { epic_progress: { ordinary_added: 0, growth_ceiling: 3, bugs: 0 } } }
+  for (const id of ids) {
+    answers[`impl-${id}`] = { status: 'DONE', branch: `epic500/t${id}`, head_sha: 'b' + id, worktree_path: '/tmp/wt-' + id }
+    answers[`rev-${id}`] = CLEAN
+  }
+  for (const id of ids.slice(0, left)) Object.assign(answers, { [`rev-${id}`]: { verdict: 'APPROVED', findings: [{ ...MINOR, file: 'f' + id + '.js' }] } })
+  // every merge, of a wave or of a finding task, merges what its queue holds
+  const mergeAll = p => ({ results: JSON.parse(/queue\.json: (\[.*\])/.exec(p)[1]).map(q => ({ id: q.id, status: 'MERGED', merge_sha: 'm' + q.id })) })
+  for (let i = 0; i < 20; i++) { answers['merge-w' + i] = mergeAll; answers['merge-f' + i] = mergeAll }
+  for (let id = 601; id < 620; id++) Object.assign(answers, findingRoad(id))
+  const r = epicRun({ ...answers, 'create-findings': created, ...over })
+  const sc = r.answers.scout
+  r.answers.scout = { ...sc, ...(noPlan ? { plan_path: null } : {}), tasks: ids.map((id, i) => ({ ...sc.tasks[0], conport_id: id,
+    plan_index: i + 1, title: 'plan task ' + id, files: { modify: ['f' + id + '.js'], test: [] },
+    ...(noPlan ? { lines: null, coverage: 'conport_only' } : {}) })).concat(extra) }
+  return runWorkflow('epic.js', noPlan ? { ...r.args, allowNoPlan: true } : r.args, r.answers)
+}
+
 const TAILS_ASKED = 'The tails of the release have no milestone to go to'
 const TAILS_WHY = 'Epic task-500 has ordinary work past its growth ceiling for the tails epic of the release, and no tails epic was filed: ' +
-  'the epic is not in a release milestone, or the open milestone right after its release is not a release (a standing list such as ' +
-  'the waiting milestone or the backlog without a date) or there is none. Which milestone should the tails go to? File there the epic ' +
+  'the epic is not in a release milestone. Which milestone should the tails go to? File there the epic ' +
   "'Tails of release <title of the release milestone>' (the title written literally) at priority 1, and under it "
 const waitingAcc = id => ({ account: { via: 'wf-helper', actions: [], epic_closed: false, tails_epic_id: null,
   tails_epic_needs_milestone: true, tails_waiting_progress_id: id } })
@@ -645,7 +664,7 @@ test('epic.js: the answer to the tails question is a milestone, never a child of
   const { ledger } = await planRun(10, 4, waitingAcc(701))
   const action = ledger.questions_action.replace(/\s+/g, ' ')
   for (const part of [
-    'a question with no task, other than the one about the tails of the release, gets a new child of the epic',
+    'A question with no task, other than the one about the tails of the release: read get_task',
     "The question '" + TAILS_ASKED + "' is answered with a milestone, never with a child of this epic: in that milestone " +
       "look for the open epic titled 'Tails of release <title of the release milestone>' (written literally, never translated) — " +
       'found -> use it (several open -> the oldest, lowest id); else add_task(kind="epic", priority=1, that title, milestone_id=<that milestone>). ',
@@ -661,316 +680,186 @@ test('epic.js: a tails epic of the release with its milestone asks nothing', asy
   assert.deepEqual(ledger.questions, [])
 })
 
-// ------------------------------------------------ the ceiling of ordinary work added after the plan
-//
-// Ordinary work — a review minor left after its fix round, a minor of a gap fix's
-// review — counts toward a ceiling of max(3, floor(0.3 × plan tasks)) tasks added
-// after the plan. Within it, it is a task of this epic and runs; beyond it, it is not
-// run here: it is filed under the tails epic of the release, taken first after the
-// push. A defect — a critical, a Blocker or Should-fix the verifier confirmed —
-// never counts and is never moved.
+// Server counters deliberately disagree with the one-task plan.
+const progress = (ceiling, ordinary = 0, bugs = 0) => ({ growth_ceiling: ceiling, ordinary_added: ordinary, bugs: bugs })
+const withGrowth = (p, over = {}) => run({ growth: { epic_progress: p }, 'growth-final': { epic_progress: p }, ...over })
 
-// A plan of n tasks, 501.., each on its own file; `left` of them leave a minor open.
-const planRun = (n, left, over = {}, extra = [], { noPlan = false } = {}) => {
-  const ids = Array.from({ length: n }, (_, i) => 501 + i)
-  const answers = {}
-  for (const id of ids) {
-    answers[`impl-${id}`] = { status: 'DONE', branch: `epic500/t${id}`, head_sha: 'b' + id, worktree_path: '/tmp/wt-' + id }
-    answers[`rev-${id}`] = CLEAN
-  }
-  for (const id of ids.slice(0, left)) Object.assign(answers, { [`rev-${id}`]: { verdict: 'APPROVED', findings: [{ ...MINOR, file: 'f' + id + '.js' }] } })
-  // every merge, of a wave or of a finding task, merges what its queue holds
-  const mergeAll = p => ({ results: JSON.parse(/queue\.json: (\[.*\])/.exec(p)[1]).map(q => ({ id: q.id, status: 'MERGED', merge_sha: 'm' + q.id })) })
-  for (let i = 0; i < 20; i++) { answers['merge-w' + i] = mergeAll; answers['merge-f' + i] = mergeAll }
-  for (let id = 601; id < 620; id++) Object.assign(answers, findingRoad(id))
-  const r = epicRun({ ...answers, 'create-findings': created, ...over })
-  const sc = r.answers.scout
-  r.answers.scout = { ...sc, ...(noPlan ? { plan_path: null } : {}), tasks: ids.map((id, i) => ({ ...sc.tasks[0], conport_id: id,
-    plan_index: i + 1, title: 'plan task ' + id, files: { modify: ['f' + id + '.js'], test: [] },
-    ...(noPlan ? { lines: null, coverage: 'conport_only' } : {}) })).concat(extra) }
-  return runWorkflow('epic.js', noPlan ? { ...r.args, allowNoPlan: true } : r.args, r.answers)
-}
-// An ordinary finding task an earlier run of the epic added: a child without a plan section.
-const priorChild = (id, title, coverage = 'conport_only') => ({ conport_id: id, plan_index: null, kind: 'work', title,
-  lines: null, files: null, consumes: [], produces: [], deps: [], acceptance: 'x', spec_card: '', coverage })
-const ordinaryOf = ledger => ledger.findings.filter(f => f.source === 'review').map(f => f.title)
-
-// floor, not ceil: 11 plan tasks still allow 3; 13 too; 14 allow 4
-for (const [n, left, ceiling] of [[10, 2, 3], [10, 3, 3], [11, 3, 3], [14, 4, 4]]) {
-  test(`epic.js: ${left} ordinary findings under a ceiling of ${ceiling} (${n} plan tasks) all run in this epic`, async () => {
-    const { ledger, prompt } = await planRun(n, left)
-    assert.equal(ordinaryOf(ledger).length, left)
-    assert.ok(ledger.findings.every(f => ledger.tasks[f.key].state === 'DONE'))
-    assert.deepEqual(ledger.tails, [])
-    const table = accountTable(prompt('account'))
-    assert.ok(table.minors.every(m => m.parent === 500))
-    assert.match(table.close_resolution, new RegExp(`; ordinary tasks added ${left} of ${ceiling}, defect fixes 0; ordinary work to the tails epic 0;`))
-  })
-}
-
-for (const [n, left] of [[11, 4], [13, 4], [14, 5]]) {
-  const ceiling = left - 1
-  test(`epic.js: ${n} plan tasks allow ${ceiling} ordinary tasks — the ${left}th goes to the tails epic of the release`, async () => {
-    const { ledger, prompt } = await planRun(n, left)
-    assert.equal(ordinaryOf(ledger).length, ceiling)
-    assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-' + (500 + left)])
-    assert.match(accountTable(prompt('account')).close_resolution,
-      new RegExp(`; ordinary tasks added ${ceiling} of ${ceiling}, defect fixes 0; ordinary work to the tails epic 1;`))
-  })
-}
-
-// Without a plan the base is the children with work: the finding tasks earlier runs
-// filed — a critical, a gap, an unmet criterion, ordinary work — are not plan tasks.
-test('epic.js: without a plan, the finding tasks of earlier runs do not enter the base of the ceiling', async () => {
-  // The briefs arrive the way the scout's contract carries them: the description verbatim,
-  // the acceptance compressed (here to a word that carries no mark).
-  const earlier = [
-    { ...priorChild(901, 'Close the critical', 'already_done'), description: 'A confirmed critical gap of this epic, left open because it was confirmed beyond the cap of the critical-fix round; close it in this run.\nClose it.' },
-    { ...priorChild(902, 'Add the carrier', 'already_done'), description: 'Add the carrier.\nThe gap: no env carrier' },
-    { ...priorChild(903, 'Acceptance unmet: the export is not observed', 'already_done'), description: 'The acceptance of epic task-500 observed this criterion of its goal unmet: x' },
-    { ...priorChild(904, 'Offer X to admins', 'already_done'), description: 'Held for the person: a Note is a question only the person can answer.\nQ' },
-  ]
-  // 10 children with work: a ceiling of 3; counted with the four above it would be 4
-  const { ledger, prompt } = await planRun(10, 4, {}, earlier, { noPlan: true })
-  assert.equal(ordinaryOf(ledger).length, 3)
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 3 of 3, /)
+test('the room under the ceiling comes from epic_progress', async () => {
+  const { ledger, prompt } = await withGrowth(progress(8, 8, 12), leftMinor)
+  assert.equal(ledger.tails.length, 1)
+  assert.equal(prompt('create-findings'), undefined)
+  assert.deepEqual(ledger.growth, { ordinary: 8, ceiling: 8, bugs: 12, tails: 1 })
+  assert.match(prompt('growth'), /get_task.*500/)
 })
 
-// The scout is held to carry that description: in both of its branches.
-test('epic.js: the scout returns the description of every child without a plan section verbatim, in both branches', async () => {
-  const rule = 'Every child without a plan section (conport_only, and already_done without one) carries description = ' +
-    "that child's description VERBATIM, never compressed: by it the run knows a finding task an earlier run filed."
-  assert.equal(source('epic.js').replace(/\s+/g, ' ').split(rule).length - 1, 2, 'in STEP 2 and in branch B alike')
+test('no ceiling outside the scope keeps every ordinary finding in the epic', async () => {
+  const { ledger, prompt } = await withGrowth(progress(null, 99), { ...leftMinor, 'create-findings': created })
+  assert.equal(ledger.tails.length, 0)
+  assert.equal(missingOf(prompt('create-findings'))[0].kind, 'task')
 })
 
-// A Note's answer is ordinary work too: its task is marked by its title, takes a place
-// of the ceiling in every later run, and past the ceiling the task itself moves to the
-// tails epic of the release, so the readiness of this epic does not wait for it.
-test('epic.js: a task made from a Note answer, marked by its title, takes a place of the ceiling in a later run', async () => {
-  const { ledger } = await planRun(10, 3, {}, [priorChild(901, 'Note answer: Offer X to admins', 'already_done')])
-  assert.equal(ordinaryOf(ledger).length, 2)
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-503'])
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 0, tails: 1 })
-})
-
-test('epic.js: the session is told to mark a Note answer as ordinary work and, past the ceiling, move its task to the tails epic of the release', async () => {
-  const { ledger } = await planRun(10, 3, {
-    hunt: { gaps: [NOTE] },
-    gapverify: { verdicts: [{ gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }] },
-  })
-  const action = ledger.questions_action.replace(/\s+/g, ' ')
-  assert.ok(action.includes('ordinary tasks added 3 of ceiling 3'), action)
-  for (const text of ["rename it 'Note answer: <its title>'",
-    'update_task(parent_task_id=<the tails epic of the release>)',
-    "'Tails of release <title of M>'", 'list_milestones(include_closed=true)',
-    'when M is a release milestone (is_release=true)', 'add_task(kind="epic", priority=1,',
-    'only when N is a release milestone too', 'with no tails epic found or made, ask the user which milestone the tails go to',
-    'the readiness of this epic does not wait for it'])
-    assert.ok(action.includes(text), text)
-  assert.ok(!action.includes('Tails of release of epic'), 'no title without a release milestone')
-})
-
-test('epic.js: a tails epic the accounting already holds is named to the session by its id', async () => {
-  const { ledger } = await run({
-    hunt: { gaps: [NOTE] }, gapverify: { verdicts: [{ gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }] },
+test('defects are filed as bugs and never take a place', async () => {
+  const { prompt, ledger } = await withGrowth(progress(3, 3, 7), {
+    hunt: { gaps: [BLOCKER, SHOULD_FIX, NOTE, UNSURE] },
+    gapverify: { verdicts: [critical(1),
+      { gid: 2, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' },
+      { gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' },
+      { gid: 3, verdict: 'UNVERIFIABLE' }] },
     'create-findings': created,
-    account: { via: 'wf-helper', actions: [], epic_closed: false, tails_epic_id: 777, tails_epic_needs_milestone: false },
   })
-  const action = ledger.questions_action.replace(/\s+/g, ' ')
-  assert.ok(action.includes('the tails epic of the release is task-777'), action)
-  assert.ok(!action.includes('list_milestones'), 'nothing to look up')
+  assert.deepEqual(missingOf(prompt('create-findings')).map(f => f.kind), ['bug', 'bug', 'task', 'task'])
+  assert.equal(ledger.tails.length, 0)
+  assert.ok(accountTable(prompt('account')).minors.every(m => ['bug', 'task'].includes(m.kind)))
 })
 
-test('epic.js: one ordinary finding above the ceiling is not run here — it goes to the tails epic of the release', async () => {
-  const { ledger, calls, prompt } = await planRun(10, 4)
-  assert.deepEqual(ordinaryOf(ledger), ['Review minors left on task-501', 'Review minors left on task-502', 'Review minors left on task-503'])
-  assert.deepEqual(missingOf(prompt('create-findings')).map(m => m.title), ordinaryOf(ledger), 'the overflow is not created in the epic')
-  assert.equal(calls.filter(c => /^impl-6/.test(c.label)).length, 3)
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-504'])
-  assert.deepEqual(ledger.minors, [], 'not a ledger line either')
-  const table = accountTable(prompt('account'))
-  const tail = table.minors.find(m => m.title === 'Review minors left on task-504')
-  assert.equal(tail.parent, undefined, 'no parent: the accountant files it under the tails epic')
-  assert.ok(tail.description.includes('f504.js:9 — a nit'), tail.description)
-  assert.equal(table.may_close, true, 'the tails epic does not hold this epic open')
-  assert.match(table.close_resolution, /; ordinary tasks added 3 of 3, defect fixes 0; ordinary work to the tails epic 1;/)
+test('the creation prompt passes the kind and follows the refusal', async () => {
+  const { prompt } = await withGrowth(progress(3), { ...leftMinor, 'create-findings': created })
+  assert.match(prompt('create-findings'), /kind=<the entry's kind/)
+  assert.match(prompt('create-findings'), /epic_growth_ceiling/)
+  assert.match(prompt('create-findings'), /suggestions/)
 })
 
-test('epic.js: defects never count toward the ceiling and are never moved to the tails epic', async () => {
-  const gaps = [{ ...SHOULD_FIX, gid: 2 }, { ...SHOULD_FIX, gid: 5, min_action: { title: 'Another carrier' } }, BLOCKER]
-  const { ledger, prompt } = await planRun(10, 3, {
-    hunt: { gaps }, gapverify: { verdicts: [critical(1),
-      { gid: 2, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }, { gid: 5, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }] },
+test('the close resolution names the server numbers', async () => {
+  const { prompt } = await withGrowth(progress(14, 6, 21), {
+    'growth-final': { epic_progress: progress(14, 9, 24) },
   })
-  assert.equal(ordinaryOf(ledger).length, 3)
-  assert.deepEqual(ledger.findings.filter(f => f.source !== 'review').map(f => f.source).sort(), ['critical', 'gap', 'gap'])
-  assert.deepEqual(ledger.tails, [])
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 3 of 3, defect fixes 3; ordinary work to the tails epic 0;/)
+  assert.match(accountTable(prompt('account')).close_resolution, /ordinary tasks added 9 of ceiling 14; bug fixes 24/)
 })
 
-test('epic.js: the ordinary tasks an earlier run added use the ceiling too; the same finding again takes no new slot', async () => {
-  const prior = [priorChild(900, 'Review minors left on task-800', 'already_done'), priorChild(901, 'Review minors left on task-503')]
-  const { ledger, prompt } = await planRun(10, 3, {}, prior)
-  // two slots used before the run; task-503's minors reuse their child of the earlier run
-  assert.deepEqual(ordinaryOf(ledger), ['Review minors left on task-501', 'Review minors left on task-503'])
+test('a finding filed in the tails after a racing refusal is not executed in this epic', async () => {
+  const { ledger, calls } = await withGrowth(progress(3), {
+    ...leftMinor,
+    'create-findings': prompt => ({ created: missingOf(prompt).map(m => ({ plan_index: m.plan_index, conport_id: 777, tails: true })) }),
+  })
+  assert.equal(ledger.tails.length, 1)
+  assert.equal(ledger.findings.length, 0)
+  assert.ok(!calls.some(c => c.label === 'impl-777'))
+})
+
+test('held findings stay available to the person even when the ceiling is full', async () => {
+  const answers = { hunt: { gaps: [NOTE, UNSURE] }, gapverify: { verdicts: [
+    { gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }, { gid: 3, verdict: 'UNVERIFIABLE' } ] }, 'create-findings': created }
+  const open = await withGrowth(progress(null), answers)
+  assert.deepEqual(missingOf(open.prompt('create-findings')).map(m => m.kind), ['task', 'task'])
+  const requests = []
+  const refusals = []
+  // The creation agent follows the server's structured refusal, then reports
+  // the actual parent through tails=true, as required by its prompt contract.
+  const post = (entry, parent) => {
+    requests.push({ title: entry.title, parent })
+    if (parent === 500) return { status: 409, detail: { error: 'epic_growth_ceiling',
+      suggestions: [{ action: 'file_in_tails_epic', call: 'add_task(parent_task_id=900)' }] } }
+    return { status: 201, id: 700 + requests.length, parent_task_id: parent }
+  }
+  const full = await withGrowth(progress(3, 9), { ...answers, 'create-findings': prompt => ({
+    created: missingOf(prompt).map(entry => {
+      const refused = post(entry, 500)
+      assert.equal(refused.status, 409)
+      assert.equal(refused.detail.error, 'epic_growth_ceiling')
+      refusals.push(refused)
+      const parent = Number(/parent_task_id=(\d+)/.exec(refused.detail.suggestions[0].call)[1])
+      const filed = post(entry, parent)
+      return { plan_index: entry.plan_index, conport_id: filed.id, tails: filed.parent_task_id !== 500 }
+    }) }) })
+  assert.equal(refusals.length, 2)
+  assert.deepEqual(requests.filter(r => r.parent === 900).map(r => r.title), [NOTE.min_action.title, UNSURE.min_action.title])
+  assert.equal(full.ledger.tails.length, 2)
+  assert.deepEqual(full.ledger.questions.map(q => q.task), [702, 704])
+  assert.equal(missingOf(full.prompt('create-findings')).length, 2)
+  assert.deepEqual(full.ledger.questions.map(q => q.title), [NOTE.min_action.title, UNSURE.min_action.title])
+})
+
+test('the available room is consumed once per ordinary finding in the batch', async () => {
+  const r = epicRun({ ...leftMinor, 'rev-502': { verdict: 'APPROVED', findings: [{ ...MINOR, file: 'b.js' }] },
+    'impl-502': { status: 'DONE', branch: 'epic500/t502', head_sha: 'abc', worktree_path: '/tmp/w502' },
+    'merge-w0': { results: [501, 502].map(id => ({ id, status: 'MERGED', merge_sha: 'abc' })) },
+    growth: { epic_progress: progress(10, 9) }, 'create-findings': created })
+  r.answers.scout.tasks.push({ ...r.answers.scout.tasks[0], conport_id: 502, plan_index: 2, title: 'another task', files: { modify: ['b.js'], test: [] } })
+  const { ledger, prompt } = await runWorkflow('epic.js', r.args, r.answers)
+  assert.equal(missingOf(prompt('create-findings')).length, 1)
   assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-502'])
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 3 of 3, /)
 })
 
-// New scope is ordinary work as well: a child added to the epic by hand, with no plan
-// section and none of the words a run writes into a defect, took a place of the ceiling.
-test('epic.js: a child added by hand without a plan section takes a place of the ceiling', async () => {
-  const { ledger, prompt } = await planRun(10, 3, {}, [priorChild(901, 'Rename the export flag')])
-  assert.deepEqual(ordinaryOf(ledger), ['Review minors left on task-501', 'Review minors left on task-502'])
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-503'])
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 0, tails: 1 })
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 3 of 3, /)
+test('a missing server growth response stops the findings round', async () => {
+  const { ledger, prompt } = await run({ ...leftMinor, growth: null, 'growth-r2': null })
+  assert.equal(ledger.outcome, 'ABORTED')
+  assert.equal(ledger.abort_reason, 'ABORTED_NO_GROWTH')
+  assert.equal(prompt('create-findings'), undefined)
 })
 
-// One place is left, the boundary: a hand-added child done already counts the same way.
-test('epic.js: a closed child added by hand counts too — one place is left under the ceiling', async () => {
-  const { ledger } = await planRun(10, 2, {}, [priorChild(901, 'Rename the export flag', 'already_done')])
-  assert.deepEqual(ordinaryOf(ledger), ['Review minors left on task-501', 'Review minors left on task-502'])
+const heldAnswer = { hunt: { gaps: [NOTE, UNSURE] }, gapverify: { verdicts: [
+  { gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }, { gid: 3, verdict: 'UNVERIFIABLE' } ] } }
+
+test('held questions survive a server refusal that files their tasks in tails', async () => {
+  const { ledger } = await withGrowth(progress(3, 3), { ...heldAnswer,
+    'create-findings': p => ({ created: missingOf(p).map((m, i) => ({ plan_index: m.plan_index, conport_id: 777 + i, tails: true })) }) })
+  assert.deepEqual(ledger.questions.map(q => [q.task, q.title]), [[777, NOTE.min_action.title], [778, UNSURE.min_action.title]])
+})
+
+test('answer instructions use server authority and retain the tails lookup rule', async () => {
+  const { ledger } = await withGrowth(progress(3, 3), { ...heldAnswer, 'create-findings': created })
+  const action = ledger.questions_action
+  for (const part of ['already counted', 'epic_progress', "add_task(kind='task')", 'epic_growth_ceiling', 'suggestions',
+    'Tails of release <title of M>', 'list_milestones(include_closed=true)', 'the next OPEN milestone by sequence after M',
+    'the readiness of this epic does not wait for it']) assert.ok(action.includes(part), part)
+  assert.doesNotMatch(action, /each answer taking|Note answer:|Past it,|Within the ceiling/)
+})
+
+test('answer instructions name the already known tails epic without another lookup', async () => {
+  const { ledger } = await run({ ...heldAnswer, 'create-findings': created,
+    account: { via: 'wf-helper', actions: [], epic_closed: false, tails_epic_id: 777, tails_epic_needs_milestone: false } })
+  assert.match(ledger.questions_action, /the tails epic of the release is task-777/)
+  assert.doesNotMatch(ledger.questions_action, /list_milestones/)
+})
+
+test('failed final counters do not interrupt acceptance or accounting and are omitted from the summary', async () => {
+  const { ledger, prompt } = await withGrowth(progress(3, 2, 4), { 'growth-final': null, 'growth-final-r2': null })
+  assert.equal(ledger.outcome, 'EPIC_CLOSED')
+  assert.ok(prompt('anchors') && prompt('goal') && prompt('account'))
+  assert.match(accountTable(prompt('account')).close_resolution, /growth counters unavailable/)
+  assert.doesNotMatch(accountTable(prompt('account')).close_resolution, /ordinary tasks added|bug fixes|null/)
+})
+
+test('an unlimited ceiling is named without a null value', async () => {
+  const { prompt } = await withGrowth(progress(null, 4, 2))
+  assert.match(accountTable(prompt('account')).close_resolution, /ordinary tasks added 4 \(no ceiling\); bug fixes 2/)
+})
+
+test('overflow accounting preserves the Minor brief and does not hold the epic open', async () => {
+  const { prompt } = await withGrowth(progress(3, 3), leftMinor)
+  const table = accountTable(prompt('account'))
+  assert.equal(table.minors.length, 1)
+  assert.equal(table.minors[0].parent, undefined)
+  assert.match(table.minors[0].description, /a.js:9 — a nit \(fix: tidy it\)/)
+  assert.equal(table.minors[0].kind, 'task')
+  assert.equal(table.may_close, true)
+})
+
+test('a repeated finding with an existing open child takes no new place', async () => {
+  const r = epicRun({ ...leftMinor, growth: { epic_progress: progress(3, 3) }, 'create-findings': created })
+  r.answers.scout.tasks.push({ conport_id: 610, plan_index: null, kind: 'work', title: 'Review minors left on task-501',
+    conport_status: 'TODO', lines: null, files: null, consumes: [], produces: [], deps: [], acceptance: '', spec_card: '', coverage: 'conport_only' })
+  const { ledger, prompt } = await runWorkflow('epic.js', r.args, r.answers)
+  assert.deepEqual(missingOf(prompt('create-findings')).map(m => m.title), ['Review minors left on task-501'])
   assert.deepEqual(ledger.tails, [])
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 0, tails: 0 })
 })
 
-// A child an earlier run filed for a defect — a critical, a gap, an unmet criterion, a
-// gap held for the person — is no ordinary work: with a plan it takes no place either.
-test('epic.js: with a plan, the defect children of earlier runs take no place of the ceiling', async () => {
-  const earlier = [
-    { ...priorChild(901, 'Close the critical'), description: 'A confirmed critical gap of this epic, left open because it was confirmed beyond the cap of the critical-fix round; close it in this run.\nClose it.' },
-    { ...priorChild(902, 'Add the carrier', 'already_done'), description: 'Add the carrier.\nThe gap: no env carrier' },
-    { ...priorChild(903, 'Acceptance unmet: the export is not observed'), description: 'The acceptance of epic task-500 observed this criterion of its goal unmet: x' },
-    { ...priorChild(904, 'Offer X to admins'), description: 'Held for the person: a Note is a question only the person can answer.\nOffer X to admins.\nThe gap: X is not offered' },
-  ]
-  const { ledger } = await planRun(10, 3, {}, earlier)
-  assert.equal(ordinaryOf(ledger).length, 3)
+test('a new held finding reserves the last place before a review minor', async () => {
+  const { ledger, prompt } = await withGrowth(progress(3, 2), { ...leftMinor,
+    hunt: { gaps: [NOTE] }, gapverify: { verdicts: [
+      { gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' } ] }, 'create-findings': created })
+  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-501'])
+  assert.deepEqual(missingOf(prompt('create-findings')).map(m => m.title), [NOTE.min_action.title])
+  assert.deepEqual(ledger.questions, [{ task: 601, title: NOTE.min_action.title, question: NOTE.question }])
+})
+
+test('a held finding with an existing child does not reserve another place', async () => {
+  const r = epicRun({ ...leftMinor, growth: { epic_progress: progress(3, 2) },
+    hunt: { gaps: [NOTE] }, gapverify: { verdicts: [
+      { gid: 4, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' } ] }, 'create-findings': created })
+  r.answers.scout.tasks.push({ conport_id: 610, plan_index: null, kind: 'work', title: NOTE.min_action.title,
+    conport_status: 'TODO', lines: null, files: null, consumes: [], produces: [], deps: [], acceptance: '', spec_card: '', coverage: 'conport_only' })
+  const { ledger, prompt } = await runWorkflow('epic.js', r.args, r.answers)
   assert.deepEqual(ledger.tails, [])
-  // the three defect fixes count; the child still held for the person is no fix yet
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 3, tails: 0 })
-})
-
-// A defect filed by hand is known by the mark a run writes, at the start of its
-// description: it takes no place, as a defect of a run does not.
-test('epic.js: a child filed by hand whose description starts with the gap mark is a defect and takes no place', async () => {
-  const { ledger } = await planRun(10, 3, {}, [{ ...priorChild(901, 'Fix the export header'),
-    description: 'The gap: the export drops the header\nSeen in the nightly export.' }])
-  assert.equal(ordinaryOf(ledger).length, 3)
-  assert.deepEqual(ledger.tails, [])
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 1, tails: 0 })
-})
-
-// The defect fixes are counted over the whole epic, as the ordinary tasks are: every
-// child the words of a defect mark, open or closed, and the defects of this run. A run
-// that finds nothing new still names the defect children an earlier run filed.
-const CRITICAL_CHILD = 'A confirmed critical gap of this epic, left open because it was confirmed beyond the cap of the critical-fix round; close it in this run.\nClose it.'
-test('epic.js: a later run with no new finding still names the open defect children of an earlier run as defect fixes', async () => {
-  const earlier = [
-    { ...priorChild(901, 'Close the critical'), description: CRITICAL_CHILD },
-    { ...priorChild(902, 'Fix the export header'), description: 'The gap: the export drops the header' },
-  ]
-  const { ledger, prompt } = await planRun(10, 0, {}, earlier)
-  assert.deepEqual(ledger.findings, [])
-  assert.deepEqual(ledger.growth, { ordinary: 0, ceiling: 3, defects: 2, tails: 0 })
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 0 of 3, defect fixes 2; ordinary work to the tails epic 0;/)
-})
-
-test("epic.js: the defect fixes are the earlier run's defect children plus this run's defects", async () => {
-  const gaps = [{ ...SHOULD_FIX, gid: 2 }, { ...SHOULD_FIX, gid: 5, min_action: { title: 'Another carrier' } }, BLOCKER]
-  const { ledger, prompt } = await planRun(10, 3, {
-    hunt: { gaps }, gapverify: { verdicts: [critical(1),
-      { gid: 2, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }, { gid: 5, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }] },
-  }, [{ ...priorChild(901, 'Fix the export header', 'already_done'), description: 'The gap: the export drops the header' }])
-  assert.equal(ledger.growth.defects, 4)
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 3 of 3, defect fixes 4; ordinary work to the tails epic 0;/)
-})
-
-// A defect reported again reuses its open child of the earlier run, settled by title:
-// one child, one fix. A closed child is taken, so the same defect again gets a twin
-// titled '(2)' — a second child, a second fix.
-test('epic.js: a defect this run reports again with the title of an open defect child is one defect fix, not two', async () => {
-  const child = { ...priorChild(901, SHOULD_FIX.min_action.title), description: 'The gap: no env carrier' }
-  const verify = { hunt: { gaps: [SHOULD_FIX] }, gapverify: { verdicts: [{ gid: 2, verdict: 'CONFIRMED', severity_final: 'minor', proof: 'seen' }] } }
-  const open = await planRun(10, 0, verify, [child])
-  assert.deepEqual(open.ledger.findings.map(f => f.title), [SHOULD_FIX.min_action.title], 'the same title: its child is reused')
-  assert.equal(open.ledger.growth.defects, 1)
-  const closed = await planRun(10, 0, verify, [{ ...child, coverage: 'already_done' }])
-  assert.deepEqual(closed.ledger.findings.map(f => f.title), [SHOULD_FIX.min_action.title + ' (2)'])
-  assert.equal(closed.ledger.growth.defects, 2)
-})
-
-// The boundary of a child held for the person: while it waits it is no fix, as a held
-// finding of this run is not; once closed it counts like any other defect child.
-test('epic.js: a held child counts as a defect fix once it no longer waits for the person', async () => {
-  const held = 'Held for the person: the verifier could not confirm this finding by observation.\nAdd the carrier.\nThe gap: no env carrier'
-  const waiting = await planRun(10, 0, {}, [{ ...priorChild(901, 'Add the carrier'), description: held }])
-  assert.deepEqual(waiting.ledger.waiting_for_person.map(w => w.id), [901])
-  assert.equal(waiting.ledger.growth.defects, 0)
-  const closed = await planRun(10, 0, {}, [{ ...priorChild(901, 'Add the carrier', 'already_done'), description: held }])
-  assert.deepEqual(closed.ledger.waiting_for_person, [])
-  assert.equal(closed.ledger.growth.defects, 1)
-})
-
-// The ordinary prefixes are read from the first line of the description as well: without
-// a plan such a child is no part of the base but a place taken.
-test('epic.js: without a plan, a child whose description starts with an ordinary prefix takes a place', async () => {
-  const { ledger } = await planRun(10, 3, {}, [{ ...priorChild(901, 'Tidy the names'),
-    description: 'Review minors left on task-800\n- a.js — a nit' }], { noPlan: true })
-  assert.equal(ordinaryOf(ledger).length, 2)
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-503'])
-})
-
-// An ordinary title always takes a place, an open one bound to a plan section too —
-// the way the helper of /conport:task counts it.
-test('epic.js: an open child with an ordinary title and a plan section takes a place of the ceiling', async () => {
-  const bound = { ...priorChild(901, 'Note answer: Offer X to admins', 'both'), plan_index: 11, lines: { from: 1, to: 2 },
-    files: { modify: ['f901.js'], test: [] } }
-  const { ledger } = await planRun(10, 3, findingRoad(901), [bound])
-  assert.equal(ledger.tasks['901'].state, 'DONE', 'it runs as a plan task')
-  assert.equal(ordinaryOf(ledger).length, 2)
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-503'])
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 0, tails: 1 })
-})
-
-// A defect a plan section binds — the Orca plugin ties every unfiled finding to a section,
-// defects included — is no plan task either: ten plan tasks and four tied defects keep a
-// ceiling of 3, so the fourth ordinary task goes to the tails epic of the release, as the
-// helper of /conport:task counts it.
-test('epic.js: defects tied to a plan section stay out of the base — plan 10 and 4 tied defects, the 4th ordinary task goes to the tails epic', async () => {
-  const tied = (id, title, coverage, description, i) => ({ ...priorChild(id, title, coverage), plan_index: 11 + i,
-    lines: { from: 1, to: 2 }, files: { modify: ['f' + id + '.js'], test: [] }, description })
-  const defects = [
-    tied(901, 'Close the critical', 'both', 'A confirmed critical gap of this epic, left open because it was confirmed beyond the cap of the critical-fix round; close it in this run.\nClose it.', 0),
-    tied(902, 'Add the carrier', 'both', 'Add the carrier.\nThe gap: no env carrier', 1),
-    tied(903, 'Acceptance unmet: the export is not observed', 'already_done', 'The acceptance of epic task-500 observed this criterion of its goal unmet: x', 2),
-    tied(904, 'Fix the export header', 'already_done', 'The gap: the export drops the header\nSeen in the nightly export.', 3),
-  ]
-  const { ledger, prompt } = await planRun(10, 4, { ...findingRoad(901), ...findingRoad(902) }, defects)
-  assert.equal(ledger.tasks['901'].state, 'DONE', 'a tied defect runs as a plan task')
-  assert.deepEqual(ordinaryOf(ledger), ['Review minors left on task-501', 'Review minors left on task-502', 'Review minors left on task-503'])
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on task-504'])
-  // the four tied defects are defect fixes of the epic, counted once each
-  assert.deepEqual(ledger.growth, { ordinary: 3, ceiling: 3, defects: 4, tails: 1 })
-  assert.match(accountTable(prompt('account')).close_resolution, /; ordinary tasks added 3 of 3, defect fixes 4; ordinary work to the tails epic 1;/)
-})
-
-// The marks of a tied defect sit in its child's description, which the compressed
-// acceptance of its plan section may lose: the scout carries that description too.
-test('epic.js: the scout returns the description of a defect a plan section binds verbatim, in both branches', async () => {
-  const rule = 'A child a plan section binds whose description a run wrote for a defect — it ' +
-    "starts with 'A confirmed critical gap of this epic' or 'Held for the person:', or a " +
-    "line of it starts with 'The gap: ' — carries that description VERBATIM as well: by " +
-    'it the run keeps a defect out of the plan tasks its ceiling is measured against.'
-  assert.equal(source('epic.js').replace(/\s+/g, ' ').split(rule).length - 1, 2, 'in STEP 2 and in branch B alike')
-})
-
-test('epic.js: a minor of a gap fix review is ordinary work and counts toward the ceiling', async () => {
-  const { ledger } = await planRun(10, 3, {
-    hunt: { gaps: [BLOCKER] }, gapverify: { verdicts: [critical(1)] },
-    'gapimpl-1': { status: 'DONE', branch: 'epic500/gap1', head_sha: 'fff5', worktree_path: '/tmp/wt-g1' },
-    'gaprev-1': { verdict: 'APPROVED', findings: [MINOR] },
-    'gapmerge-1': { results: [{ id: 100001, status: 'MERGED', merge_sha: 'ggg6' }] },
-  })
-  assert.deepEqual(ledger.tails.map(t => t.title), ['Review minors left on the fix of gap 1'])
+  assert.deepEqual(missingOf(prompt('create-findings')).map(m => m.title), ['Review minors left on task-501', NOTE.min_action.title])
 })

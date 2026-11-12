@@ -244,7 +244,7 @@ test('epic: a raised version refuses READY — the action is an unmet criterion 
   assert.equal(table.verdict, 'NOT_READY')
   assert.equal(table.may_close, false)
   assert.deepEqual(table.minors.filter(m => m.title.includes('Restore the version')),
-    [{ title: 'Acceptance unmet: ' + REFUSAL, priority: 2, parent: 500,
+    [{ kind: 'bug', title: 'Acceptance unmet: ' + REFUSAL, priority: 2, parent: 500,
       description: 'The acceptance of epic task-500 observed this criterion of its goal unmet: ' + REFUSAL }])
   assert.equal(ledger.goal.verdict, 'NOT_READY')
   assert.deepEqual(ledger.versions, { base: 'origin/main', differs: [PLUGIN], cause: 'raised', action: REFUSAL })

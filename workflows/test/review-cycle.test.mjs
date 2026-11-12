@@ -165,7 +165,7 @@ test('task.js: a minor left open by a task with no epic becomes a follow-up task
     assert.ok(flat.includes(text), text)
 })
 
-// No tails epic was filed — no release milestone with a release milestone after it: the
+// No tails epic was filed because there is no release at all: the
 // umbrella waits in a progress entry, and the owner is asked which milestone the tails go to.
 test('task.js: review minors waiting for a milestone are handed to the session as the tails question', async () => {
   const { ledger } = await go('task.js', taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null,
@@ -174,7 +174,7 @@ test('task.js: review minors waiting for a milestone are handed to the session a
   assert.ok(q, JSON.stringify(ledger.questions))
   assert.equal(q.task, null)
   assert.ok(q.question.includes('progress-88'), q.question)
-  assert.ok(q.question.includes('no tails epic of the release was filed: a task with no epic has no release milestone, or the epic is not in a release milestone,'), q.question)
+  assert.ok(q.question.includes('no tails epic of the release was filed: a task with no epic has no release milestone, or the epic is not in a release milestone.'), q.question)
   assert.ok(q.question.includes("'Tails of release <title of the release milestone>'"), q.question)
   const action = ledger.questions_action.replace(/\s+/g, ' ')
   assert.ok(action.includes('is answered with a milestone'), action)
@@ -257,21 +257,12 @@ test('task.js: a minor left open by a task of an epic becomes a task of that epi
   assert.match(table.close.resolution, /; 1 review minor\(s\) left open, for one follow-up task$/)
   const flat = prompt('account').replace(/\s+/g, ' ')
   assert.ok(flat.includes('minors_umbrella.parent'), 'branch B is told where the umbrella goes')
-  for (const text of ['max(3, floor(3 × <plan tasks> / 10))', "'<!-- conport-epic: 40 -->'", 'Held for the person:',
-    'A confirmed critical gap of this epic, left open because', "'The gap: '", "'Acceptance unmet: '", "'Review minors left on '", "'Note answer: '",
-    "'Tails of release <title of M>'", 'or a first line of its description or acceptance, starting with', "format B: 'ConPort task-<id>' in the heading"])
-    assert.ok(flat.includes(text), 'branch B counts the ceiling as the helper does: ' + text)
+  for (const text of ["kind='task'", 'epic_growth_ceiling', "'Tails of release <title of M>'"])
+    assert.ok(flat.includes(text), 'branch B follows the server refusal: ' + text)
+
 })
 
-// The plan the scout found for the task travels in the table: the helper reads it when
-// no plan in the repository carries the epic's anchor.
-test('task.js: the umbrella carries the plan of the task to the accounting', async () => {
-  const run = taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null })
-  run.answers.scout = { ...run.answers.scout, task: { ...run.answers.scout.task, parent_epic_id: 40 },
-    brief: { ...run.answers.scout.brief, plan_path: 'docs/superpowers/plans/p.md' } }
-  const { prompt } = await go('task.js', run)
-  assert.equal(accountTable(prompt('account')).minors_umbrella.plan_path, 'docs/superpowers/plans/p.md')
-})
+
 
 test('task.js: a run with no minor left files no follow-up task', async () => {
   const { prompt } = await go('task.js', taskRun())

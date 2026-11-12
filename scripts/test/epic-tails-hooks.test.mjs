@@ -20,7 +20,7 @@ const TOOL_UPDATE = 'mcp__plugin_conport_conport__update_task'
 // Fake API: `children` is the task table (parent_task_id per row), `tails`
 // the body of GET /epic-tails. Every request is recorded.
 async function startApi() {
-  const api = { children: [], tails: [], milestones: null, requests: [] }
+  const api = { children: [], progress: {}, detailFailures: {}, tails: [], milestones: null, requests: [] }
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
     api.requests.push(url)
@@ -31,6 +31,18 @@ async function startApi() {
       const offset = Number(url.searchParams.get('offset') || 0)
       const limit = Number(url.searchParams.get('limit') || 50)
       res.end(JSON.stringify({ tasks: rows.slice(offset, offset + limit), total: rows.length }))
+    } else if (/^\/api\/v1\/projects\/prk7m2qx9d\/tasks\/\d+$/.test(url.pathname)) {
+      const id = Number(url.pathname.split('/').at(-1))
+      if (api.detailFailures[id] === 'hang') return
+      if (api.detailFailures[id]) {
+        res.statusCode = api.detailFailures[id]
+        res.end('{}')
+        return
+      }
+      res.end(JSON.stringify({ id, kind: 'epic', epic_progress: {
+        epic_id: id, plan_tasks: 10, ordinary_added: 0, bugs: 0,
+        growth_ceiling: 3, ...api.progress[id],
+      } }))
     } else if (url.pathname === '/api/v1/projects/prk7m2qx9d/milestones' && api.milestones) {
       res.end(JSON.stringify(api.milestones))
     } else if (url.pathname === '/api/v1/projects/prk7m2qx9d/epic-tails') {
@@ -70,7 +82,7 @@ function runHook(script, payload, { api, dataDir }) {
 const mcpResult = (obj) => [{ type: 'text', text: JSON.stringify(obj) }]
 
 const child = (id, parent, status, extra = {}) => ({
-  id, parent_task_id: parent, status, title: `child ${id}`,
+  id, parent_task_id: parent, status, kind: 'task', title: `child ${id}`,
   created_at: '2026-09-01T10:00:00Z', started_at: null, ...extra,
 })
 
@@ -354,9 +366,10 @@ test('an epic that grew after work started is listed first', () => withEnv(async
   ctx.api.children = [
     child(61, 60, 'TODO', { created_at: '2026-09-01T10:00:00Z' }),
     child(62, 60, 'DONE', { created_at: '2026-09-01T10:00:00Z', started_at: '2026-09-02T10:00:00Z' }),
-    child(71, 70, 'TODO', { created_at: '2026-09-05T10:00:00Z' }),
+    child(71, 70, 'TODO'),
     child(72, 70, 'DONE', { created_at: '2026-09-01T10:00:00Z', started_at: '2026-09-02T10:00:00Z' }),
   ]
+  ctx.api.progress[70] = { ordinary_added: 1 }
   const reason = JSON.parse((await stop(ctx, 's1')).out).reason
   const grown = reason.indexOf('[TAILS] task-70')
   const plain = reason.indexOf('[TAILS] task-60')
@@ -564,3 +577,45 @@ test('a failed tails fetch neither prints nor resets what the session was shown'
   rmSync(cache)
   assert.doesNotMatch(await promptContext(ctx), /\[TAILS\]/)       // back, unchanged: still quiet
 }))
+
+for (const [label, progress, marked] of [
+  ['Bug-only growth', { ordinary_added: 0, bugs: 2 }, false],
+  ['ordinary growth', { ordinary_added: 1, bugs: 2 }, true],
+  ['outside ceiling scope', { ordinary_added: 1, growth_ceiling: null }, false],
+  ['no growth despite late creation', { ordinary_added: 0 }, false],
+]) {
+  test('Stop reads epic_progress: ' + label, () => withEnv(async ctx => {
+    await addUnderEpic(ctx, 's1', 60, 61)
+    ctx.api.children = [
+      child(61, 60, 'TODO', { created_at: '2026-09-05T10:00:00Z' }),
+      child(62, 60, 'DONE', { started_at: '2026-09-02T10:00:00Z' }),
+      child(63, 60, 'TODO', { kind: 'bug' }),
+    ]
+    ctx.api.progress[60] = progress
+    assert.ok(ctx.api.children.every(c => !('attached_at' in c)))
+    const reason = JSON.parse((await stop(ctx, 's1')).out).reason
+    assert.ok(reason.includes('child 63'), 'Bugs remain visible as open work')
+    assert.equal(/grew after work started/.test(reason), marked)
+    assert.ok(ctx.api.requests.some(u => u.pathname.endsWith('/tasks/60')))
+  }))
+}
+
+for (const failure of [500, 'hang']) {
+  test('Stop retains all open tails when parallel epic reads fail: ' + failure, () => withEnv(async ctx => {
+    for (const id of [60, 70, 80]) {
+      await addUnderEpic(ctx, 's1', id, id + 1)
+      ctx.api.children.push(child(id + 1, id, 'TODO'))
+      ctx.api.detailFailures[id] = failure
+    }
+    const started = Date.now()
+    const { out } = await stop(ctx, 's1')
+    const verdict = JSON.parse(out)
+    assert.equal(verdict.decision, 'block')
+    for (const id of [60, 70, 80]) {
+      assert.ok(verdict.reason.includes('child ' + (id + 1)))
+      assert.ok(ctx.api.requests.some(u => u.pathname.endsWith('/tasks/' + id)))
+    }
+    assert.doesNotMatch(verdict.reason, /grew after work started/)
+    assert.ok(Date.now() - started < 5500, 'parallel reads finish inside the total hook budget')
+  }))
+}

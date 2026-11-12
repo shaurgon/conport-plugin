@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 21.0.0
+  version: 22.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -33,7 +33,7 @@ structure on top.
 
 | Tool | Purpose |
 |------|---------|
-| `get_agenda(project, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`), `activity_delta`. Empty sections are omitted. |
+| `get_agenda(project, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (only unblocked & non-snoozed; open Bugs and their epics precede ordinary work of the current milestone, with `effective_priority` ordering within groups; every row carries `milestone_id`), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`), `activity_delta`. Empty sections are omitted. |
 | `list_milestones(project, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
 | `update_milestone(project, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
 | `get_routine_config(project)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
@@ -158,8 +158,16 @@ Skip this phase entirely at level 0.
 
 Skip this phase entirely at levels 0–1.
 
-**Finish tails before starting anything new.** Work `epic_tails` from the
-agenda first, in the order returned, and only then move on to `ready_top` — an
+**Choose by `backlog.top`.** Open Bugs (`kind='bug'`, status TODO,
+IN_PROGRESS, REVIEW or BLOCKED) and their epics come first, across all
+milestones, before ordinary tasks of the current milestone. Preserve this
+server order when selecting eligible, ready work; keep the priority threshold,
+selection mode, blockers and review gates below. Do not re-sort by
+`effective_priority` alone or take ordinary tails ahead of an eligible Bug.
+
+**Finish ordinary tails before starting new ordinary work.** After eligible
+Bugs, work `epic_tails` from the agenda in the order returned, then move on to
+ordinary `ready_top` work — an
 epic one task away from closing is worth more than a fresh start, and the
 roadmap only advances when epics actually close.
 
@@ -181,16 +189,18 @@ roadmap only advances when epics actually close.
 
 Then the ready pool:
 
-- Candidate pool: `ready_top` from the agenda, filtered to
+- Candidate pool: `ready_top` from the agenda, already using the same server
+  ordering as `backlog.top` and filtered for readiness; apply
   `priority <= priority_threshold`. If the pool is thinner than
   `max_tasks_per_run`, you may extend it with
   `list_tasks(ready=true, order="priority", offset=N)` — same threshold filter.
 - **Stay on the current milestone — but don't starve on it.** The server
-  already floats its rows to the top of `ready_top`, and every row carries
-  `milestone_id`. Two cases, decided by that field alone:
+  orders open Bugs and their epics first, then ordinary work of the current
+  milestone. Every row carries `milestone_id`. The Bug exception above applies
+  across milestones; for ordinary work use these two cases:
   - `milestone_id` of a **later** milestone → leave the row and name it in the
-    digest. Pulling work forward off the roadmap is the owner's decision, not
-    the run's.
+    digest, unless it is an open Bug or its epic. Pulling ordinary work forward
+    off the roadmap is the owner's decision, not the run's.
   - `milestone_id: null` (attached to no milestone) → **legitimate work for the
     run.** Most projects keep a large unattached pool; skipping it would leave
     the cycle idle in the name of a roadmap the row isn't on. Take it on
@@ -325,7 +335,7 @@ separate report entity.
 - [ ] `routine_run_start` called — and an `already_open` run resolved first?
 - [ ] Every `stale_in_progress` task got an explicit verdict (continue / return / close)?
 - [ ] Housekeeping done only at autonomy >= 1; execution only at autonomy == 2?
-- [ ] Execute phase worked `epic_tails` first (closable epics closed with `resolution`), and only then `ready_top`?
+- [ ] Execute phase followed `backlog.top` with eligible open Bugs and their epics first, then ordinary `epic_tails` (closable epics closed with `resolution`), then new ordinary `ready_top` work?
 - [ ] Executed at most `max_tasks_per_run` tasks, one at a time, each through IN_PROGRESS → verify → DONE with `resolution`?
 - [ ] A task that needed a check went through `report` → REVIEW → a `review` by a separate reviewer — and tasks waiting in REVIEW were reviewed or named in the digest, never moved back to TODO or BLOCKED?
 - [ ] Digest names the current milestone — and a release milestone was left for the owner to close?

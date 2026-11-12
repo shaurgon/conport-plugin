@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 21.0.0
+  version: 22.0.0
 ---
 
 # ConPort — Project Management System
@@ -489,7 +489,11 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 milestone is the open one with the smallest `sequence`, and `init` / `get_agenda`
 return it in the `roadmap` section.
 
-- **Work the current milestone.** In an interactive session, picking up work
+- **Work the current milestone.** Exception: an open Bug (`kind='bug'`,
+  status TODO, IN_PROGRESS, REVIEW or BLOCKED) from any milestone comes before
+  an ordinary task of the current milestone. Follow `backlog.top`: open Bugs
+  and their epics come first; readiness and review gates still apply.
+  In an interactive session, picking up ordinary work
   that belongs to a **later** milestone needs an **explicit decision by the
   owner** — say which milestone the work sits in and ask before starting; never
   silently pull work forward because it looked convenient. Work attached to no
@@ -499,7 +503,7 @@ return it in the `roadmap` section.
   attach it by the **conport-roadmap** rules, never leave it aside. (An
   autonomous routine run has no owner to ask: the
   **conport-routine** skill overrides this rule with its own — unattached rows
-  are fair game, later-milestone rows are not.)
+  are fair game; later-milestone ordinary rows are not.)
 - **Closing a milestone always carries `resolution`** — what was delivered
   (DONE) or why it was dropped (CANCELLED). The server logs a progress entry
   from it.
@@ -650,7 +654,10 @@ epic or reporting an epic's progress.
   record a decision as the user's only for what the user stated.
 - **Two or more related tasks** — an epic first; work before a design is one
   task (the Planning rows above).
-- **A finding** becomes a task after it is checked, not instead. Every finding
+- **A finding** becomes a task after it is checked, not instead. File a defect
+  (a review's Critical or Important, a gap hunt's Blocker or Should-fix, or a
+  confirmed behaviour defect) with `kind='bug'`; polish and new work use
+  `kind='task'`. Every finding
   not fixed in the same pass is a task of the current epic, done before the
   epic is declared ready: a gap hunt's Blocker, Should-fix and Note, a review's
   Critical, Important and Minor, a confirmed behaviour defect. A behaviour
@@ -670,16 +677,28 @@ epic or reporting an epic's progress.
   by blocks (`update_block`, `insert_block`), before the task is closed — "the
   epic is closed" is no reason to skip it.
 - **Epic growth ceiling:** an epic takes max(3, floor(0.3 × plan tasks))
-  ordinary tasks added after the plan; the next ordinary task goes to the tails
-  epic of the release (the one of the freeze line below) — not into this epic,
-  not dropped, and the user is not asked. A defect never counts and always
-  stays in this epic: a review's Critical and Important, a gap hunt's Blocker
-  and Should-fix, a confirmed behaviour defect; a defect filed by hand starts
-  its description with `The gap: `, the mark the epic workflow knows it by.
-  Polish from findings counts: a review's Minor left after the pass, a task
-  from a Note's answer — and so does new scope. A progress report names the
-  ordinary tasks added (counted) and the defect fixes (not counted) as two
-  numbers.
+  ordinary tasks added after the plan; the next ordinary task goes to the
+  tails epic of the release (the one of the freeze line below) — not into this
+  epic, not dropped; ask for its milestone only when no next release is
+  available. A defect never counts and always stays in this epic: a review's
+  Critical and Important, a gap hunt's Blocker and Should-fix, a confirmed
+  behaviour defect. Polish from findings counts: a review's Minor left after
+  the pass, a task from a Note's answer — and so does new scope. A progress
+  report names the ordinary tasks added (counted) and the defect fixes (not
+  counted) as two numbers. File defects with `kind='bug'`, polish and new work
+  with `kind='task'`: `kind` determines which count applies, not the task's
+  origin. The server counts the ceiling itself. On `epic_growth_ceiling`, take
+  one action: execute the call in `suggestions[].call`, using the tails epic
+  the server names. Do not recalculate the ceiling or choose another epic.
+  Read `epic_progress.plan_tasks`, `ordinary_added`, `bugs` and
+  `growth_ceiling`; the ceiling is `epic_progress.growth_ceiling`, and `null`
+  means no ceiling (the epic is outside its scope), never a fallback count.
+  With a ceiling, the server summary is "ordinary after plan N of C, bugs B".
+  The workflow run summary is "ordinary tasks added N of ceiling C; bug fixes B"
+  or "ordinary tasks added N (no ceiling); bug fixes B" outside that scope.
+  Execute the ordered calls from `suggestions` on a refusal; do not count locally.
+  `ask_user_milestone` asks where the target tails epic belongs whenever it has
+  no milestone, whether that epic was found or created.
 - **Epic progress** is its open children in ConPort, not a plan file's list;
   recount after every close; a report gives both numbers.
 - **An epic does not bump a version:** it writes its changes under
@@ -691,13 +710,14 @@ epic or reporting an epic's progress.
   right after the release, taken first after the push, never holding waiting
   work. Its title is `Tails of release <title of the release milestone>`,
   written literally and never translated: look for an epic with that title
-  before filing one. It is filed with priority 1, and only when the open
-  milestone right after the release is a release milestone itself: when it is
-  a standing list (the waiting milestone, the backlog without a date) or there
-  is none, ask the user which milestone the tails go to. Work that cannot be
-  finished before the push for an outside reason
-  (another party's service, a date, a measurement window) goes to the waiting
-  milestone. A defect in this release's code is closed before the push.
+  before filing one. It is filed with priority 1. Inspect the next open
+  milestone after the release: if it is a release, find the oldest open tails
+  epic with the exact title in that milestone, or create it there; otherwise
+  find or create it without a milestone, file the work, and ask the user which
+  milestone it goes to. Work that cannot be finished before the push for an
+  outside reason (another party's service, a date, a measurement window) goes
+  to the waiting milestone. A defect in this release's code is closed before
+  the push.
 - **At session start** a task in IN_PROGRESS with no live executor and no
   commit is an interrupted attempt: tell the user, then continue it from what
   it left or return it to TODO.
@@ -725,13 +745,13 @@ behaves, drawn from entities of the model: see *Scenarios* below.
 | "What did these specs bring in?" | `arch_get` with `view='contribution'` (one to three `documents`) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
-| Submit or replace a portion | `arch_submit` (or `npx -y conport@^0.7.3 arch submit <file.json>`) |
-| Change a portion | `arch_source` (or `npx -y conport@^0.7.3 arch source <source>`), edit, `arch_submit` |
-| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.7.3 arch withdraw <source>`) |
+| Submit or replace a portion | `arch_submit` (or `npx -y conport@^0.8.0 arch submit <file.json>`) |
+| Change a portion | `arch_source` (or `npx -y conport@^0.8.0 arch source <source>`), edit, `arch_submit` |
+| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.8.0 arch withdraw <source>`) |
 | "Which behaviour scenarios does the project have?" | `arch_scenarios` |
 | One scenario with its participants, states or nodes and steps | `arch_scenario` |
 | "What does the model owe?" | `arch_status` |
-| Check the anchors against the code | `npx -y conport@^0.7.3 arch check` in the repository root |
+| Check the anchors against the code | `npx -y conport@^0.8.0 arch check` in the repository root |
 | Fill the model of a project that lived before it | the procedure `references/model-backfill.md` |
 | Start, complete or decline the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`, `declined` |
 | The role of a document in the model | `update_document` with `model_role` — `structure`, `history`, `none` |
@@ -804,7 +824,7 @@ with the block that states it.
 - **The code.** Write the skeleton yourself, reading the code through
   `codegraph` or the files: one unit per source `code:<label>`. Submitting one
   label leaves the others as they are; to add to a skeleton, read its portion,
-  edit it and submit it again. Then run `npx -y conport@^0.7.3 arch check`.
+  edit it and submit it again. Then run `npx -y conport@^0.8.0 arch check`.
 
 The model is on in a project once it has one portion, or while its backfill
 runs or after it is completed; before that it owes nothing.
@@ -827,7 +847,7 @@ runs or after it is completed; before that it owes nothing.
    `source`, `target` (names or aliases), `action` and `block`. A `code`
    portion takes only `introduced` and carries anchors, not blocks.
 4. **Submit it** with `arch_submit(project, portion)`, or write it to a file
-   and run `npx -y conport@^0.7.3 arch submit <file.json>`.
+   and run `npx -y conport@^0.8.0 arch submit <file.json>`.
 5. **A refusal** is `portion_rejected` with every error at once, each with its
    `code`, `subject` and `action`; nothing was written. Take the action of each
    error and submit again. `portion_invalid` is a portion off the schema: its
@@ -839,7 +859,23 @@ runs or after it is completed; before that it owes nothing.
    into `dismissed` of the next submission — `subject` (`entity`, the default,
    or `scenario`), `kind` (`missing` or `invented`), `name`, `where` (for a
    scenario: the text of the step, or `whole_scenario`) and `reason` — and is
-   not raised again. The next check shows the model your dismissals with
+   not raised again. A finding about a relation is a finding about an entity
+   named `Source type Target`: dismiss it without `subject` or with `entity`;
+   `relation` is no subject and makes the portion `portion_invalid`. The server
+   drops a later finding of the same `subject` and `kind` under another
+   spelling of a dismissed name: arrows and colons aside (`FACT :Entity →
+   :Entity` is `FACT Entity → Entity`), and an entity written `X (y)` with `y`
+   as code (it holds `_`, `/`, `.` or `{}`) taken for the whole `X` or the
+   whole `y` — `agent_event` goes with `Agent event (agent_event)`. A plain
+   word in brackets makes another thing (`API_HOST (agent)` is not
+   `API_HOST`), as do two wrapped names sharing only a part, a word more or
+   less and another end of a relation; a relation — `Source type Target` or
+   `Source → Target` — is never unwrapped. `X (y)` is unwrapped, on either
+   side, for a `missing` finding only. An `invented` finding and its
+   dismissal both name entities the portion holds, so they are compared by
+   their whole names: a dismissal of `Точка входа (cli/conport)` takes
+   `missing: cli/conport` but not `invented: cli/conport`, and a dismissal of
+   `cli/conport` does not take `invented: Точка входа (cli/conport)`. The next check shows the model your dismissals with
    their reasons and tells it to raise none of them under another name, nor
    another finding a reason covers just as well. So write the reason as the
    class the finding belongs to — "a function, smaller than the model", "a
@@ -1216,12 +1252,12 @@ For a `code:` portion `portion_too_large` prescribes instead: Split the portion 
 
 A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
-`npx -y conport@^0.7.3 arch submit <file.json>`, then
-`npx -y conport@^0.7.3 arch check`.
+`npx -y conport@^0.8.0 arch submit <file.json>`, then
+`npx -y conport@^0.8.0 arch check`.
 
 ### The anchor check
 
-`npx -y conport@^0.7.3 arch check` in the repository root reads the anchors of
+`npx -y conport@^0.8.0 arch check` in the repository root reads the anchors of
 the model — of its entities and of the scenarios of `code:` portions — checks
 `path` anchors on the file system and `symbol` anchors through the `codegraph`
 index when the repository has one (without it they are left unchecked, as are
@@ -1259,8 +1295,8 @@ one. When `total` is above five, `arch_status` lists them all.
 | `portion_stale` | The document changed after its portion was submitted | Read the portion with `arch_source`, bring it in line with the document and submit it again. |
 | `mismatch` | The latest background check of the document's portion has findings nobody dismissed | Submit the portion again with the findings fixed or listed in `dismissed` with a reason. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
-| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none | Run `npx -y conport@^0.7.3 arch check` in the repository root. |
-| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.7.3 arch check`. |
+| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none | Run `npx -y conport@^0.8.0 arch check` in the repository root. |
+| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.8.0 arch check`. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names was removed or replaced, or the scenario an action runs was deleted | Resubmit the scenario: drop the removed entity or name the one that replaced it. |
 
@@ -1311,10 +1347,15 @@ The key `backfill` of the section `arch` of `init` carries `state`
 
 The task tree is **two levels** and the database enforces it:
 
-- `kind='task'` — leaf node. May have `parent_task_id` pointing to an epic. Cannot have children.
+- `kind='task'` — ordinary work (the default), a leaf node. May have `parent_task_id` pointing to an epic. Cannot have children.
+- `kind='bug'` — a defect: a review's Critical or Important, a gap hunt's
+  Blocker or Should-fix, or a confirmed behaviour defect. It is a leaf with
+  the same parent rules as an ordinary task; it cannot have children and never counts toward
+  the epic's ordinary-task growth ceiling.
 - `kind='epic'` — root container. Always `parent_task_id=NULL`. Other tasks attach under it.
 
-No third level. Trying to attach a task under another task (kind=task with kind=task parent) is **rejected at the DB level**. The MCP/REST layer maps the rejection to a structured `parent_not_epic` payload with two recovery options.
+The three kinds are exactly `task | bug | epic`; a leaf has `kind != 'epic'`.
+No third level. Trying to attach a leaf under another leaf is **rejected at the DB level**. The MCP/REST layer maps the rejection to a structured `parent_not_epic` payload with two recovery options.
 
 ### Recovery: `parent_not_epic` error
 
@@ -1613,7 +1654,7 @@ claim it was posted.
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
-- [ ] A spec got its plan imported → its portion submitted with `arch_submit`? An epic merged into the main branch or a `code` portion submitted → `npx -y conport@^0.7.3 arch check` run (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
+- [ ] A spec got its plan imported → its portion submitted with `arch_submit`? An epic merged into the main branch or a `code` portion submitted → `npx -y conport@^0.8.0 arch check` run (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] A problem of the service itself → showed the user the title and body and posted only after they agreed (a run with no person: the report in its summary, nothing posted), searched the open `[agent-report]` issues first, no project content, and told the user the URL — or gave the search and form links and said the report is not sent until they submit it?

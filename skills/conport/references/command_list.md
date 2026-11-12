@@ -79,8 +79,11 @@ other tool), `name` (the short name), `canonical_name`
 `recent_decisions`, `recent_patterns`,
 `summary` opens with `Project <name> (<handle>) loaded`;
 `backlog` (`total_todo`, `total_in_progress`, `total_review`, `top` — up to 5
-items with `effective_priority` and `subtask_count`; built over TODO,
-IN_PROGRESS and REVIEW), `stats` (`tasks_todo`, `tasks_in_progress`,
+items with `effective_priority`, `has_open_bug` and `subtask_count`; built
+over TODO, IN_PROGRESS and REVIEW, with open Bugs and epics with an open
+Bug first, then effective priority <= 2 across milestones, then the current
+milestone, then the rest; within each group, effective priority then most
+recently updated), `stats` (`tasks_todo`, `tasks_in_progress`,
 `tasks_review` among them), `active_context`
 (`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
 entries), `instructions` and `summary`.
@@ -583,19 +586,36 @@ mcp__conport__add_task({
 | status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED (default: TODO). A new task is never created in REVIEW (`review_from_in_progress_only`): a task enters REVIEW from IN_PROGRESS |
 | priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
 | parent_task_id | integer | no | Per-project ID of parent task. The parent must be `kind='epic'` |
-| kind | string | no | `task` (default, leaf) or `epic` (root container). Tasks attach under epics; an epic can never have a parent |
+| kind | string | no | `task` (default, ordinary leaf), `bug` (defect leaf), or `epic` (root container). Tasks and Bugs attach under epics; an epic can never have a parent |
 | estimated_seconds | integer | no | Estimated effort in seconds. Epic rows reject it (`epic_does_not_carry_time_fields`) — an epic's effort is summed from its children |
 | routine_eligible | boolean | no | Opt-in marker for the autonomous routine cycle: `true` lets an agent pick the task up on its own (`selection='tagged'`). Orthogonal to priority (default: false) |
 | milestone_id | integer | no | Per-project ID of the roadmap milestone this epic belongs to. Only `kind='epic'` rows may carry one (`milestone_on_non_epic`); an unknown milestone is rejected with `milestone_not_found`. `0` means no milestone — exactly the same as omitting it (there is nothing to detach on create) |
 
 **Returns:** a slim echo — `id`, `tags`, `summary` — plus the applied `kind`,
-`estimated_seconds` and `milestone_id`. Creating a task under an epic also
-returns `epic_progress`, the parent epic's children rollup: `epic_id`,
-`epic_title`, `open_children`, `total_children`, `closable` (no open children
-left and the epic itself still open) and `grew_after_start: true` when the
-append landed on an epic somebody had already started — a growing tail. The
-`summary` spells the rollup out; the field stays machine-readable. A task
-created at root level carries no `epic_progress`.
+`estimated_seconds` and `milestone_id`. Creating a child under an epic also
+returns `epic_progress`: `epic_id`, `epic_title`, `open_children`,
+`total_children`, `closable` (no open children and the epic still open),
+`plan_tasks`, `ordinary_added`, `bugs` and `growth_ceiling`. Read the ceiling
+from `epic_progress.growth_ceiling`; `null` means no ceiling applies, not zero
+or a request to calculate one locally. When a ceiling applies, the server
+summary includes `ordinary after plan N of C, bugs B`.
+
+The optional `grew_after_start: true` marks an ordinary task added after an
+ordinary sibling in an attachment batch has started (a `started_at` value or
+status other than TODO). A batch has another ordinary sibling attached
+within ten minutes. A Bug never gets this marker and never consumes the
+ordinary ceiling. The summary marks this as tail growth; a root task has no
+`epic_progress`.
+
+**Growth refusal:** `epic_growth_ceiling` (HTTP 409 on REST) supplies
+`context.tails_epic`, `context.tails_epic_title`, `context.next_milestone` and
+ordered `suggestions`. Execute those calls in order; `plan import` prints
+them too. They route the refused ordinary work to the release tails epic.
+`ask_user_milestone` appears whenever that target epic has no milestone,
+whether it was found or created: ask the person and attach it to the chosen
+milestone. Do not infer a milestone or count growth locally. The same
+refusal can apply when re-parenting, converting a Bug to an ordinary task,
+or reopening a cancelled ordinary task through `update_task`.
 
 **Refusals:** the hierarchy invariants come back as structured errors:
 `parent_not_epic` (with `suggestions` naming the promote / attach call to make
@@ -627,7 +647,7 @@ mcp__conport__update_task({
 | priority | integer | no | New priority 1-5 (1=critical, 5=idle) |
 | parent_task_id | integer | no | Re-parent the task. Positive per-project task id attaches under that parent (must be `kind='epic'`), `0` detaches to root level, omit to leave unchanged. A parent from another project is rejected as not-found, and so is any move that would attach the task under one of its own descendants (cycle) |
 | resolution | string | no | Verdict recorded on close — applied only when `status` moves to DONE or CANCELLED, ignored otherwise. Upserted as a `## Resolution` section of the description (the original body is preserved) and logged as a linked progress entry. Required on REVIEW → DONE (`done_needs_resolution`) |
-| kind | string | no | Promote `task` → `epic` (the task must be root — combine with `parent_task_id: 0` to detach and promote in one call) or demote `epic` → `task` (the epic must have no children) |
+| kind | string | no | Convert `task` ↔ `bug`, promote either leaf kind → `epic` (the leaf must be root — combine with `parent_task_id: 0` to detach and promote in one call), or demote `epic` → `task` / `bug` (the epic must have no children) |
 | estimated_seconds | integer | no | Estimated effort in seconds. Epic rows reject it (`epic_does_not_carry_time_fields`) |
 | snooze_until | string | no | ISO 8601 timestamp — hide the task from default listings until then (status unchanged, it wakes on its own when the time passes). A timestamp without a timezone is read as UTC. Empty string clears the snooze, omit to leave unchanged |
 | routine_eligible | boolean | no | Autonomous-cycle opt-in marker (see `add_task`). Pass `true`/`false` to set, omit to leave unchanged |
@@ -644,7 +664,8 @@ IN_PROGRESS and on DONE), `claim_expires_at` (the IN_PROGRESS lease — renewed
 on every touch while the task is IN_PROGRESS, cleared when it leaves that
 status — a task in REVIEW holds no lease and is never returned to TODO by it) and `estimate_drift` (`estimated_seconds`, `actual_seconds`, `ratio`),
 present only when a task that carried an estimate actually transitions to DONE.
-A write that moves the parent epic's tail — a status change or a re-parent —
+A write that moves the parent epic's tail — a status change, re-parent or kind
+change —
 also returns `epic_progress` (same shape as under `add_task`, without
 `grew_after_start`); an edit that leaves the tail alone (title, description,
 priority, …) carries none. On a detach (`parent_task_id: 0`) the rollup
@@ -659,7 +680,9 @@ first — a snoozed child counts as open, a snooze hides a task, it does not
 close it. `CANCELLED` is never gated: dropping the work is an explicit act.
 The hierarchy invariants come back the same way: `parent_not_epic` (with
 `suggestions`), `epic_with_parent`, `task_has_parent`, `epic_has_children`,
-`milestone_on_non_epic`, `milestone_not_found`, `epic_has_milestone`.
+`milestone_on_non_epic`, `milestone_not_found`, `epic_has_milestone`. The
+`epic_growth_ceiling` refusal and its ordered `suggestions` are described
+under `add_task`.
 
 **Review cycle.** A task whose work is checked goes IN_PROGRESS → REVIEW →
 DONE, or back from REVIEW to IN_PROGRESS for another round; every step is
@@ -703,11 +726,11 @@ mcp__conport__list_tasks({
 | status | string | no | Filter by status. Comma-separated or "ALL" (default: "TODO,IN_PROGRESS,REVIEW") |
 | priority | integer | no | Filter by priority 1-5 (1=critical, 5=idle) |
 | parent_task_id | integer | no | Filter by parent per-project ID (0 = root tasks only) |
-| kind | string | no | Filter by hierarchy role: `task` or `epic`. Omit to include both |
+| kind | string | no | Filter by kind: `task`, `bug` or `epic`. Omit to include all three |
 | ready | boolean | no | Only tasks with no open blocking dependency — a `blocks`/`requires` dependency on a task in TODO/IN_PROGRESS/BLOCKED/REVIEW excludes it; `suggests` and DONE/CANCELLED targets never block (default: false) |
 | include_snoozed | boolean | no | Include tasks snoozed into the future (`snooze_until` > now). Default false — snoozed tasks stay hidden from the list and the count until their snooze elapses |
 | routine_eligible | boolean | no | Filter by the autonomous-cycle opt-in marker: `true` — only marked tasks, `false` — only unmarked. Omit for no filter |
-| order | string | no | `created_at` (default, newest first) or `priority` — rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS/REVIEW direct children; ties broken by newest first). With `priority` each task carries `effective_priority` |
+| order | string | no | `created_at` (default, newest first) or `priority` — open Bugs and epics with an open Bug first, then rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS/REVIEW direct children; ties broken by newest first). With `priority` each task carries `effective_priority` and `has_open_bug` |
 | limit | integer | no | Max results (default: 50) |
 | offset | integer | no | Pagination offset — page deeper than the first `limit` tasks (default: 0) |
 | include_description | boolean | no | Include task descriptions (default: false) |
@@ -715,7 +738,8 @@ mcp__conport__list_tasks({
 **Returns:** `tasks` (`id`, `title`, `status`, `priority`, `parent_task_id`,
 `kind`, `estimated_seconds`, `actual_seconds`, `started_at`, `completed_at`,
 `snooze_until`, `claim_expires_at`, `routine_eligible`, `milestone_id`,
-timestamps — plus `effective_priority` with `order: "priority"`), `total` and a
+timestamps — plus `effective_priority` and
+`has_open_bug` with `order: "priority"`), `total` and a
 one-line `summary`. Epic rows carry the time sums of their children.
 
 ### get_task
@@ -741,7 +765,8 @@ mcp__conport__get_task({
 round of that verdict (both `null` before the first review; a round below
 `review_round` means the verdict belongs to an earlier round). The entries themselves come
 from `list_task_journal`. An epic reports the `estimated_seconds` /
-`actual_seconds` summed across its children.
+`actual_seconds` summed across its children and `epic_progress` (the rollup
+and growth fields described under `add_task`, without `grew_after_start`).
 
 ### add_task_dep
 
@@ -1387,10 +1412,10 @@ A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.7.3 arch submit <file.json>`,
-`npx -y conport@^0.7.3 arch withdraw <source>`,
-`npx -y conport@^0.7.3 arch source <source> [-o <file>]` — and one thing no tool
-does: `npx -y conport@^0.7.3 arch check` in the repository root checks the
+`npx -y conport@^0.8.0 arch submit <file.json>`,
+`npx -y conport@^0.8.0 arch withdraw <source>`,
+`npx -y conport@^0.8.0 arch source <source> [-o <file>]` — and one thing no tool
+does: `npx -y conport@^0.8.0 arch check` in the repository root checks the
 anchors of the model against the code there and sends only the outcome. When
 to submit a portion, which type a thing takes and what each refusal asks for:
 the section *PROJECT MODEL* of the conport skill.
@@ -1403,7 +1428,7 @@ portions. The procedure gives every document its role with `update_document`
 (`in_progress`, `completed`, `declined`), and reads the active decisions
 without an entity from `arch_status` while the backfill runs
 (`unlinked_decisions`, page by page with `unlinked_after`).
-`npx -y conport@^0.7.3 arch withdraw --all` reports every source of the project
+`npx -y conport@^0.8.0 arch withdraw --all` reports every source of the project
 and removes nothing; with `--apply` it withdraws them all, documents and code,
 and returns the backfill to its start. It runs only on the user's word.
 
@@ -1447,7 +1472,15 @@ lists findings of the background check the agent rejects: `subject` (entity \|
 scenario, entity by default), `kind` (missing \| invented, and
 step_without_relation for the debt of a scenario), `name`, `where` (for a
 scenario: the text of the step, or `whole_scenario`; empty for an entity),
-`reason`.
+`reason`. A relation is dismissed as an entity named `Source type Target`
+(`relation` is no subject). A dismissal also takes a later finding of the same
+`subject` and `kind` under another spelling: arrows and colons aside, and an
+entity's `X (y)` with `y` as code (`_`, `/`, `.`, `{}`) taken for the whole `X`
+or the whole `y`. A plain word in brackets makes another thing (`API_HOST
+(agent)` is not `API_HOST`); a relation, `Source type Target` or `Source →
+Target`, is never unwrapped. `X (y)` is unwrapped, on either side, for a
+`missing` finding only: an `invented` finding and its dismissal are compared by
+their whole names.
 
 `scenarios` lists the behaviour scenarios of the source: without the field
 the scenarios of the source stay, an empty list deletes them, a list replaces
@@ -1891,7 +1924,10 @@ the links it creates on its own (`mentions`, `implements`, `derived_from`,
 
 **Errors:** a `source_type` or `target_type` outside the list above is refused
 with `unknown_item_type` before anything is written; the message names the
-types to pass — the same code and sentence the REST `POST /links` answers. An
+types to pass — the same code and sentence the REST `POST /links` answers. A
+`relationship` outside the link types above is refused with
+`invalid_relationship`, the message naming the types to pass, as the REST
+`POST /links` and `PUT /links/{id}` refuse a `link_type` (422). An
 end of the kind `entity` names an entity the project does not
 have — `entity_not_found`, the message says to name one `arch_names` returns.
 An end of any other kind that names an item the project does not have — a
@@ -1968,13 +2004,12 @@ first, and `next_after` — the number to pass as `after` for the next page,
 
 **Errors:** an `item_type` outside the list above is refused with
 `unknown_item_type`, the message naming the types to pass, as the REST
-`GET /links` refuses it; a `direction` or a `relationship` outside its list is
-refused, and
-the message names the values to pass; an `after` outside 0 to 2147483647 is
-refused with `invalid_page`; an `entity` the project does not have
-is refused with `entity_not_found`. A refusal of the item type, of the page or
-of a missing entity reads `<code>: <sentence>`, as the REST `GET /links`
-answers it in `error` and `message`, for example
+`GET /links` refuses it; a `direction` outside its list is refused with
+`invalid_direction` and a `relationship` outside its list with
+`invalid_relationship`, the message naming the values to pass; an `after`
+outside 0 to 2147483647 is refused with `invalid_page`; an `entity` the
+project does not have is refused with `entity_not_found`. Every refusal reads
+`<code>: <sentence>`, the code and the sentence REST answers, for example
 ``invalid_page: Pass an `after` from 0 to 2147483647.`` An `item_id` of any other kind outside the 32-bit integer
 range names no item: the answer is an empty list (`links: []`, `total: 0`,
 and empty `section_links` when asked for), not a refusal.
@@ -2018,6 +2053,10 @@ name alike. A `team/` prefix of a team you are not a member of fails with
 team of yours fails with `cross_team_link_not_supported` (422). A malformed
 target fails with `invalid_project_name` (422): rewrite it as
 `<team ID>/<project>` (`k7m2qx9d/billing`), `pers/<project>`, or a name without `/`.
+A `link_type` outside the list above is refused with `invalid_relationship`,
+the message naming the types to pass; a target that is the source project
+itself is refused with `same_project`. Each reads `<code>: <sentence>`, the
+code and the sentence the REST `POST /project-links` answers (422 and 400).
 
 ### get_project_links
 
@@ -2041,6 +2080,10 @@ mcp__conport__get_project_links({
 lists. `source_project`, `target_project` and `link_type` are the address
 `unlink_project` takes.
 
+**Errors:** a `direction` outside outgoing, incoming, both is refused with
+`invalid_direction: <sentence>`, as the REST `GET /project-links` answers it
+(422).
+
 ### unlink_project
 
 Delete a cross-project link, named by its two projects and its type
@@ -2061,9 +2104,12 @@ mcp__conport__unlink_project({
 
 **Returns:** `success: true`, `source_project` and `target_project` (handles)
 and `link_type`. An incoming link is deleted from its source project: a link
-of that type from `project` to `target_project` that does not exist is an
-error naming the link. The old `link_id` argument is refused: send
-`target_project` and `link_type`.
+of that type from `project` to `target_project` that does not exist is refused
+with `project_link_not_found`, the message naming the link and pointing to
+`get_project_links`. A `link_type` outside the list of `link_project` is
+refused with `invalid_relationship`. Each reads `<code>: <sentence>`, the code
+the REST `DELETE /project-links` answers (404 and 422). The old `link_id`
+argument is refused: send `target_project` and `link_type`.
 
 ---
 

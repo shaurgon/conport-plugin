@@ -56,8 +56,8 @@ A finding from a review, a gap hunt or your own work becomes a task after it
 is checked, not instead of checking it. "Cannot check it" or "only if X" is
 neither a reason to skip filing nor a reason to file blind: the check is the
 diagnosis. Then either file a task for a confirmed defect, with its acceptance
-criterion, or write one line in the resolution of the task the finding came
-from. A symptom is not a task; a task is filed for an established cause.
+criterion and `kind='bug'`, or write one line in the resolution of the task
+the finding came from. A symptom is not a task; a task is filed for an established cause.
 
 What is filed is done right away. The backlog shrinks by doing what was found,
 not by refusing to file it; a filed task is not deleted later as speculative
@@ -119,33 +119,41 @@ When the work has no spec, this rule does not apply.
 
 ## Epic growth ceiling
 
-An epic takes max(3, floor(0.3 × plan tasks)) ordinary tasks added after the
-plan; the next ordinary task goes to the tails epic of the release. A plan of
-10 tasks: 3 added ordinary tasks stay in the epic, the 4th goes to the tails
-epic of the release. A plan of 20 tasks: 6 added ordinary tasks stay in the
-epic, the 7th goes to the tails epic of the release.
+Where the server ceiling applies, an epic takes max(3, floor(0.3 × plan tasks))
+ordinary tasks added after the plan; the next ordinary task goes to the
+tails epic of the release. A plan of 10 tasks: 3 added ordinary tasks stay
+in the epic, the 4th goes to the tails epic of the release. A plan of 20
+tasks: 6 added ordinary tasks stay in the epic, the 7th goes to the tails
+epic of the release.
 
 - **A defect never counts and always stays in this epic: a review's Critical
   and Important, a gap hunt's Blocker and Should-fix, a confirmed behaviour
   defect.** A defect — the work does not do what its spec, plan or contract
   says, or the goal is not reached — is fixed in the epic whatever the count; a
-  Should-fix is a defect, never polish. A defect task you file by hand starts
-  its description with the mark `The gap: ` the epic workflow writes; without
-  it, in an epic with a plan the workflows count the task as ordinary work (in
-  an epic without a plan, as one of the tasks the ceiling is measured against).
+  Should-fix is a defect, never polish. File these with `kind='bug'`.
 - **Polish from findings counts: a review's Minor left after the pass, a task
   from a Note's answer.** Style, a duplicate, a missing test left as a Minor is
   an ordinary task, and so is new scope: a new capability, a new step, a new
-  consumer. An epic is not polished without end.
+  consumer. File polish and new work with `kind='task'`. The `kind` field,
+  not whether the task came from a finding, determines the count.
+  An epic is not polished without end.
 - **Past the ceiling, the tails epic of the release.** It is the one tails
   epic of the release described under *The release epic is frozen at the
   version bump*: attached to the milestone right after the release and taken
   into work first after the push; there is no second tails epic per epic. The
   work is neither added to this epic nor dropped, the user is not asked whether
   to go on in this epic, and the epic's readiness does not wait for it.
+- The server counts the ceiling itself. On `epic_growth_ceiling`, take one
+  action: execute the call in `suggestions[].call`. The tails epic is the one
+  named by that refusal; do not calculate the ceiling or pick another epic.
 - A report of the epic's progress names the ordinary tasks added (counted) and
-  the defect fixes (not counted) as two numbers: "ordinary tasks added N of C,
-  defect fixes F".
+  the defect fixes (not counted) as two numbers. Read `epic_progress.plan_tasks`,
+  `ordinary_added`, `bugs` and `growth_ceiling`. The server summary with a ceiling
+  is "ordinary after plan N of C, bugs B".
+- The ceiling is `epic_progress.growth_ceiling`; `null` means no ceiling (the
+  epic is outside its scope). Never count locally; on `epic_growth_ceiling`,
+  execute the ordered calls in `suggestions`. `ask_user_milestone` is present
+  whenever the target tails epic has no milestone, whether found or created.
 
 ## Epic progress is counted by its children
 
@@ -194,13 +202,14 @@ finding or work. It is attached to the milestone right after the release — not
 to a later release milestone with work of its own, not to the backlog without
 a date — and is taken into work first after the push, before any other
 milestone. It holds no waiting work, is never held waiting and never closed as
-CANCELLED because it waits. Its title is `Tails of release <title of the release
-milestone>`, written literally and never translated: look for an epic with that
-title before filing one, so a session and the epic workflow never start two. It
-is filed with priority 1, and only when the open milestone right after the
-release is a release milestone itself: when it is a standing list (the waiting
-milestone, the backlog without a date) or there is none, ask the user which
-milestone the tails go to.
+CANCELLED because it waits. Its title is `Tails of release <title of the
+release milestone>`, written literally and never translated: look for an epic
+with that title before filing one, so a session and the epic workflow never
+start two. It is filed with priority 1. Inspect the next open milestone after
+the release: if it is a release, find the oldest open tails epic with the
+exact title in that milestone, or create it there; otherwise find or create it
+without a milestone, file the work, and ask the user which milestone it goes
+to.
 
 "An epic closes only with its children closed" applies to the frozen make-up.
 Without a freeze, a tail becomes a child, the epic cannot close, there is no

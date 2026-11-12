@@ -2,7 +2,7 @@
 name: conport-roadmap
 description: "Use when about to take a task into work, file an epic or a task, move a task between epics, call a task waiting, close an epic or a milestone, talk about a release, a version bump or a deploy, and before every report to the user with open tasks. The ConPort roadmap rules — milestones, the release point, the make-up of epics, work after a release, waiting on someone else's work. Requires the conport skill for base tool discipline."
 metadata:
-  version: 21.0.0
+  version: 22.0.0
 ---
 
 # ConPort Roadmap
@@ -70,7 +70,13 @@ which release.
 5. **Milestone order.** The release milestone stands before the milestone
    after the release. The current milestone is worked; a task from a later one
    only on the user's explicit decision, naming the milestone. "Finish the
-   rest" does not override the order.
+   rest" does not override the order. Exception: an open Bug (`kind='bug'`,
+   status TODO, IN_PROGRESS, REVIEW or BLOCKED) from any milestone comes
+   before an ordinary task of the current milestone and before the tails epic
+   of the release. Follow `backlog.top`,
+   where open Bugs and their epics come first; readiness and review gates
+   still apply. File confirmed defects with `kind='bug'`, polish and new work
+   with `kind='task'`.
 6. **Attachment.** Every epic is attached to a milestone (`milestone_id`), and
    the milestone is chosen by one question: it ships in a release — that
    release's milestone; it is the tails epic of a release — the milestone right
@@ -121,10 +127,13 @@ which release.
   it waits. Its title is `Tails of release <title of the release milestone>`,
   written literally and never translated: look for an epic with that title
   before filing one, so a session and the epic workflow never start two. It is
-  filed with priority 1, and only when the open milestone right after the
-  release is a release milestone itself: when it is a standing list (the
-  waiting milestone, the backlog without a date) or there is none, ask the user
-  which milestone the tails go to.
+  filed with priority 1. Inspect the next open milestone after the release: if
+  it is a release, find the oldest open tails epic with the exact title in
+  that milestone, or create it there; otherwise find or create it without a
+  milestone, file the work, and ask the user which milestone it goes to.
+- On `epic_growth_ceiling`, take one action: execute the call in `suggestions[].call`.
+  Follow the calls in their given order; the server names the tails epic and its
+  milestone. Never calculate growth locally.
 - After the push, the tails epic of the release is taken into work first,
   before any other milestone.
 - An epic does not bump a version: its changes go into the changelog of the

@@ -24,8 +24,7 @@ function isOpen(status) {
 }
 
 // All children (every status, snoozed included) of the given epics of one
-// project. Every status, not just open ones: the "grew after start" test
-// needs the started_at of children that are already closed.
+// project. Closed children are filtered out before the tails are displayed.
 async function fetchChildren(route, epicIds, auth) {
   const children = [];
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -48,15 +47,30 @@ async function fetchChildren(route, epicIds, auth) {
   return children;
 }
 
-// An epic grew after work started: an open child created after the first
-// child of the epic was started.
-function grewAfterStart(children) {
-  const starts = children
-    .map((c) => Date.parse(c.started_at))
-    .filter((t) => !Number.isNaN(t));
-  if (!starts.length) return false;
-  const firstStart = Math.min(...starts);
-  return children.some((c) => isOpen(c.status) && Date.parse(c.created_at) > firstStart);
+// Use the server's ordinary growth counter; list rows do not expose attachment
+// times. An epic outside the ceiling scope never gets the growth marker.
+async function grewAfterStart(route, epicId, auth, deadline) {
+  // The marker is optional: leave time to print already-fetched open children.
+  const timeoutMs = Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now() - 250);
+  if (timeoutMs <= 0) return false;
+  let timer;
+  try {
+    return await Promise.race([
+      (async () => {
+        const res = await request('GET',
+          `${CONPORT_URL}/api/v1/projects/${route.segment}/tasks/${epicId}`,
+          { headers: { ...auth, ...route.headers }, timeoutMs });
+        if (res.status !== 200) return false;
+        const progress = JSON.parse(res.body).epic_progress;
+        return progress?.growth_ceiling != null && progress.ordinary_added > 0;
+      })(),
+      new Promise(resolve => { timer = setTimeout(() => resolve(false), timeoutMs); }),
+    ]);
+  } catch (_) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // The epics the nearest release waits for: those attached to the open
@@ -82,6 +96,7 @@ async function releaseScope(route, auth) {
 }
 
 async function collectTails(epics, auth) {
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
   const byProject = new Map();
   for (const e of epics) {
     if (!byProject.has(e.project)) byProject.set(e.project, []);
@@ -107,12 +122,16 @@ async function collectTails(epics, auth) {
     if (!projectEpics.length) continue;
     const children = await fetchChildren(
       route, projectEpics.map((e) => e.epic_id), auth);
+    const projectTails = [];
     for (const epic of projectEpics) {
       const own = children.filter((c) => c.parent_task_id === epic.epic_id);
       const open = own.filter((c) => isOpen(c.status)).sort((a, b) => a.id - b.id);
       if (!open.length) continue;
-      tails.push({ ...epic, open, grew: grewAfterStart(own) });
+      projectTails.push({ ...epic, open });
     }
+    tails.push(...await Promise.all(projectTails.map(async epic => ({
+      ...epic, grew: await grewAfterStart(route, epic.epic_id, auth, deadline),
+    }))));
   }
   // Grown epics first — work appended after the start is exactly what gets
   // forgotten; otherwise the order in which the session touched them.

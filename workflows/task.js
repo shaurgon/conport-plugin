@@ -141,8 +141,7 @@ const noteUnverifiable = rev => {
     if (typeof item === 'string' && item.trim() && !unverified.includes(item)) unverified.push(item)
 }
 // The tails epic of the release belongs to the release milestone right after the
-// release: one found with no milestone, or none filed at all — no release milestone with a
-// release milestone after it — and the person says where the tails go.
+// release: one filed without a milestone, or no release at all; the person assigns it.
 const TAILS_ASKED = 'The tails of the release have no milestone to go to'
 // Two runs of one release can both miss the tails epic and both create one: whoever
 // looks it up takes the oldest, and whoever creates it drops its own duplicate.
@@ -161,8 +160,8 @@ const questionsOf = () => unverified.map(item => ({ task: TASK, title: 'Not veri
   .concat(waitingTails(L.accounting)
     ? [{ task: null, title: TAILS_ASKED,
       question: 'Task-' + TASK + ' left review minors past the growth ceiling of its epic (or has no epic), and no tails epic of the release was filed: ' +
-        'a task with no epic has no release milestone, or the epic is not in a release milestone, or the open milestone right after its release is not a release (a standing list such as ' +
-        'the waiting milestone or the backlog without a date) or there is none. Which milestone should the tails go to? File there the epic ' +
+        'a task with no epic has no release milestone, or the epic is not in a release milestone. ' +
+        'Which milestone should the tails go to? File there the epic ' +
         "'Tails of release <title of the release milestone>' (the title written literally) at priority 1, and under it the task " +
         "'Review minors left on task-" + TASK + "'" + (Number.isInteger(L.accounting.tails_waiting_progress_id)
           ? ' recorded in progress-' + L.accounting.tails_waiting_progress_id + ' (its title, priority and description).'
@@ -885,17 +884,18 @@ string or an array -> that is NOT an answer either: discard it and do BRANCH B.
 const releaseTailsStep = (of, task) => `the tails epic of the release: get_task(${of}) -> its milestone M;
    list_milestones(include_closed=true) -> M and the next OPEN milestone by sequence after
    M (N). When M is a release milestone (is_release=true): search/list_tasks for the title
-   'Tails of release <title of M>' written literally, never translated (kind=epic, open,
-   to the end) — ${TAILS_OLDEST}, whatever milestone it has (none ->
-   tails_epic_needs_milestone=true). Not found -> add_task(kind="epic", priority=1,
-   title=<that title>, milestone_id=<N>, description='Work of the release beyond what its
-   epics took in, taken into work first after the push') only when N is a release milestone
-   too (is_release=true). ${TAILS_DEDUP}. With a tails epic: tails_epic_id=<its id>, and ONE child of it — a
+   'Tails of release <title of M>' written literally, never translated (kind=epic,
+   status not DONE/CANCELLED, to the end). If N is not a release, treat N as absent.
+   Search only in milestone N, or only without a milestone when N is absent —
+   ${TAILS_OLDEST}. Not found -> add_task(kind="epic", priority=1,
+   title=<that title>, milestone_id=<N, omitted when absent>, description='Work of the release beyond what its
+   epics took in, taken into work first after the push'). ${TAILS_DEDUP}.
+   With a tails epic: tails_epic_id=<its id>, tails_epic_needs_milestone=<N is absent>,
+   ask which milestone it goes to when N is absent, and ONE child of it — a
    child with the exact title from minors_umbrella.title exists -> skip; else
-   add_task(parent_task_id=<the tails epic>, title=<minors_umbrella.title>, priority=4,
+   add_task(parent_task_id=<the tails epic>, kind='task', title=<minors_umbrella.title>, priority=4,
    description=<minors_umbrella.description, verbatim>). With no tails epic found or made — M
-   is missing or not a release, N is missing or a standing list (is_release=false: the waiting milestone, the
-   backlog without a date) — ${tailsWaitingStep(of, task)}`
+   is missing or not a release — ${tailsWaitingStep(of, task)}`
 
 // The umbrella waiting in ConPort for the person's answer on the milestone of the tails.
 const tailsWaitingStep = (of, task) => `create no tails epic and file no umbrella: set
@@ -914,23 +914,10 @@ const accountantPrompt = table => {
     ? `1) MINORS (one umbrella, never scattered tasks): it is ordinary work of the task's own
    epic, minors_umbrella.parent: list_tasks(parent_task_id=${u.parent}, status="ALL",
    include_snoozed=true, to the end); a child with the exact title from minors_umbrella.title
-   exists -> it is filed, nothing else. Else count the epic's ceiling of work added after its plan.
-   Its plan: the file under docs/superpowers/plans/ carrying '<!-- conport-epic: ${u.parent} -->',
-   else minors_umbrella.plan_path, else none. A finding child is marked by its words
-   (case and leading spaces ignored): ordinary work has a title, or a first line of its
-   description or acceptance, starting with 'Review minors left on ' or 'Note answer: '; a
-   defect, when not ordinary, has a title starting with 'Acceptance unmet: ', or a first
-   line of its description or acceptance starting with 'A confirmed critical gap of this
-   epic, left open because ', 'Held for the person:', 'The gap: ' or 'Acceptance unmet: ',
-   or a later line of either starting with 'The gap: '. With a plan: plan tasks = its '### Task N' sections (outside code fences;
-   format B: '## Task N') less the ordinary children among those bound to a section (an
-   anchor '<!-- conport-task: <id> -->', format B: 'ConPort task-<id>' in the heading);
-   used = the ordinary children plus the children bound to no section and marked as no
-   defect. Without a plan: plan tasks = the children marked neither ordinary nor defect;
-   used = the ordinary children.
-   ceiling = max(3, floor(3 × <plan tasks> / 10)). used < ceiling -> add_task(parent_task_id=${u.parent},
-   title=<minors_umbrella.title>, priority=4, description=<minors_umbrella.description,
-   verbatim>). Else, beyond the ceiling, ${releaseTailsStep(u.parent, u.task)}`
+   exists -> it is filed, nothing else. Else add_task(parent_task_id=${u.parent},
+   kind='task', title=<minors_umbrella.title>, priority=4,
+   description=<minors_umbrella.description, verbatim>). The server owns the ceiling:
+   on epic_growth_ceiling, ${releaseTailsStep(u.parent, u.task)}`
     : u
     ? `1) MINORS (one umbrella, never scattered tasks): task-${u.task} has no epic, so no release
    milestone (only an epic carries one): look up no milestone and no tails epic; ${tailsWaitingStep(u.task, u.task)}`
@@ -1170,10 +1157,9 @@ if (L.branch || L.outcome === 'FAILED') {
     block: L.outcome === 'FAILED'
       ? { id: sc.task.id, reason: L.fail_reason + (L.fail_detail ? ': ' + JSON.stringify(L.fail_detail) : '') }
       : null,
-    // The title an epic run counts as ordinary work; the plan of the task helps the
-    // accounting find the epic's plan tasks; the task marks and links the waiting entry.
+    // The stable umbrella title supports deduplication; the task links its waiting entry.
     minors_umbrella: L.minors.length
-      ? { title: 'Review minors left on task-' + sc.task.id, task: sc.task.id, plan_path: sc.brief.plan_path ?? null,
+      ? { title: 'Review minors left on task-' + sc.task.id, task: sc.task.id,
           description: ('Review minors left open by the /conport:task run of task-' + sc.task.id + ':\n' +
             minorLines(L.minors).join('\n')).slice(0, 1900),
           ...(Number.isInteger(sc.task.parent_epic_id) ? { parent: sc.task.parent_epic_id } : {}) }

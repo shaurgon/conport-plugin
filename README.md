@@ -85,7 +85,7 @@ worktree's file is read only when the current worktree has none. Add one line
 to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
-they call the `conport` CLI as `npx -y conport@^0.7.3`. The CLI does not see the
+they call the `conport` CLI as `npx -y conport@^0.8.0`. The CLI does not see the
 plugin's `api_key`: it needs `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`.
 

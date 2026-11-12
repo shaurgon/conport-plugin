@@ -138,7 +138,7 @@ test('the procedure tells how to build a code label and when to split it', () =>
   assert.match(skeleton, /more than 400 entities/)
   assert.match(skeleton, /`code:<unit-name>\.<part>`/)
   assert.match(skeleton, /the portion with the unit itself goes first/)
-  assert.match(skeleton, /npx -y conport@\^0\.7\.3 arch check/)
+  assert.match(skeleton, /npx -y conport@\^0\.8\.0 arch check/)
   assert.match(skeleton, /no tool of its own builds the skeleton/i)
 })
 
@@ -235,7 +235,7 @@ test("the procedure allows the rollback only on the user's word", () => {
   const rollback = oneLine(section(text, '## Rollback'))
   assert.match(rollback, /only on the user's word/)
   // `withdraw --all` came with the CLI 0.7.3.
-  assert.match(rollback, /`npx -y conport@\^0\.7\.3 arch withdraw --all`/)
+  assert.match(rollback, /`npx -y conport@\^0\.8\.0 arch withdraw --all`/)
   assert.match(rollback, /with `--apply` it withdraws every source of the project/i)
   assert.match(rollback, /without `--apply` it removes nothing/)
   // No refusal prescribes the rollback (spec doc-197 §13), and none is tied to it.
@@ -307,7 +307,7 @@ test('the overlay resubmits the skeleton only in a project whose model has code 
   assert.ok(condition >= 0, 'the finish step has no condition on code sources')
   assert.ok(action > condition, 'the skeleton is resubmitted without the condition')
   assert.match(finish, /`arch_sources`/)
-  assert.match(finish.slice(action), /npx -y conport@\^0\.7\.3 arch check/)
+  assert.match(finish.slice(action), /npx -y conport@\^0\.8\.0 arch check/)
   // The procedure says the same after the backfill.
   assert.match(oneLine(section(procedure(), '## After the backfill')), /submit the skeleton of the units it touched again/)
 })

@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 21.0.0
+  version: 22.0.0
 ---
 
 # superpowers-conport — Bridge
@@ -65,7 +65,7 @@ with that single action and stops:
 ```
 [superpowers-conport]
   Superpowers overlay: on — nothing written
-  Do now: npx -y conport@^0.7.3 plan import <plan> --spec doc-N --epic <id>
+  Do now: npx -y conport@^0.8.0 plan import <plan> --spec doc-N --epic <id>
 ```
 
 `<plan>` is the plan draft the bridge was invoked on (`<plan_path>`); `doc-N` is the
@@ -89,7 +89,7 @@ pulled plan's epic exists, and the bridge, finding no anchors, would start a sec
 is never the answer on the anchor route with the overlay on either, because it writes
 nothing then. On the anchor route the overlay changes only the prescriptions that would name
 it: the missing-tasks item (last bullet below), and the no-epic-anchor report and the
-no-project case, which both prescribe `npx -y conport@^0.7.3 plan import <plan_path> --spec doc-N --epic <id>`
+no-project case, which both prescribe `npx -y conport@^0.8.0 plan import <plan_path> --spec doc-N --epic <id>`
 directly, then re-run `finish` on the file `plan pull` writes (see `### Sources` and
 `### Output — no epic anchor`). On the anchor route with the overlay off, the bridge's
 `import` stays the answer, as written in `## Mode: finish`.
@@ -104,14 +104,14 @@ inputs only, taken in this order:
 
 - **The sidecar is read first** — it is local, so it is read before any ConPort call. A
   sidecar that is missing, unreadable or carries no `epic_id` leaves the audit with no
-  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.7.3 plan pull …`, reported
+  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.8.0 plan pull …`, reported
   by `### Output — no sidecar`, and nothing else is checked. It is never read as "nothing left
   to close".
 - **Then the project.** `project` is resolved as in step 1. When `init` finds no project,
   or finds one whose handle is not the sidecar's `project`, the plan came from another
   project: RELEASE BLOCKED naming both (see the no-project case in `### Sources`). A sidecar
   whose `project` is a string of digits was written by an earlier CLI: RELEASE BLOCKED with
-  the single action `npx -y conport@^0.7.3 plan pull <epic_id> -o <plan_path>`.
+  the single action `npx -y conport@^0.8.0 plan pull <epic_id> -o <plan_path>`.
 - **Epic and spec come from the sidecar.** `epic_id` replaces the `conport-epic` anchor and
   `spec_doc_id` replaces the `conport-spec` anchor of the paired design file; no design file
   is read. A sidecar whose `spec_doc_id` is absent or null omits the spec header line,
@@ -125,8 +125,8 @@ inputs only, taken in this order:
 - **Missing tasks are answered by the CLI, not by the bridge's import** — on the pulled
   route always, and on the anchor route when the overlay is on.
   Wherever the audit would prescribe the bridge's import for plan tasks absent from the epic
-  `<M>`, it prescribes instead: `npx -y conport@^0.7.3 plan import <plan_path> --epic <M>`, then
-  `npx -y conport@^0.7.3 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
+  `<M>`, it prescribes instead: `npx -y conport@^0.8.0 plan import <plan_path> --epic <M>`, then
+  `npx -y conport@^0.8.0 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
   the tasks on the epic being audited; without it a plan never imported through the CLI
   would start a new epic.
 
@@ -291,14 +291,18 @@ Within the block, search for `<!--\s*conport-task:\s*(\d+)\s*-->` (outside fence
   })
   ```
 
-- Anchor not found:
+- Anchor not found: a section with a body line outside fenced code equal to
+  `kind: bug` after removing
+  `**` and ignoring case (including `**Kind:** bug`) creates the task with
+  `kind: 'bug'`; otherwise use `kind: 'task'`. Re-import never changes an existing
+  task's kind.
   ```
   mcp__conport__add_task({
     project,
     title: <title>,
     description: <short summary>,
     parent_task_id: <epic_id>,
-    kind: 'task',
+    kind: <'bug' when the section has the label, otherwise 'task'>,
     priority: 3
   })
   ```
@@ -406,21 +410,23 @@ Constraints` section, wrapped in the paired delimiter anchor:
   closed. An executed plan with an open epic is NOT finished work.
 - A finding not fixed in the current round (parked / deferred minor / BLOCKED /
   "cannot verify") is filed as a task immediately, in the same message that puts it in
-  the ledger: add_task(parent_task_id=<epic_id>, priority=3); an ordinary finding past
-  the epic growth ceiling — max(3, floor(0.3 × plan tasks)) ordinary tasks added after
-  the plan — goes to the tails epic of the release instead; a defect (a review's Critical
-  or Important, a gap hunt's Blocker or Should-fix, a confirmed behaviour defect) never
-  counts and always goes into the epic. A defect filed by hand starts its description
-  with `The gap: ` — the mark the epic workflow knows a defect by.
+  the ledger: add_task(parent_task_id=<epic_id>, priority=3), with kind='bug' for a defect;
+  an ordinary finding past the epic growth ceiling — max(3, floor(0.3 × plan tasks))
+  ordinary tasks added after the plan — goes to the tails epic of the release instead; a
+  defect (a review's Critical or Important, a gap hunt's Blocker or Should-fix, a
+  confirmed behaviour defect) never counts and always goes into the epic. The server
+  refuses an ordinary task past the ceiling with epic_growth_ceiling; the call in
+  its suggestions files it.
 - A finding made after the version bump goes to the tails epic of the release — one per
   release, titled `Tails of release <title of the release milestone>` and looked up by
   that title before one is filed, attached to the milestone right after the release and
   taken first after the push, never closed as CANCELLED because it waits; work that waits
   on another party's service, a date or a measurement window goes to the waiting
   milestone, never into the tails epic; a defect in this release's code is closed before
-  the push. It is filed with priority 1, and only when the open milestone right after the
-  release is a release milestone itself: when it is a standing list (the waiting milestone,
-  the backlog without a date) or there is none, ask the user which milestone the tails go to.
+  the push. It is filed with priority 1. Inspect the next open milestone after
+  the release: if it is a release, find the oldest open tails epic with the exact
+  title in that milestone, or create it there; otherwise find or create it
+  without a milestone, file the work, and ask the user which milestone it goes to.
 - An epic does not bump a version: it leaves every version as the default branch has it
   and writes its changes into the changelog of the unit under `## Unreleased`; the version
   of every changed unit is bumped once, at the release step, after every epic of the
@@ -538,7 +544,7 @@ and the input on the anchor route, the bridge's import writes nothing and asks n
 the prescription is the CLI command itself:
 
 ```
-  Сделай сейчас: npx -y conport@^0.7.3 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.8.0 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
 ```
 
 On the pulled route the order is fixed: the sidecar is read first, and with no usable
@@ -635,23 +641,26 @@ growth ceiling would read as unfiled on every re-run, and the audit would block 
 Matching is approximate and deliberately biased toward a false "not filed": an extra line in
 the report is cheaper than a silently lost finding.
 
-**Filing a finding: this epic or the tails epic of the release.** A candidate is filed into
-the epic, under the epic growth ceiling of the conport skill: the epic takes
-max(3, floor(0.3 × plan tasks)) ordinary tasks added after the plan, and the next ordinary
-task goes to the tails epic of the release. A defect never counts and always stays in this
-epic: a review's Critical and Important, a gap hunt's Blocker and Should-fix, a confirmed
-behaviour defect; a defect filed by hand starts its description with `The gap: `, the mark
-the epic workflow knows a defect by. Polish from findings counts: a review's Minor left after
-the pass, a task from a Note's answer. The tails epic of the release is one per release, titled
-`Tails of release <title of the release milestone>` and looked up by that title before one is
-filed; a new one is attached to the milestone right after the release — not to the release
-milestone itself, not to a later release milestone with work of its own, not to the backlog
-without a date. It is filed with priority 1, and only when the open milestone right after the
-release is a release milestone itself: when it is a standing list (the waiting milestone, the
-backlog without a date) or there is none, ask the user which milestone the tails go to. A task
-in the tails epic is not a child of this epic, so readiness does not
-wait for it; the audit only reads ConPort and decides neither the count nor the destination —
-the agent that files the finding does.
+**Filing a finding: this epic or the tails epic of the release.** A candidate
+is filed into the epic, under the epic growth ceiling of the conport skill:
+the epic takes max(3, floor(0.3 × plan tasks)) ordinary tasks added after the
+plan, and the next ordinary task goes to the tails epic of the release. A
+defect never counts and always stays in this epic: a review's Critical and
+Important, a gap hunt's Blocker and Should-fix, a confirmed behaviour defect.
+File a defect as `kind='bug'`. Polish from findings counts: a review's Minor
+left after the pass, a task from a Note's answer. The tails epic of the
+release is one per release, titled `Tails of release <title of the release
+milestone>` and looked up by that title before one is filed; a new one is
+attached to the milestone right after the release — not to the release
+milestone itself, not to a later release milestone with work of its own, not
+to the backlog without a date. It is filed with priority 1. Inspect the next
+open milestone after the release: if it is a release, find the oldest open
+tails epic with the exact title in that milestone, or create it there;
+otherwise find or create it without a milestone, file the work, and ask the
+user which milestone it goes to. A task in the tails epic is not a child of
+this epic, so readiness does not wait for it; the audit only reads ConPort and
+decides neither the count nor the destination — the agent that files the
+finding does.
 
 **What the ledger does not cover.** Findings of the final whole-branch review and of the gap
 hunt (Blocker, Should-fix, Note) have no line format in SDD — at that stage the ledger is only
@@ -706,8 +715,8 @@ route whatever the switch, and on the anchor route with the overlay on, the miss
 item names the CLI instead of the bridge's import (see `## Overlay mode`):
 
 ```
-    1. npx -y conport@^0.7.3 plan import <plan_path> --epic <M>, затем
-       npx -y conport@^0.7.3 plan pull <M>, затем повтори finish на выгруженном файле
+    1. npx -y conport@^0.8.0 plan import <plan_path> --epic <M>, затем
+       npx -y conport@^0.8.0 plan pull <M>, затем повтори finish на выгруженном файле
 ```
 
 **The fix-round item prescribes finishing the round and nothing else.** An item that also
@@ -745,7 +754,7 @@ With the overlay on, the prescription line is the CLI command instead of the bri
 which writes nothing then:
 
 ```
-  Сделай сейчас: npx -y conport@^0.7.3 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.8.0 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
 ```
 
 `doc-N` is the spec's document — the plan's paired design file's `conport-spec` anchor when it
@@ -763,7 +772,7 @@ header line is omitted. The reason line names the case actually found, one of th
 [superpowers-conport finish]
   план: <plan_path> — RELEASE BLOCKED
   файл <plan_path>.conport.json <не найден | не читается | без epic_id> — план не выгружен из ConPort
-  Сделай сейчас: npx -y conport@^0.7.3 plan pull <target>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.8.0 plan pull <target>, затем повтори finish на выгруженном файле.
 ```
 
 `<target>` is filled from the first source that has it:

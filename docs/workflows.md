@@ -137,17 +137,19 @@ Example:
   block the merge, but it is never left as a line: the journal records it as
   carried, and the run files it as ONE follow-up task, `Review minors left on
   task-<id>` — ordinary work: a child of the task's own epic while the epic's
-  growth ceiling, max(3, floor(0.3 × plan tasks)), has room, and a child of the
-  tails epic of the release beyond it — with no argument needed (the former
-  `fileMinors` argument is no longer read). The ceiling counts every child of
-  the epic without a plan section, a task added by hand included, except the
-  ones a defect marks (a defect filed by hand starts its description with
-  `The gap: `). With no release milestone to file the tails epic in, the
-  follow-up task waits in a progress entry and the run asks you which
-  milestone the tails go to. A task with no epic always takes that path: only
-  an epic carries a milestone, so the task has no release milestone. The close
-  resolution names where the minors went — "filed" only when the task was
-  filed.
+  growth ceiling, max(3, floor(0.3 × plan tasks)), has room, and a child of
+  the tails epic of the release beyond it — with no argument needed (the
+  former `fileMinors` argument is no longer read). The server decides whether
+  ordinary work fits; the workflow posts `kind='task'` and routes
+  `epic_growth_ceiling` to the release tails. Defects use `kind='bug'` and
+  never consume that allowance. For a release with no next open release
+  milestone, find the oldest open tails epic of the exact title without a
+  milestone, or create it with priority 1; file the work and ask which
+  milestone that epic goes to. With no release at all, the follow-up task
+  waits in a progress entry and the run asks you which milestone the tails go
+  to. A task with no epic always takes that path: only an epic carries a
+  milestone, so the task has no release milestone. The close resolution names
+  where the minors went — "filed" only when the task was filed.
 - **What a review could not verify becomes a question.** A run of one task has
   no gap hunt to check it, so the run ledger hands it to you under `questions`,
   with `questions_action` saying what to do: the session asks you each one, and
@@ -255,7 +257,7 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
    came from) are ordinary work and run within the ceiling of work added after
    the plan (see below); a Note and a gap nobody could verify are filed with
    their question and held for you,
-7. when the project's model has portions with anchors, run `npx -y conport@^0.7.3 arch check`
+7. when the project's model has portions with anchors, run `npx -y conport@^0.8.0 arch check`
    in the repository root after the last merge, the finding tasks included, and
    report its outcome under `anchor_check` — with the command to run by hand
    when the check could not run,
@@ -305,36 +307,37 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
   failed, or it came beyond the cap — becomes a child of the epic at priority 1
   and runs in the findings round like every other finding. The epic is not
   closed while one is open.
-- **Ordinary work added after the plan has a ceiling; defects do not.** A
-  defect — a task review's Critical or Important, a confirmed Blocker or
-  Should-fix of the gap hunt, a critical the fix round did not close — is
-  always a task of the epic, never counted, never moved. Ordinary work — a
-  review minor left after its fix round, a minor of a gap fix's review, a task
-  made from your answer to a Note — counts toward max(3, floor(30% of the plan
-  tasks)) tasks added after the plan, the ordinary tasks earlier runs added
-  included: a plan of 10 or 11 tasks keeps 3, the 4th goes. Within the ceiling
-  it is a task of this epic and runs; beyond it, it is not run here: it is
-  filed under the tails epic of the release — one per release, titled
-  "Tails of release <release milestone>" (written literally, never translated),
-  attached to the next open milestone after the epic's milestone at priority 1
-  and taken into work first after the push — and does not hold this epic open.
-  The tails epic is filed only when the epic's milestone is a release and the
-  open milestone right after it is a release too: for an epic with no milestone
-  or in a milestone that is not a release, or a release followed by a standing
-  list (the waiting milestone, the backlog without a date) or by nothing, no
-  tails epic is filed, and you are asked which milestone the tails go to; the
-  work waits in a progress entry linked to the epic, the question names it, and
-  the run summary says the work waits for your answer instead of calling it
-  filed. Your answer is a milestone: there the session files the tails epic and
-  under it a task per entry, never a child of this epic. The task made from
-  your answer to a Note is renamed
-  "Note answer: <title>", so every later run counts it; past the ceiling the
-  task itself moves under the tails epic of the release, and this epic does
-  not wait for it — `questions_action` tells the session how. The base of the
-  ceiling is the plan tasks; without a plan, the children with work, never the
-  finding tasks of earlier runs. The run summary names both numbers: ordinary
-  tasks added (against the ceiling) and defect fixes.
-- **Every counter is a literal in the script**, not an agent's judgment: one fix
+- **The server counts ordinary growth; defects do not count.** File confirmed
+  behaviour defects, review Critical/Important and verified Blocker/Should-fix
+  findings as `kind='bug'`; polish, remaining Minors and Note answers are
+  `kind='task'`. Read `epic_progress` from the epic and write echoes:
+  `plan_tasks`, `ordinary_added`, `bugs`, `growth_ceiling`. The server
+  enforces `max(3, floor(3 × plan_tasks / 10))` only for release epics with a
+  plan started after rollout. No plan, an earlier start, a non-release
+  milestone or a release tails epic means `growth_ceiling: null`; there is no
+  fallback count of children on the client. A plan of 10 or 11 permits 3
+  ordinary additions; a plan of 14 permits 4. Bugs never consume that
+  allowance. On `epic_growth_ceiling`, follow `suggestions` in order and
+  execute each `suggestions[].call`; the refused write made no change. The
+  server applies the same check to creation, reparenting, Bug-to-task
+  conversion and reopening cancelled ordinary work. The workflow does not
+  infer growth from titles, finding categories or counts from earlier runs.
+  The destination is the one `Tails of release <title of the release
+  milestone>` epic, looked up before creation by exact title and lowest id,
+  with `priority=1`. Search only in the selected milestone, or only without a
+  milestone if none is selected; open means any status except DONE/CANCELLED.
+  The next open milestone after the release must itself be a release
+  milestone; if it is waiting, backlog or absent, use the existing tails epic
+  without a milestone or create it if missing, and follow `ask_user_milestone`
+  to ask where it belongs in either case; assign the answer with
+  `update_task(<tails epic>, milestone_id=<answer>)`. Work waits in a progress
+  entry only when there is no release at all. Never skip to a later release. A
+  refused ordinary task goes to the tails epic and does not hold this epic
+  open; `questions_action` carries any question left for you. The run summary
+  says `ordinary tasks added N of ceiling C; bug fixes B` when the ceiling
+  applies, or `ordinary tasks added N (no ceiling); bug fixes B` outside its
+  scope.
+- **Execution limits are literals in the script**, not an agent's judgment: one fix
   round plus one re-review per task, one rebase per merge conflict, one hunt
   pass, one critical-fix round, one findings round.
 - **The epic closes behind a double lock**: zero open children in ConPort AND an
@@ -377,7 +380,7 @@ first, then pass that file's path as the `plan` argument — the run hands it to
 the helper as `--plan .superpowers/plans/doc-M.md`:
 
 ```
-npx -y conport@^0.7.3 plan pull <epic id>
+npx -y conport@^0.8.0 plan pull <epic id>
 /conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
 /conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
 ```

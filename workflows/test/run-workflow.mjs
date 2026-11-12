@@ -88,6 +88,8 @@ export const epicRun = (over = {}) => ({
     'impl-501': { ...IMPL, branch: 'epic500/t501' },
     'rev-501': { verdict: 'APPROVED', findings: [] },
     'merge-w0': { results: [{ id: 501, status: 'MERGED', merge_sha: 'ccc2' }] },
+    growth: { epic_progress: { growth_ceiling: 3, ordinary_added: 0, bugs: 0 } },
+    'growth-final': { epic_progress: { growth_ceiling: 3, ordinary_added: 0, bugs: 0 } },
     hunt: { gaps: [] },
     versions: VERSIONS_EQUAL,
     goal: { verdict: 'READY', checks: [] },

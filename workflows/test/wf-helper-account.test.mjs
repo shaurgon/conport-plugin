@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WORKFLOWS, fencedRegion, secondMarker, source, withSecond } from './fenced-region.mjs'
@@ -95,6 +95,8 @@ const startMock = async (opts = {}) => {
         return send(res, 200, { tasks: tasks.slice(offset, offset + limit), total: tasks.length })
       }
       if (req.method === 'POST') {
+        if (body.kind === 'task' && state.tasks.get(body.parent_task_id)?.refuse_ordinary)
+          return send(res, 409, { detail: { error: 'epic_growth_ceiling', message: 'Full' } })
         const task = { id: state.nextId++, description: '', priority: 3, kind: 'task', parent_task_id: null, status: 'TODO', ...body }
         state.tasks.set(task.id, task)
         return send(res, 201, task)
@@ -314,31 +316,8 @@ const RELEASE_TAILS = 'Tails of release Release A'
 const umbrellaOf = over => ({ ...UMBRELLA, task: 5, ...over })
 
 const PLAN_EPIC = 40
-const planText = (sections, ids) => ['# Plan', `<!-- conport-epic: ${PLAN_EPIC} -->`, '',
-  ...Array.from({ length: sections }, (_, i) => [`### Task ${i + 1}: part ${i + 1}`,
-    ...(ids[i] ? [`<!-- conport-task: ${ids[i]} -->`] : []), '', 'Body.', '']).flat(),
-  '```', '### Task 99: quoted in a fence, not a section', '```', ''].join('\n')
-const repoWith = text => {
-  const root = mkdtempSync(join(tmpdir(), 'wfa-repo-'))
-  if (text !== null) {
-    mkdirSync(join(root, 'docs', 'superpowers', 'plans'), { recursive: true })
-    writeFileSync(join(root, 'docs', 'superpowers', 'plans', '2026-11-01-epic.md'), text)
-  }
-  return root
-}
 const kid = (id, title, over = {}) => ({ id, title, status: 'TODO', parent_task_id: PLAN_EPIC, description: 'work', ...over })
-// Ten plan tasks with a child each: a ceiling of 3.
-const PLAN_KIDS = Array.from({ length: 10 }, (_, i) => kid(11 + i, 'plan task ' + (i + 1)))
-const PLAN_10 = planText(10, PLAN_KIDS.map(k => k.id))
-const PLAN_14 = Array.from({ length: 14 }, (_, i) => kid(11 + i, 'plan task ' + (i + 1)))
-// Children an earlier run filed for a defect: none of them takes a place of the ceiling.
-const DEFECT_KIDS = [
-  kid(31, 'Close the critical', { description: 'A confirmed critical gap of this epic, left open because it was confirmed beyond the cap of the critical-fix round; close it in this run.' }),
-  kid(32, 'Add the carrier', { status: 'DONE', description: 'Add the carrier.\nThe gap: no env carrier' }),
-  kid(33, 'Acceptance unmet: the export is not observed', { description: 'The acceptance of epic task-40 observed this criterion of its goal unmet: x' }),
-  kid(34, 'Offer X to admins', { description: 'Held for the person: a Note is a question only the person can answer.\nOffer X.\nThe gap: X is not offered' }),
-]
-const epicOf = kids => [{ id: PLAN_EPIC, title: 'The task epic', status: 'IN_PROGRESS', kind: 'epic', milestone_id: 1 }, ...kids]
+const epicOf = kids => [{ id: PLAN_EPIC, title: 'The task epic', status: 'IN_PROGRESS', kind: 'epic', milestone_id: 1, refuse_ordinary: true }, ...kids]
 const ceilingTable = { project: PROJECT, close: null, block: null, minors_umbrella: umbrellaOf({ title: 'Review minors left on task-11', parent: PLAN_EPIC }) }
 const tailsEpicOf = mock => [...mock.tasks.values()].find(t => t.kind === 'epic' && String(t.title).startsWith('Tails of release'))
 // An epic in Release A whose ceiling of 3 is used up by its ordinary children, with no plan:
@@ -350,7 +329,7 @@ test('umbrella: past the ceiling of its epic it is filed under the tails epic of
   tasks: [{ id: 5, title: 'T', status: 'IN_PROGRESS', parent_task_id: PLAN_EPIC }, ...epicOf(FULL_KIDS)], milestones: TASK_MILESTONES,
 }, async mock => {
   const table = { project: PROJECT, close: null, block: null, minors_umbrella: pastCeiling() }
-  const { out: first } = await runAccount(mock, table, { cwd: repoWith(null) })
+  const { out: first } = await runAccount(mock, table)
 
   assert.equal(step(first, 'tails_epic').result, 'done')
   assert.equal(step(first, 'minors_child').result, 'done')
@@ -368,7 +347,7 @@ test('umbrella: past the ceiling of its epic it is filed under the tails epic of
   assert.equal([...mock.tasks.values()].filter(t => t.title === 'Workflow run tails').length, 0, 'the old tails epic is gone')
 
   const before = mock.tasks.size
-  const { out: second } = await runAccount(mock, table, { cwd: repoWith(null) })
+  const { out: second } = await runAccount(mock, table)
   assert.equal(step(second, 'tails_epic').result, 'skipped_already')
   assert.equal(step(second, 'minors_child').result, 'skipped_already')
   assert.deepEqual(second.minors_created, [])
@@ -381,7 +360,7 @@ test('umbrella: with a parent epic within its ceiling the child is filed under i
   tasks: [{ id: 40, title: 'The task epic', status: 'IN_PROGRESS', kind: 'epic' }],
 }, async mock => {
   const table = { project: PROJECT, close: null, block: null, minors_umbrella: umbrellaOf({ parent: 40 }) }
-  const { out: first } = await runAccount(mock, table, { cwd: repoWith(null) })
+  const { out: first } = await runAccount(mock, table)
   assert.equal(first.actions.filter(a => a.step === 'tails_epic').length, 0, 'no tails epic step')
   assert.equal(step(first, 'minors_child').result, 'done')
   assert.match(step(first, 'minors_child').detail, /under epic task-40/)
@@ -390,7 +369,7 @@ test('umbrella: with a parent epic within its ceiling the child is filed under i
   assert.equal(child.description, UMBRELLA.description)
   assert.equal(tailsEpicOf(mock), undefined)
   const before = mock.tasks.size
-  const { out: second } = await runAccount(mock, table, { cwd: repoWith(null) })
+  const { out: second } = await runAccount(mock, table)
   assert.equal(step(second, 'minors_child').result, 'skipped_already')
   assert.equal(mock.tasks.size, before, 'the rerun creates nothing')
 }))
@@ -405,7 +384,7 @@ const PAGED_EPICS = [
 ]
 
 test('umbrella: a tails epic sitting past the first page is found, not duplicated', withMock({ tasks: PAGED_EPICS, milestones: TASK_MILESTONES }, async mock => {
-  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: null, minors_umbrella: pastCeiling() }, { cwd: repoWith(null) })
+  const { out } = await runAccount(mock, { project: PROJECT, close: null, block: null, minors_umbrella: pastCeiling() })
 
   assert.equal(step(out, 'tails_epic').result, 'skipped_already', 'the epic on the last page is seen')
   assert.equal(step(out, 'tails_epic').target, 500)
@@ -436,7 +415,7 @@ const isEpicCreate = rec => rec.method === 'POST' && rec.body && rec.body.kind =
 // tails epic of the release (a task with no epic has no release milestone at all).
 const RACE_TASKS = [{ id: 5, title: 'T', status: 'IN_PROGRESS', parent_task_id: PLAN_EPIC }, ...epicOf(FULL_KIDS)]
 const RACE_TABLE = { project: PROJECT, close: null, block: null, minors_umbrella: pastCeiling() }
-const raceRun = (mock, table) => runAccount(mock, table, { cwd: repoWith(null) })
+const raceRun = (mock, table) => runAccount(mock, table)
 
 // The first two epic listings — the lookup of each run — are answered only once both
 // have arrived, so both lookups find nothing and both runs create an epic.
@@ -592,138 +571,13 @@ test('lookup: of two open tails epics of the release the oldest is reused', with
   assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, 510)
 }))
 
-// ------------------------------------------------- umbrella and the epic ceiling
-
-// The umbrella of a task of an epic is ordinary work of that epic: it counts toward the
-// epic's ceiling of work added after the plan, max(3, floor(30% of the plan tasks)).
-// The plan tasks are the '### Task' sections of the epic's plan, found by its epic
-// anchor; the work already added is every child without a plan section, except the
-// children the words of a defect mark. Beyond the ceiling the umbrella goes to the
-// tails epic of the release.
-
-test('umbrella: two places of the ceiling used — a review minor run and a child added by hand — the umbrella takes the third under the epic', withMock({
-  tasks: epicOf([...PLAN_KIDS, kid(21, 'Review minors left on task-3', { status: 'DONE' }), kid(22, 'Rename the export flag'), ...DEFECT_KIDS]),
-  milestones: TASK_MILESTONES,
+// The server refuses ordinary work; the client never reads a plan to decide.
+test('umbrella: an existing child is reused without posting again', withMock({
+  tasks: epicOf([kid(24, 'Review minors left on task-11')]), milestones: TASK_MILESTONES,
 }, async mock => {
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(PLAN_10) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 2 of ceiling 3 of epic task-40, counted by the plan docs/superpowers/plans/2026-11-01-epic.md')
-  assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, PLAN_EPIC)
-  assert.match(step(out, 'minors_child').detail, /under epic task-40/)
-  assert.equal(tailsEpicOf(mock), undefined, 'no tails epic within the ceiling')
-  assert.equal(out.tails_epic_id, null)
-}))
-
-test('umbrella: the ceiling used up — a Note answer the third place — the umbrella goes to the tails epic of the release', withMock({
-  tasks: epicOf([...PLAN_KIDS, kid(21, 'Review minors left on task-3', { status: 'DONE' }), kid(22, 'Rename the export flag'),
-    kid(23, 'Note answer: Offer Y to admins'), ...DEFECT_KIDS]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(PLAN_10) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 3 of epic task-40, counted by the plan docs/superpowers/plans/2026-11-01-epic.md')
-  const tails = tailsEpicOf(mock)
-  assert.equal(tails.title, RELEASE_TAILS, 'the release of the epic names it')
-  assert.equal(tails.milestone_id, 2)
-  assert.equal(out.tails_epic_id, tails.id)
-  const child = mock.tasks.get(out.minors_created[0])
-  assert.equal(child.parent_task_id, tails.id)
-  assert.equal(child.title, 'Review minors left on task-11')
-  assert.match(step(out, 'minors_child').detail, /under the tails epic of the release/)
-  assert.equal([...mock.tasks.values()].filter(t => t.parent_task_id === PLAN_EPIC && t.title === child.title).length, 0, 'not filed in the epic')
-
-  const before = mock.tasks.size
-  const { out: second } = await runAccount(mock, ceilingTable, { cwd: repoWith(PLAN_10) })
-  assert.equal(step(second, 'minors_child').result, 'skipped_already')
-  assert.equal(mock.tasks.size, before, 'the rerun creates nothing')
-}))
-
-// The same umbrella filed in the epic before is that umbrella again: no new place.
-test('umbrella: already a child of the epic, it is skipped even with the ceiling used up', withMock({
-  tasks: epicOf([...PLAN_KIDS, kid(21, 'Review minors left on task-3'), kid(22, 'Rename the export flag'), kid(23, 'Note answer: Offer Y'),
-    kid(24, 'Review minors left on task-11')]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(PLAN_10) })
-  assert.equal(step(out, 'minors_child').result, 'skipped_already')
+  const { out } = await runAccount(mock, ceilingTable)
   assert.equal(step(out, 'minors_child').target, 24)
-  assert.equal(tailsEpicOf(mock), undefined)
-}))
-
-// Without a plan the base is the children with work, a child added by hand included,
-// and only an ordinary title takes a place: fourteen children allow four places.
-test('umbrella: an epic without a plan counts its children with work as the base and only ordinary titles as used', withMock({
-  tasks: epicOf([...Array.from({ length: 14 }, (_, i) => kid(11 + i, 'child ' + (i + 1))),
-    kid(41, 'Review minors left on task-12'), kid(42, 'Review minors left on task-13'), kid(43, 'Note answer: Offer Y'), ...DEFECT_KIDS]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(null) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 4 of epic task-40, counted without a plan')
-  assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, PLAN_EPIC)
-}))
-
-// A defect a plan section binds — the way the Orca plugin ties every unfiled finding to a
-// section — is no plan task: ten plan tasks and four tied defects leave a ceiling of 3,
-// not 4, so with three places used the umbrella goes to the tails epic of the release.
-test('umbrella: defects tied to a plan section stay out of the base — plan 10 and 4 tied defects keep a ceiling of 3', withMock({
-  tasks: epicOf([...PLAN_KIDS, kid(21, 'Review minors left on task-3', { status: 'DONE' }), kid(22, 'Rename the export flag'),
-    kid(23, 'Note answer: Offer Y to admins'), ...DEFECT_KIDS]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const plan = planText(14, [...PLAN_KIDS, ...DEFECT_KIDS].map(k => k.id))
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(plan) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 3 of epic task-40, counted by the plan docs/superpowers/plans/2026-11-01-epic.md')
-  const tails = tailsEpicOf(mock)
-  assert.ok(tails, 'the ceiling is used up: the tails epic takes the umbrella')
-  assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, tails.id)
-}))
-
-// No epic anchor in the repository: the task's own plan, as the table names it, is the plan.
-test('umbrella: the plan named by the table is read when no plan carries the epic anchor', withMock({
-  tasks: epicOf([...PLAN_KIDS, kid(21, 'Review minors left on task-3'), kid(22, 'Rename the export flag'), kid(23, 'Note answer: Offer Y')]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const dir = mkdtempSync(join(tmpdir(), 'wfa-plan-'))
-  const path = join(dir, 'plan.md')
-  writeFileSync(path, PLAN_10.replace(`<!-- conport-epic: ${PLAN_EPIC} -->`, ''))
-  const table = { ...ceilingTable, minors_umbrella: { ...ceilingTable.minors_umbrella, plan_path: path } }
-  const { out } = await runAccount(mock, table, { cwd: repoWith(null) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 3 of epic task-40, counted by the plan ' + path)
-  assert.ok(tailsEpicOf(mock), 'the ceiling is used up: the tails epic takes it')
-}))
-
-// A defect filed by hand starts its description with the gap mark a run writes: it takes
-// no place, so two ordinary places used leave the third for the umbrella.
-test('umbrella: a child filed by hand whose description starts with the gap mark is a defect and takes no place', withMock({
-  tasks: epicOf([...PLAN_KIDS, kid(21, 'Review minors left on task-3'), kid(22, 'Rename the export flag'),
-    kid(23, 'Fix the export header', { description: 'The gap: the export drops the header\nSeen nightly.' })]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(PLAN_10) })
-  assert.match(step(out, 'minors_ceiling').detail, /^ordinary tasks added 2 of ceiling 3 /)
-  assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, PLAN_EPIC)
-}))
-
-// An ordinary prefix on the first line of the description takes a place, as a title does.
-test('umbrella: a child whose description starts with an ordinary prefix takes a place without a plan', withMock({
-  tasks: epicOf([...Array.from({ length: 10 }, (_, i) => kid(11 + i, 'child ' + (i + 1))),
-    kid(41, 'Review minors left on task-12'), kid(42, 'Note answer: Offer Y'), kid(43, 'Tidy the names', { description: 'Review minors left on task-800\n- a.js' })]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(null) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 3 of epic task-40, counted without a plan')
-  assert.ok(tailsEpicOf(mock))
-}))
-
-// A plan of format B: '## Task N: … (ConPort task-<id>)' headings, no '### Task' section.
-test('umbrella: a plan of format B counts its ## Task sections and binds children by their heading', withMock({
-  tasks: epicOf([...PLAN_14, kid(41, 'Review minors left on task-3'), kid(42, 'Rename the export flag'), kid(43, 'Note answer: Offer Y')]),
-  milestones: TASK_MILESTONES,
-}, async mock => {
-  const planB = ['# Plan', `<!-- conport-epic: ${PLAN_EPIC} -->`, '',
-    ...PLAN_14.map((k, i) => [`## Task ${i + 1}: part ${i + 1} (ConPort task-${k.id})`, '', 'Body.', '']).flat()].join('\n')
-  const { out } = await runAccount(mock, ceilingTable, { cwd: repoWith(planB) })
-  // fourteen sections allow four places and bind the fourteen plan children: 3 used of 4
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 4 of epic task-40, counted by the plan docs/superpowers/plans/2026-11-01-epic.md')
-  assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, PLAN_EPIC)
+  assert.equal(writes(mock).length, 0)
 }))
 
 // ------------------------------------- the umbrella first, the close naming where it went
@@ -735,8 +589,8 @@ const resolutionOf = mock => mock.tasks.get(5).description.split('## Resolution\
 test('umbrella: filed before the close, whose resolution names the task it became in the tails epic', withMock({
   tasks: [{ id: 5, title: 'T', status: 'REVIEW', parent_task_id: PLAN_EPIC }, ...epicOf(FULL_KIDS)], milestones: TASK_MILESTONES,
 }, async mock => {
-  const { out } = await runAccount(mock, closeWith(pastCeiling()), { cwd: repoWith(null) })
-  assert.deepEqual(out.actions.map(a => a.step), ['minors_ceiling', 'tails_epic', 'minors_child', 'close'], 'the umbrella first, then the close')
+  const { out } = await runAccount(mock, closeWith(pastCeiling()))
+  assert.deepEqual(out.actions.map(a => a.step), ['tails_epic', 'minors_child', 'close'], 'the umbrella first, then the close')
   assert.equal(resolutionOf(mock), 'merged as abc123; review clean; full gate green; 1 review minor(s) left open, filed as task-' +
     out.minors_created[0] + ' in the tails epic task-' + out.tails_epic_id)
 }))
@@ -744,7 +598,7 @@ test('umbrella: filed before the close, whose resolution names the task it becam
 test('umbrella: within the ceiling, the resolution names the task it became under the epic', withMock({
   tasks: [{ id: 5, title: 'T', status: 'REVIEW' }, { id: 40, title: 'The task epic', status: 'IN_PROGRESS', kind: 'epic' }],
 }, async mock => {
-  const { out } = await runAccount(mock, closeWith(umbrellaOf({ parent: 40 })), { cwd: repoWith(null) })
+  const { out } = await runAccount(mock, closeWith(umbrellaOf({ parent: 40 })))
   assert.equal(resolutionOf(mock), 'merged as abc123; review clean; full gate green; 1 review minor(s) left open, filed as task-' +
     out.minors_created[0] + ' under epic task-40')
 }))
@@ -802,44 +656,22 @@ test('umbrella: with no epic and no task nothing is filed or recorded, and the c
 }))
 
 // A task of an epic past the ceiling: its umbrella waits linked to the epic, not the task.
-test('umbrella: past the ceiling of an epic with no release milestone after it, the waiting entry is linked to the epic', withMock({
-  tasks: [{ id: 5, title: 'T', status: 'REVIEW', parent_task_id: PLAN_EPIC }, ...epicOf([kid(41, 'Review minors left on task-12'),
-    kid(42, 'Review minors left on task-13'), kid(43, 'Note answer: Offer Y')])],
-  milestones: STANDING_AFTER,
+test('umbrella: no next release files the work without a milestone and asks, then reuses it', withMock({
+  tasks: epicOf(FULL_KIDS), milestones: STANDING_AFTER,
 }, async mock => {
-  const { out } = await runAccount(mock, closeWith(umbrellaOf({ parent: PLAN_EPIC })), { cwd: repoWith(null) })
-  assert.equal(step(out, 'minors_ceiling').detail, 'ordinary tasks added 3 of ceiling 3 of epic task-40, counted without a plan')
-  assert.equal(tailsEpicOf(mock), undefined)
-  assert.equal(mock.progress.length, 1)
-  const entry = mock.progress[0]
-  assert.ok(entry.description.startsWith('[task-run:5] tails waiting for a milestone: '), entry.description)
-  assert.equal(entry.linked_item_type, 'task')
-  assert.equal(entry.linked_item_id, PLAN_EPIC, 'linked to the epic of the task')
-  assert.equal(out.tails_waiting_progress_id, entry.id)
+  const table = { project: PROJECT, minors_umbrella: pastCeiling() }
+  const { out } = await runAccount(mock, table)
+  const tails = mock.tasks.get(out.tails_epic_id)
+  assert.equal(tails.milestone_id, undefined)
+  assert.equal(tails.priority, 1)
+  assert.equal(out.tails_epic_needs_milestone, true)
+  assert.equal(mock.tasks.get(out.minors_created[0]).parent_task_id, tails.id)
+  assert.equal(mock.progress.length, 0, 'work is filed, not parked in progress')
+  const { out: again } = await runAccount(mock, table)
+  assert.equal(again.tails_epic_id, tails.id)
+  assert.equal(again.tails_epic_needs_milestone, true)
+  assert.deepEqual(again.minors_created, [])
 }))
-
-// The words are compared ignoring case and leading spaces: a child filed by hand with a
-// differently cased mark is known all the same.
-test('the finding marks are read ignoring case and leading spaces, in the title and on the first line', () => {
-  const region = fencedRegion(source('wf-helper.mjs'), 'FINDING_MARKS_BEGIN', 'FINDING_MARKS_END', 'wf-helper.mjs')
-  const { ordinaryMarked, defectMarked } = new Function(region + '\nreturn { ordinaryMarked, defectMarked }')()
-  assert.equal(ordinaryMarked({ title: '  review MINORS left on task-3' }), true)
-  assert.equal(ordinaryMarked({ title: 'Tidy', description: '\n   NOTE ANSWER: offer X\nmore' }), true)
-  assert.equal(ordinaryMarked({ title: 'Review minors left open by the run' }), false, 'the mark is a whole prefix')
-  assert.equal(defectMarked({ title: 'Fix it', description: '   the GAP: header dropped' }), true)
-  assert.equal(defectMarked({ title: 'Fix it', acceptance: 'held FOR the person: ask' }), true, 'the acceptance is read too')
-  assert.equal(defectMarked({ title: 'ACCEPTANCE UNMET: export' }), true)
-  assert.equal(defectMarked({ title: 'Fix it', description: 'Context first.\nThe gap: dropped' }), true, 'a gap line further down')
-  assert.equal(defectMarked({ title: 'Fix it', description: 'Context first. The gap: dropped' }), false, 'not inside a line')
-  assert.equal(defectMarked({ title: 'Note answer: X', description: 'The gap: dropped' }), false, 'ordinary wins')
-})
-
-// The helper and epic.js recognise a finding task by the same words.
-test('the words of a finding task are the same in epic.js and wf-helper.mjs', () => {
-  const marks = file => fencedRegion(source(file), 'FINDING_MARKS_BEGIN', 'FINDING_MARKS_END', file)
-  assert.ok(marks('wf-helper.mjs').includes("const ORDINARY_PREFIXES = ['Review minors left on ', 'Note answer: ']"))
-  assert.equal(marks('wf-helper.mjs'), marks('epic.js'), 'the mirrored region diverged — edit both files together')
-})
 
 // -------------------------------------------------------- failure isolation
 
@@ -952,7 +784,7 @@ test('a table carrying steps this command does not implement is refused, not hal
 // ------------------------------------------------------------- the epic table
 
 const EPIC = 100
-const RESOLUTION = 'plan tasks 1/3 merged; criticals fixed 0 of 0; findings filed at the accounting 0; ordinary tasks added 3 of ceiling 3; defect fixes 0; ordinary work to the tails epic 1; gate green; acceptance READY'
+const RESOLUTION = 'plan tasks 1/3 merged; criticals fixed 0 of 0; findings filed at the accounting 0; ordinary tasks added 3 of ceiling 3; bug fixes 0; ordinary work to the tails epic 1; gate green; acceptance READY'
 // An entry naming no parent: ordinary work beyond the epic's ceiling, for the tails epic.
 const CRITICAL = { title: 'Review minors left on task-9', priority: 3, description: 'The review minors of task-9 left open after its fix round; fix each.' }
 
@@ -1094,8 +926,8 @@ const notFiled = (mock, out) => {
   return step[0].detail
 }
 
-test('epic table: the tails waiting for the person are recorded once, a rerun reuses the record', withMock({
-  tasks: epicTasks(RUN_CHILDREN), milestones: STANDING,
+test('epic table: without a release waiting work is recorded once', withMock({
+  tasks: epicTasks(RUN_CHILDREN, null), milestones: STANDING,
 }, async mock => {
   const { out } = await runAccount(mock, epicTable())
   notFiled(mock, out)
@@ -1122,14 +954,14 @@ test('epic table: a failed lookup of the tails epic after a standing list is a f
   assert.equal(out.tails_epic_id, null)
   assert.equal(out.tails_epic_needs_milestone, false, 'a broken call is not a question')
   assert.equal(out.failed_calls.length, 1)
-  assert.equal(out.failed_calls[0].call, 'tails epic lookup')
+  assert.equal(out.failed_calls[0].call, 'tails epic lookup or create')
   assert.deepEqual(steps(out, 'tails_child').map(a => [a.result, a.detail]), [['failed', 'no tails epic to attach the entries to']])
   assert.deepEqual(steps(out, 'tails_waiting'), [])
   assert.equal(descriptions(mock).at(-1), '[epic-run:100] result: ' + notFiledAt)
 }))
 
 test('epic table: a waiting record that cannot be written is a failed call, the person is still asked, and the summary says not filed', withMock({
-  tasks: epicTasks(RUN_CHILDREN), milestones: STANDING,
+  tasks: epicTasks(RUN_CHILDREN, null), milestones: STANDING,
   fail: rec => (rec.method === 'POST' && rec.path.endsWith('/progress') &&
     String(rec.body && rec.body.description).startsWith('[epic-run:100] tails waiting for a milestone: '))
     ? { status: 500, body: { detail: 'boom' } } : null,
@@ -1188,29 +1020,42 @@ test('epic table: an epic in a milestone that is not a release gets no tails epi
   assert.match(notFiled(mock, out), new RegExp(`milestone ${WAITING} of epic task-100 is not a release`))
 }))
 
-test('epic table: a release with no OPEN milestone after it gets no tails epic, and the person is asked', withMock({
+test('epic table: with no next open milestone it creates unassigned tails and asks', withMock({
   tasks: epicTasks(RUN_CHILDREN, AFTER), milestones: MILESTONES,
 }, async mock => {
   const { out } = await runAccount(mock, epicTable())
-  assert.match(notFiled(mock, out), /no open milestone after the release Release 1\.2/)
+  const tails = mock.tasks.get(out.tails_epic_id)
+  assert.equal(tails.title, 'Tails of release Release 1.2')
+  assert.equal(tails.milestone_id, undefined)
+  assert.equal(tails.priority, 1)
+  assert.equal(out.tails_epic_needs_milestone, true)
+  assert.equal(out.tails_waiting_progress_id, null)
+  assert.equal(out.tails_children.length, 1)
+  assert.equal(descriptions(mock).at(-1), '[epic-run:100] result: ' + filedIn(tails.id))
 }))
 
-test('epic table: a release followed by the standing lists gets no tails epic in them, and the person is asked', withMock({
+test('epic table: a standing next milestone is not skipped to reach a later release', withMock({
   tasks: epicTasks(RUN_CHILDREN), milestones: STANDING,
 }, async mock => {
   const { out } = await runAccount(mock, epicTable())
-  assert.match(notFiled(mock, out), /the open milestone after the release Release 1\.1 is Waiting, a standing list, not a release/)
+  assert.equal(mock.tasks.get(out.tails_epic_id).milestone_id, undefined)
+  assert.equal(out.tails_epic_needs_milestone, true)
+  assert.equal(out.tails_children.length, 1)
+  assert.equal(out.tails_waiting_progress_id, null)
 }))
 
-test('epic table: the open tails epic of the release is reused even when a standing list follows the release', withMock({
-  tasks: epicTasks(RUN_CHILDREN).concat([{ id: 300, title: 'Tails of release Release 1.1', status: 'TODO', kind: 'epic', milestone_id: AFTER }]),
-  milestones: STANDING,
+test('epic table: only unassigned open tails qualify when a standing list follows', withMock({
+  tasks: epicTasks(RUN_CHILDREN).concat([
+    { id: 299, title: 'Tails of release Release 1.1', status: 'TODO', kind: 'epic', milestone_id: AFTER },
+    { id: 300, title: 'Tails of release Release 1.1', status: 'REVIEW', kind: 'epic', milestone_id: null },
+    { id: 301, title: 'Tails of release Release 1.1', status: 'TODO', kind: 'epic', milestone_id: null },
+  ]), milestones: STANDING,
 }, async mock => {
   const { out } = await runAccount(mock, epicTable())
   assert.equal(out.tails_epic_id, 300)
-  assert.equal(out.tails_epic_needs_milestone, false)
+  assert.equal(out.tails_epic_needs_milestone, true)
   assert.equal(steps(out, 'tails_epic')[0].result, 'skipped_already')
-  assert.equal([...mock.tasks.values()].find(t => t.title === CRITICAL.title).parent_task_id, 300)
+  assert.equal(mock.tasks.get(out.tails_children[0]).parent_task_id, 300)
 }))
 
 test('epic table: a rerun of the same table changes nothing', withMock({ tasks: epicTasks(RUN_CHILDREN), milestones: MILESTONES }, async mock => {
@@ -1511,4 +1356,75 @@ test('a progress entry of this run already in the journal is not logged twice', 
   assert.equal(mock.progress.length, 202, 'nothing is appended to the journal')
   const offsets = mock.requests.filter(r => r.method === 'GET' && r.path.endsWith('/progress')).map(r => Number(r.query.get('offset')))
   assert.deepEqual(offsets, [0, 200], 'the journal is walked to the end once, then reused')
+}))
+
+for (const kind of ['bug', 'task']) {
+  test('an entry is posted with its kind: ' + kind, withMock({ tasks: epicTasks([]) }, async mock => {
+    await runAccount(mock, epicTable({ done: [], failed: [], skipped: [], minors: [{ ...CRITICAL, kind, parent: EPIC }] }))
+    assert.equal(writes(mock).find(r => r.method === 'POST' && r.path.endsWith('/tasks')).body.kind, kind)
+  }))
+}
+const refuseGrowth = r => r.method === 'POST' && r.body.parent_task_id === EPIC
+  ? { status: 409, body: { detail: { error: 'epic_growth_ceiling', message: 'full' } } } : null
+for (const umbrella of [false, true]) {
+  test(umbrella ? 'the minors umbrella refused by the ceiling goes to the tails epic' : 'a 409 epic_growth_ceiling files the entry in the release tails epic',
+    withMock({ tasks: epicTasks([]), milestones: MILESTONES, fail: refuseGrowth }, async mock => {
+      const table = umbrella ? { project: PROJECT, minors_umbrella: { ...UMBRELLA, kind: 'task', parent: EPIC } }
+        : epicTable({ done: [], failed: [], skipped: [], minors: [{ ...CRITICAL, kind: 'task', parent: EPIC }] })
+      const { out } = await runAccount(mock, table)
+      assert.deepEqual(out.failed_calls, [])
+      assert.equal(step(out, umbrella ? 'minors_child' : 'tails_child').result, 'done')
+      const tail = [...mock.tasks.values()].find(t => t.title === 'Tails of release Release 1.1')
+      const child = [...mock.tasks.values()].find(t => t.parent_task_id === tail.id)
+      assert.equal(child.kind, 'task')
+      await runAccount(mock, table)
+      assert.equal([...mock.tasks.values()].filter(t => t.parent_task_id === tail.id).length, 1)
+    }))
+}
+
+// The mock refuses ordinary additions at the ceiling regardless of their title.
+// Bugs pass unchanged, and a later ordinary POST still receives the same refusal.
+test('a Bug at the server ceiling stays in its epic and consumes no ordinary place', withMock({
+  tasks: epicTasks([]), milestones: MILESTONES,
+  fail: r => r.body?.kind === 'task' ? refuseGrowth(r) : null,
+}, async mock => {
+  const table = kind => epicTable({ done: [], failed: [], skipped: [],
+    minors: [{ ...CRITICAL, title: kind === 'bug' ? 'Repair export' : 'Polish export', kind, parent: EPIC }] })
+  const { out: bug } = await runAccount(mock, table('bug'))
+  assert.equal(bug.epic_children.length, 1)
+  assert.equal(bug.tails_epic_id, null)
+  assert.equal(mock.tasks.get(bug.epic_children[0]).kind, 'bug')
+  assert.equal(mock.tasks.get(bug.epic_children[0]).parent_task_id, EPIC)
+  const { out: ordinary } = await runAccount(mock, table('task'))
+  assert.equal(ordinary.epic_children.length, 0)
+  assert.equal(ordinary.tails_children.length, 1)
+  assert.deepEqual(writes(mock).filter(r => r.method === 'POST' && r.body.parent_task_id === EPIC)
+    .map(r => r.body.kind), ['bug', 'task'])
+}))
+
+for (const failTail of [false, true]) {
+  test('accounting refusal contributes to the tails total, failure=' + failTail, withMock({
+    tasks: epicTasks([]), milestones: MILESTONES,
+    fail: r => refuseGrowth(r) || (failTail && r.method === 'POST' && r.body?.kind === 'task'
+      ? { status: 500, body: { detail: 'write failed' } } : null),
+  }, async mock => {
+    const { out } = await runAccount(mock, epicTable({ done: [], failed: [], skipped: [],
+      minors: [{ ...CRITICAL, kind: 'task', parent: EPIC }],
+      close_resolution: RESOLUTION.replace(TAILS_PART, '; ordinary work to the tails epic 0;') }))
+    const summary = descriptions(mock).at(-1)
+    assert.ok(summary.includes('ordinary work filed in the tails epic task-' + out.tails_epic_id +
+      (failTail ? ': 0 of 1, the rest not filed: a call failed' : ': 1;')), summary)
+  }))
+}
+
+test('epic table: a selected release ignores the same title in other milestones or without one', withMock({
+  tasks: epicTasks([]).concat([
+    { id: 298, title: 'Tails of release Release 1.1', status: 'TODO', kind: 'epic', milestone_id: null },
+    { id: 299, title: 'Tails of release Release 1.1', status: 'TODO', kind: 'epic', milestone_id: RELEASE },
+    { id: 300, title: 'Tails of release Release 1.1', status: 'REVIEW', kind: 'epic', milestone_id: AFTER },
+  ]), milestones: MILESTONES,
+}, async mock => {
+  const { out } = await runAccount(mock, epicTable({ done: [], failed: [], skipped: [] }))
+  assert.equal(out.tails_epic_id, 300)
+  assert.equal(out.tails_epic_needs_milestone, false)
 }))

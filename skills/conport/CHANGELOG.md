@@ -1,5 +1,60 @@
 # conport changelog
 
+## 22.0.0
+
+**Breaking: the server refuses ordinary growth past the epic ceiling; update
+the plugin and the `conport` CLI together.** Older plugins file defects as
+ordinary tasks and fail with `409 epic_growth_ceiling` when the ceiling is
+reached; older CLI versions do not know Bug or the `kind: bug` plan label.
+Every `conport` CLI command the plugin, its docs and the server's model debts
+tell an agent to run now names `npx -y conport@^0.8.0`, up from `^0.7.3`: CLI
+0.8.0 is the first release that knows Bug and the `kind: bug` plan label.
+
+Plan sections labelled `kind: bug` create defects; the execution contract files defects with `kind='bug'` and follows the server prescription when an ordinary finding exceeds the epic growth ceiling.
+
+Skills file confirmed defects as `kind='bug'` and polish or new work as
+`kind='task'`. The server counts the epic growth ceiling; on
+`epic_growth_ceiling`, execute the call in `suggestions[].call` for the tails
+epic it names. Read `epic_progress.plan_tasks`, `ordinary_added`, `bugs` and
+`growth_ceiling`; `growth_ceiling: null` means no ceiling. With a ceiling, the
+server summary reads "ordinary after plan N of C, bugs B". The workflow run
+summary reads "ordinary tasks added N of ceiling C; bug fixes B", or
+"ordinary tasks added N (no ceiling); bug fixes B" outside that scope.
+The Stop hook reads the epic’s `epic_progress` and marks growth only when
+`ordinary_added > 0` and `growth_ceiling` is not null. Bugs stay visible as
+open work without contributing to the growth marker.
+Open Bugs and their epics lead `backlog.top` across milestones, ahead of
+ordinary work of the current milestone; routine selection keeps that order
+and its eligibility, readiness and review gates.
+
+Workflows file confirmed defects as bugs and read the epic growth counters from the server. Ordinary findings refused by the ceiling go to the release tails epic, including the task workflow's Minor umbrella.
+
+Bug is now a task kind across MCP, REST, the CLI, the dashboard and the Orca
+panel. It follows the same review journal, time accounting, estimates and
+hierarchy as an ordinary leaf. `has_open_bug` puts open Bugs and their epics
+first without changing `effective_priority`. `conport task list` lists open
+`task` and `bug` leaves outside epics in server order and marks Bugs; the Orca
+panel preserves that order with a Bug label. `conport plan import` creates Bugs
+from sections labelled `kind: bug`.
+For all projects, the server enforces the growth ceiling on release epics
+whose plan started after rollout. `epic_progress` exposes `plan_tasks`,
+`ordinary_added`, `bugs` and `growth_ceiling` (null outside that scope), in
+write echoes and epic reads; clients use these counters instead of recounting.
+The refusal's ordered suggestions create a missing tails epic with `priority=1`
+and file the work there. Its next milestone must be a release milestone;
+otherwise `next_milestone` is null. Whenever the target tails epic has no
+milestone, whether found or created, `ask_user_milestone` asks where it belongs.
+The skills, the plan contract and the epic task of the Orca plugin file the
+tails epic of the release one way. It is filed with priority 1. Inspect the next open milestone after the release: if it is a release, find the oldest open tails epic with the exact title in that milestone, or create it there; otherwise find or create it without a milestone, file the work, and ask the user which milestone it goes to. A defect task is no longer marked
+by `The gap: ` at the start of its description: its kind `bug` says so, and
+the epic workflow no longer counts growth itself.
+
+The rest of the refusals of the link tools carry a code, the same on REST and on MCP, in front of one sentence that names the one thing to do. A link type outside its list — `relationship` of `link_items` and `get_linked`, `link_type` of `link_project` and `unlink_project`, and the REST `link_type` of `POST`/`PUT /links` and `POST`/`DELETE /project-links` — is `invalid_relationship`, instead of an argument validation dump on MCP and a generic 422 on REST. A `direction` of `get_linked` or `get_project_links` outside outgoing, incoming, both is `invalid_direction`. A project linked to itself is `same_project`, and a deletion of a project link that does not exist is `project_link_not_found`. On MCP each refusal reads `<code>: <sentence>`.
+
+Breaking for REST clients: `GET /project-links` answers a `direction` outside its list with 422 `invalid_direction` instead of 400 with a string, and `POST /project-links` (400 `same_project`) and `DELETE /project-links` (404 `project_link_not_found`) give `detail` as an object with `error` and `message` instead of a string.
+
+The background check of a portion drops a finding you dismissed under another spelling too, of the same `subject` and `kind`: arrows and colons aside (`FACT :Entity → :Entity` is `FACT Entity → Entity`), and an entity written `X (y)` with `y` as code (it holds `_`, `/`, `.` or `{}`) taken for the whole `X` or the whole `y` — `agent_event` goes with `Agent event (agent_event)`. A plain word in brackets makes another thing (`API_HOST (agent)` is not `API_HOST`), as do two wrapped names sharing only a part, a word more or less and another end of a relation; a relation — `Source type Target` or `Source → Target` — is never unwrapped, and such a finding stays. `X (y)` is unwrapped, on either side, for a `missing` finding only: an `invented` finding and its dismissal both name entities the portion holds and are compared by their whole names, so `cli/conport` and `Точка входа (cli/conport)` never take each other there. The `mismatch` debt and the refit of stored findings read dismissals the same way. The conport skill says that a finding about a relation is dismissed as an entity named `Source type Target`: `relation` is no subject.
+
 ## 21.0.0
 Breaking: the nine tools of the entity graph and the semantic pass are retired — `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats`, `semantic_pass_run`, `semantic_pass_stats` and `semantic_cleanup`. A call answers one hint: use the project model instead (`arch_names`, `arch_entity`, `arch_lookup`); the server keeps running the semantic pass itself. The tool-profile groups `graphrag` and `semantic` are accepted and list nothing until the next major release. Their REST routes (`/api/v1/graph/*`, `/api/v1/projects/{project}/graph`, `/api/v1/projects/{project}/semantic/*`) answer 410 with the same action, the dashboard has no graph page, the project export carries no graph sections (`schema_version` 5), and `conport api graph|semantic` answers with the hint. Every number of the entity graph came from a counter shared by the whole service, which is the reason they go.
 
