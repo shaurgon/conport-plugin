@@ -106,6 +106,30 @@ function sessionEpicsPath(sessionId) {
   return path.join(dir, `session_epics_${encodeURIComponent(sessionId)}.jsonl`);
 }
 
+// The UserPromptSubmit cache of GET /epic-tails rows. The data dir is
+// machine-global, so the file is keyed by the project as the environment names
+// it, team prefix included: the same short name in two teams is two projects.
+const EPIC_TAILS_CACHE = /^epic_tails_.*\.json$/;
+function epicTailsCachePath(projectRaw) {
+  return path.join(dataDir(), 'hook_state', `epic_tails_${encodeURIComponent(projectRaw)}.json`);
+}
+
+// A task write changes the tails at once, while a cached row would name a
+// child closed a moment ago for the rest of the cache's life. The project of
+// the write may be spelled otherwise than the one a cache is keyed by (a
+// handle against a name), so every project's cache goes: the next prompt
+// fetches again. Best-effort.
+function dropEpicTailsCaches() {
+  let dir;
+  try { dir = path.join(dataDir(), 'hook_state'); } catch (_) { return; }
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return; }
+  for (const name of names) {
+    if (!EPIC_TAILS_CACHE.test(name)) continue;
+    try { fs.unlinkSync(path.join(dir, name)); } catch (_) {}
+  }
+}
+
 // Distinct epics in first-touch order; the latest non-empty title wins.
 function loadSessionEpics(sessionId) {
   let raw = '';
@@ -224,5 +248,5 @@ function readStdin() {
 module.exports = {
   CONPORT_URL, dataDir, parseProject, detectProject, retiredProjectIdNotice, projectRoute, denyListPath,
   authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
-  fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot, overlayEnabled,
+  epicTailsCachePath, dropEpicTailsCaches, fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot, overlayEnabled,
 };

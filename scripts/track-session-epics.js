@@ -1,18 +1,21 @@
 #!/usr/bin/env node
-// PostToolUse(conport add_task / update_task): remember which epics this
+// PostToolUse(conport add_task / update_task / delete_task): remember which epics this
 // session changed, so the Stop hook can hold the turn while their children
-// are still open. Silent and best-effort — never blocks or slows a tool call.
+// are still open, and drop the cached [TAILS] rows of UserPromptSubmit, which
+// the write has just made stale. Silent and best-effort — never blocks or
+// slows a tool call.
 'use strict';
 
 const fs = require('fs');
-const { readStdin, sessionEpicsPath } = require('./_common.js');
+const { readStdin, sessionEpicsPath, dropEpicTailsCaches } = require('./_common.js');
 
-const TRACKED_TOOL = /__(add_task|update_task)$/;
+const TRACKED_TOOL = /__(add_task|update_task|delete_task)$/;
 const MAX_DEPTH = 6;
 
 // The server echoes `epic_progress` (epic_id, epic_title, …) on exactly the
-// writes that change an epic's children: add_task under an epic, and
-// update_task on a child whose status changed or that was re-parented. That
+// writes that change an epic's children: add_task under an epic, update_task
+// on a child whose status changed or that was re-parented, and delete_task of
+// a child. That
 // echo is the definition of "this session touched the epic". The MCP result
 // reaches the hook wrapped (content blocks, JSON text, structured content) —
 // walk it instead of assuming one shape.
@@ -43,6 +46,10 @@ async function main() {
   const toolName = String(input.tool_name || '');
   const match = TRACKED_TOOL.exec(toolName);
   if (!match || !toolName.includes('conport')) process.exit(0);
+
+  // Any task write, the epic's own included (it echoes no epic_progress), may
+  // change the tails: the next prompt fetches them again.
+  dropEpicTailsCaches();
 
   // The project as the call named it — a handle or a name; the Stop hook
   // addresses it the same way.

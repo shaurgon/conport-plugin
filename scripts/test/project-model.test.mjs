@@ -84,7 +84,7 @@ test('the overlay submits the portion right after plan import', () => {
   assert.ok(portion > imported, 'the portion is submitted after the plan import, in the same step')
   const submit = plan.slice(portion)
   assert.match(submit, /arch_submit\(project=<project>, portion=/)
-  assert.match(submit, /npx -y conport@\^0\.7 arch submit /)
+  assert.match(submit, /npx -y conport@\^0\.7\.3 arch submit /)
   assert.match(submit, /"source": "doc-N"/)
   // Nothing submits a portion before the plan is imported.
   for (const step of steps.slice(0, steps.findIndex((s) => s.title === 'Plan'))) {

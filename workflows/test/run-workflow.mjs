@@ -40,6 +40,8 @@ const HANDLE = 'prk7m2qx9d'                       // a neutral handle: no real p
 export const GATE = { dir: '.', commands: ['true'] }
 export const PRE = { clean: true, branch: 'main', current_branch: 'main', main_sha: 'aaa0', helper_version: '0.0.0', api_key: true }
 const IMPL = { status: 'DONE', branch: 'task/t7', head_sha: 'bbb1', worktree_path: '/tmp/wt-7' }
+// The helper's answer to the check of unit versions before READY: every version equals the base's.
+export const VERSIONS_EQUAL = { base: 'origin/main', head: 'HEAD', equal: true, differs: [] }
 
 // The helper's answer to a cycle step whose every write landed: every agent of a
 // run works from the brief the run wrote first, so a green run needs its briefs.
@@ -61,6 +63,7 @@ export const taskRun = (over = {}) => ({
     baseline: { gate: 'GREEN' },
     impl: IMPL,
     rev: { verdict: 'APPROVED', findings: [] },
+    versions: VERSIONS_EQUAL, 'versions-rb': VERSIONS_EQUAL,
     merge: { results: [{ id: 7, status: 'MERGED', merge_sha: 'ccc2' }] },
     account: { via: 'wf-helper', actions: [], task_closed: true },
     janitor: { deleted: ['task/t7'], kept: [], worktrees_removed: ['/tmp/wt-7'], errors: [] },
@@ -86,6 +89,7 @@ export const epicRun = (over = {}) => ({
     'rev-501': { verdict: 'APPROVED', findings: [] },
     'merge-w0': { results: [{ id: 501, status: 'MERGED', merge_sha: 'ccc2' }] },
     hunt: { gaps: [] },
+    versions: VERSIONS_EQUAL,
     goal: { verdict: 'READY', checks: [] },
     account: { via: 'wf-helper', actions: [], epic_closed: true },
     janitor: { deleted: ['epic500/t501'], kept: [], worktrees_removed: ['/tmp/wt-7'], errors: [] },

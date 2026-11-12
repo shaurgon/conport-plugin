@@ -73,6 +73,10 @@ epic and is done before the epic is declared ready:
 | Code review, final review | Critical, Important, and a Minor not fixed in the same pass |
 | Anything else | A confirmed defect of behaviour |
 
+The *Epic growth ceiling* below bounds this table: a behaviour defect always
+stays in this epic; an ordinary finding past the growth ceiling goes to the
+tails epic of the release, and readiness does not wait for it.
+
 A Minor inside the diff under review is fixed by its author in the same pass;
 one left open after that pass becomes a task like any other finding. A Minor
 outside that diff — dead code nearby, style — is not a finding of that review.
@@ -80,6 +84,12 @@ A Note is a question: when only the user can answer it, ask the user at once,
 and the answer becomes the task. A finding is never kept aside for the end of
 the run: the report and the readiness entry name the task numbers made from
 the findings, not the findings themselves.
+
+A filed finding goes to an executor as the next action: a task nobody runs is
+the same list in another place. A report "after the epic I found N problems"
+as text, with no task numbers and no work started, is forbidden — those
+findings are tasks of this epic, or past the growth ceiling of the tails epic
+of the release, and the epic is not ready while one of its own is open.
 
 ## Depth: one level
 
@@ -109,10 +119,33 @@ When the work has no spec, this rule does not apply.
 
 ## Epic growth ceiling
 
-When the tasks added to an epic after its plan's tasks were filed exceed 30% of
-the plan's task count — and number at least three — stop. Give the user the
-list of what was added and ask: continue in this epic, or move the additions
-to an epic of their own. Continue only on an explicit yes.
+An epic takes max(3, floor(0.3 × plan tasks)) ordinary tasks added after the
+plan; the next ordinary task goes to the tails epic of the release. A plan of
+10 tasks: 3 added ordinary tasks stay in the epic, the 4th goes to the tails
+epic of the release. A plan of 20 tasks: 6 added ordinary tasks stay in the
+epic, the 7th goes to the tails epic of the release.
+
+- **A defect never counts and always stays in this epic: a review's Critical
+  and Important, a gap hunt's Blocker and Should-fix, a confirmed behaviour
+  defect.** A defect — the work does not do what its spec, plan or contract
+  says, or the goal is not reached — is fixed in the epic whatever the count; a
+  Should-fix is a defect, never polish. A defect task you file by hand starts
+  its description with the mark `The gap: ` the epic workflow writes; without
+  it, in an epic with a plan the workflows count the task as ordinary work (in
+  an epic without a plan, as one of the tasks the ceiling is measured against).
+- **Polish from findings counts: a review's Minor left after the pass, a task
+  from a Note's answer.** Style, a duplicate, a missing test left as a Minor is
+  an ordinary task, and so is new scope: a new capability, a new step, a new
+  consumer. An epic is not polished without end.
+- **Past the ceiling, the tails epic of the release.** It is the one tails
+  epic of the release described under *The release epic is frozen at the
+  version bump*: attached to the milestone right after the release and taken
+  into work first after the push; there is no second tails epic per epic. The
+  work is neither added to this epic nor dropped, the user is not asked whether
+  to go on in this epic, and the epic's readiness does not wait for it.
+- A report of the epic's progress names the ordinary tasks added (counted) and
+  the defect fixes (not counted) as two numbers: "ordinary tasks added N of C,
+  defect fixes F".
 
 ## Epic progress is counted by its children
 
@@ -131,16 +164,43 @@ tail nobody counts feels done while it is not.
 
 The make-up of a release epic is frozen at the moment the version is bumped.
 
+- **An epic does not bump a version.** It writes its changes into the
+  changelog of the unit under `## Unreleased`. The version of every changed
+  unit is bumped once, at the release step, after every epic of the release
+  milestone has merged: `## Unreleased` becomes the number. That one bump is the freeze.
+  Parallel epics of one milestone that each bumped would ship diverging
+  numbers.
 - Before the freeze, the findings of the epic (see above: every severity) go
-  into this epic as tasks and are closed before the bump.
-- A finding made after the freeze goes into an epic of the next milestone as a
-  task, not into the release epic and not into a report line — except a defect
-  in code that is already in this release, which is closed before the push.
-- After the freeze only the Critical and Important findings of the final
-  review in this release's code hold the bump.
-- Work that cannot be finished before the push for an outside reason (a
-  production artifact, another party's service) goes to an epic for the work
-  after the release, with the reason written into the task.
+  into this epic as tasks and are closed before the bump: a behaviour defect
+  always stays in this epic; an ordinary finding past the growth ceiling goes
+  to the tails epic of the release, and readiness does not wait for it.
+- A finding made after the freeze goes into the tails epic of the release as a
+  task — not into the release epic, not into an epic of a later milestone with
+  work of its own, not into a report line — except a defect in code that is
+  already in this release, which is closed before the push.
+- Once every epic of the release milestone has merged, only the Critical and
+  Important findings of the final review in this release's code hold the
+  bump, and so does a defect in this release's code; anything else found then
+  goes to the tails epic of the release.
+- Work that can be done right after the push (a live check after the deploy, a
+  dry run on an environment) goes to the tails epic of the release too.
+- Work that cannot be finished before the push for an outside reason (another
+  party's service, a date, a measurement window) is waiting work: it goes to
+  an epic of the waiting milestone, with the reason written into the task —
+  never into the tails epic.
+
+**The tails epic of the release** is one per release, filed at the first such
+finding or work. It is attached to the milestone right after the release — not
+to a later release milestone with work of its own, not to the backlog without
+a date — and is taken into work first after the push, before any other
+milestone. It holds no waiting work, is never held waiting and never closed as
+CANCELLED because it waits. Its title is `Tails of release <title of the release
+milestone>`, written literally and never translated: look for an epic with that
+title before filing one, so a session and the epic workflow never start two. It
+is filed with priority 1, and only when the open milestone right after the
+release is a release milestone itself: when it is a standing list (the waiting
+milestone, the backlog without a date) or there is none, ask the user which
+milestone the tails go to.
 
 "An epic closes only with its children closed" applies to the frozen make-up.
 Without a freeze, a tail becomes a child, the epic cannot close, there is no

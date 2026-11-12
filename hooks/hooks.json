@@ -23,7 +23,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^mcp__.*conport.*__(add_task|update_task)$",
+        "matcher": "^mcp__.*conport.*__(add_task|update_task|delete_task)$",
         "hooks": [
           {
             "type": "command",

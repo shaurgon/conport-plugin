@@ -113,12 +113,14 @@ test('a session that grew its epic past three open children gets the whole list 
   assert.doesNotMatch(verdict.reason, /task-56/)
 }))
 
-test('the Stop reason is conditional on a readiness claim, not an order to do the work', () => withEnv(async (ctx) => {
+test('the Stop reason says the epic is not done and orders each open child dispatched or its blocker named', () => withEnv(async (ctx) => {
   await addUnderEpic(ctx, 's1', 50, 51)
   ctx.api.children = [child(51, 50, 'TODO')]
   const [first, ...rest] = JSON.parse((await stop(ctx, 's1')).out).reason.split('\n')
-  assert.match(first, /^\[TAILS\] If this turn reports the work as done, it is not/)
-  assert.match(first, /name them to the user\. Otherwise end the turn as planned\.$/)
+  assert.match(first, /^\[TAILS\] /)
+  assert.ok(first.includes('the epic is not done: dispatch these now, or name the reason each cannot start'), first)
+  // The old wording made the hold conditional and let the turn end with the work left.
+  assert.doesNotMatch(first, /If this turn reports|end the turn as planned|name them to the user/)
   for (const line of rest) assert.doesNotMatch(line, /Finish|then close/)
 }))
 
@@ -485,6 +487,68 @@ test('the UserPromptSubmit [TAILS] block is printed only when its composition ch
   rmSync(cache)
   assert.match(await promptContext(ctx), /\[TAILS\] task-50 Epic 50 — Close epic task-50/)
   assert.ok(JSON.parse(readFileSync(cache, 'utf8')).ok)
+}))
+
+// A task write changes the tails at once; the cached rows would keep naming a
+// child closed a moment ago for the rest of the cache's life.
+const writeTask = (ctx, toolName, toolInput, toolResponse) => runHook('track-session-epics.js', {
+  session_id: 's1', tool_name: toolName, tool_input: toolInput, tool_response: toolResponse,
+}, ctx)
+
+test('closing a child drops the cached tails, so the next prompt no longer names it open', () => withEnv(async (ctx) => {
+  ctx.api.tails = [openTail(50, [51])]
+  await pastFirstPrompt(ctx)
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-50 Epic 50 — open: task-51'])
+  ctx.api.tails = [closableTail(50)]                              // task-51 closed on the server
+  await writeTask(ctx, TOOL_UPDATE, { project: 'prk7m2qx9d', task_id: 51, status: 'DONE' },
+    mcpResult({ id: 51, status: 'DONE', summary: 'closed', epic_progress: { epic_id: 50, epic_title: 'Epic 50' } }))
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-50 Epic 50 — Close epic task-50 with a resolution'])
+}))
+
+test('any conport task write drops every cached tails file, an epic write without the echo included', () => withEnv(async (ctx) => {
+  ctx.api.tails = [closableTail(60)]
+  await pastFirstPrompt(ctx)
+  await promptContext(ctx)
+  const other = join(ctx.dataDir, 'hook_state', 'epic_tails_k7m2qx9d%2Fmy-proj.json')
+  writeFileSync(other, JSON.stringify({ fetched_at: Date.now(), ok: true, tails: [] }))
+  assert.equal(existsSync(tailsCache(ctx)), true)
+  // Closing the epic itself: the server echoes no epic_progress for a root task.
+  await writeTask(ctx, TOOL_UPDATE, { project: 'prk7m2qx9d', task_id: 60, status: 'DONE' },
+    mcpResult({ id: 60, status: 'DONE', summary: 'closed' }))
+  assert.equal(existsSync(tailsCache(ctx)), false)
+  assert.equal(existsSync(other), false)                          // the cache of a project named another way
+}))
+
+test('deleting the last open child drops the cached tails, so the next prompt no longer names it open', () => withEnv(async (ctx) => {
+  ctx.api.tails = [openTail(50, [51])]
+  await pastFirstPrompt(ctx)
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-50 Epic 50 — open: task-51'])
+  ctx.api.tails = [closableTail(50)]                              // task-51 deleted on the server
+  await writeTask(ctx, 'mcp__plugin_conport_conport__delete_task', { project: 'prk7m2qx9d', task_id: 51 },
+    mcpResult({ message: 'Task #51 deleted successfully', deleted: true, id: 51,
+      epic_progress: { epic_id: 50, epic_title: 'Epic 50' } }))
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-50 Epic 50 — Close epic task-50 with a resolution'])
+}))
+
+test('the PostToolUse matcher sends every task write the hook tracks to it', () => {
+  const hooks = JSON.parse(readFileSync(join(dirname(SCRIPTS), 'hooks', 'hooks.json'), 'utf8'))
+  const [entry] = hooks.hooks.PostToolUse.filter((e) => e.hooks.some((h) => h.command.includes('track-session-epics.js')))
+  const matcher = new RegExp(entry.matcher)
+  for (const tool of ['add_task', 'update_task', 'delete_task']) {
+    assert.match(`mcp__plugin_conport_conport__${tool}`, matcher)
+  }
+  assert.doesNotMatch('mcp__plugin_conport_conport__log_progress', matcher)
+})
+
+test('a tool that writes no task leaves the cached tails alone', () => withEnv(async (ctx) => {
+  ctx.api.tails = [closableTail(60)]
+  await pastFirstPrompt(ctx)
+  await promptContext(ctx)
+  await writeTask(ctx, 'mcp__plugin_conport_conport__log_progress', { project: 'prk7m2qx9d', title: 'x' },
+    mcpResult({ id: 5, summary: 'logged' }))
+  await writeTask(ctx, 'mcp__other__update_task', { project: 'prk7m2qx9d', task_id: 60, status: 'DONE' },
+    mcpResult({ id: 60, status: 'DONE', summary: 'closed' }))
+  assert.equal(existsSync(tailsCache(ctx)), true)
 }))
 
 test('a failed tails fetch neither prints nor resets what the session was shown', () => withEnv(async (ctx) => {

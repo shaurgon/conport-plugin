@@ -109,6 +109,8 @@ test('task.js: a task found in REVIEW is reviewed against the blocks its report 
     scout: { ...taskRun().answers.scout, task: { ...taskRun().answers.scout.task, status: 'REVIEW' },
       brief: { ...taskRun().answers.scout.brief, spec_doc_id: 42 } },
     branch: { exists: true, branch: 'task/t7', head_sha: 'bbb1' },
+    // a resumed task's reviewer owes concern_rulings; its report entry lists none
+    rev: { verdict: 'APPROVED', findings: [], concern_rulings: [] },
   }))
   assert.equal(run.ledger.outcome, 'MERGED')
   assert.match(oneLine(run.prompt('rev')), /The spec blocks the implementer changed are named in its latest report entry \(Spec blocks changed:\)\./)

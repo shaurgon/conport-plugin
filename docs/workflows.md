@@ -135,10 +135,23 @@ Example:
 - **Minor review findings are fixed in the same run.** The fix round applies
   every finding, minors included. A minor still open after the round does not
   block the merge, but it is never left as a line: the journal records it as
-  carried, and the run files it as ONE follow-up task — a child of the task's
-  own epic when it has one, under the "Workflow run tails" epic otherwise — with
-  no argument needed (the former `fileMinors` argument is no
-  longer read).
+  carried, and the run files it as ONE follow-up task, `Review minors left on
+  task-<id>` — ordinary work: a child of the task's own epic while the epic's
+  growth ceiling, max(3, floor(0.3 × plan tasks)), has room, and a child of the
+  tails epic of the release beyond it — with no argument needed (the former
+  `fileMinors` argument is no longer read). The ceiling counts every child of
+  the epic without a plan section, a task added by hand included, except the
+  ones a defect marks (a defect filed by hand starts its description with
+  `The gap: `). With no release milestone to file the tails epic in, the
+  follow-up task waits in a progress entry and the run asks you which
+  milestone the tails go to. A task with no epic always takes that path: only
+  an epic carries a milestone, so the task has no release milestone. The close
+  resolution names where the minors went — "filed" only when the task was
+  filed.
+- **What a review could not verify becomes a question.** A run of one task has
+  no gap hunt to check it, so the run ledger hands it to you under `questions`,
+  with `questions_action` saying what to do: the session asks you each one, and
+  your answer is a task, or the reason none is needed.
 - **An epic id is rejected.** An epic is not a unit of execution; use
   `/conport:epic`.
 - **A task with neither an acceptance criterion nor a plan slice is rejected.**
@@ -170,6 +183,27 @@ Example:
   REVIEW failed) leaves the task IN_PROGRESS with a report, and its close is
   refused with `done_needs_review`: move the task to REVIEW, add the review,
   then close it.
+- **A task that changes a unit version is not merged.** An epic does not raise
+  a version; the release step does. Before the merge the run compares every
+  version carrier of the units your project's manifest `.conport/units.json`
+  lists (see *The unit manifest* below) in the reviewed head with the base
+  branch — `origin/<default branch>` when the repository has it, else the commit
+  the run started from. A
+  difference fails the task with `VERSION_RAISED` and one action: "Restore the
+  version of <unit> as <base> has it; units are raised only at the release step."
+  A rebase after a conflict is checked again before its merge. The release step
+  is not run through `/conport:task` or `/conport:epic`: run them only after the
+  release is pushed. When your default branch already differs from the published
+  one at the start of the run — a release step not pushed yet — the task fails with
+  `RELEASE_NOT_PUSHED` and the action "Push the release step first, then run
+  again: …", never a restore; when it is behind the published one or diverged
+  from it — a release pushed from another checkout — it fails with
+  `BRANCH_BEHIND_ORIGIN` and "Update the default branch from origin/<branch>
+  first, then run again." A check that does not answer, or a carrier whose
+  version neither side can read, fails it with `VERSIONS_UNCHECKED`; so does a
+  manifest that cannot be read, with "Fix .conport/units.json, then run again:
+  …". A project without the manifest has no comparison: the run passes and
+  says so in one line of its notes.
 - **Nothing is ever pushed.** Merges are local, on your default branch.
 
 ### Resuming an interrupted run
@@ -210,21 +244,46 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
    `ABORTED_IN_REVIEW_NO_BRANCH` while the rest of the epic runs,
 4. merge the approved branches strictly one at a time, the full gate after every
    merge — a red gate aborts that merge cleanly and fails the task,
-5. run ONE gap-hunt pass over the whole change, verify every finding
-   adversarially, fix at most five confirmed criticals in one round,
-6. turn every finding still open into a child of the epic: the review minors a
-   fix round left open (one child per task they came from) and each gap
-   confirmed below critical run the way a plan task runs; a Note and a gap
-   nobody could verify are filed with their question and held for you,
-7. when the project's model has portions with anchors, run `conport arch check`
+5. run ONE gap-hunt pass over the whole change — what the task reviewers could
+   not verify from their diffs is handed to it, and it settles each item as a gap
+   or as covered; an item it does not settle is asked of you — verify every
+   finding adversarially, fix at most five confirmed criticals in one round,
+6. turn every finding still open into a child of the epic: a critical that
+   round did not close (its fix failed, or it came beyond the five) and each gap
+   confirmed below critical are defects and always run the way a plan task runs;
+   the review minors a fix round left open (one child per task or gap fix they
+   came from) are ordinary work and run within the ceiling of work added after
+   the plan (see below); a Note and a gap nobody could verify are filed with
+   their question and held for you,
+7. when the project's model has portions with anchors, run `npx -y conport@^0.7.3 arch check`
    in the repository root after the last merge, the finding tasks included, and
    report its outcome under `anchor_check` — with the command to run by hand
    when the check could not run,
-8. accept the GOAL by observation — not by counting closed tasks,
+8. accept the GOAL by observation — not by counting closed tasks — and never as
+   READY while a unit version differs from the base branch: after the last merge
+   the run compares every version carrier of the units the project's manifest
+   `.conport/units.json` lists with the base, as `/conport:task` does before its
+   merge (recorded under `versions` in the run ledger); a difference is a
+   criterion left unmet, "Restore the version of <unit> as <base> has it; units
+   are raised only at the release step.", filed as a child of the epic; a
+   release step not pushed yet ("Push the release step first, then run again:
+   …"), a default branch behind the published one, a manifest that cannot be
+   read and a check that does not answer are ones the acceptance could not
+   observe, asked of you. Without the manifest nothing is compared, and one line
+   of the notes says so. The release step itself is not run through this
+   workflow: run it only after the release is pushed,
 9. write everything back to ConPort: done tasks closed with resolutions, failures
-   marked BLOCKED with reasons, unresolved criticals and escalations filed into a
-   separate "Tails" epic, and the epic itself closed only when nothing is left
-   open AND the acceptance verdict is READY.
+   marked BLOCKED with reasons, a finding that got no child and each criterion
+   the acceptance observed unmet filed as a child of the epic, ordinary work
+   beyond the ceiling filed under the tails epic of the release, and the epic
+   itself closed only when nothing is left open AND the acceptance verdict is
+   READY,
+10. hand you in the run ledger, under `questions` with `questions_action`, what
+   only you can settle: each held finding with its question, what a review could
+   not verify that the gap hunt did not settle, each criterion the acceptance
+   could not observe, and a tails epic of the release left without a milestone.
+   The session asks you each one; your answer is a task, or the reason none is
+   needed.
 
 ### Anti-sprawl guarantees
 
@@ -242,8 +301,39 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
   epic open, is named in the run ledger (`unfiled_findings`, with its brief and
   question) and is filed at the accounting as a child of the epic, one per
   finding. Confirmed
-  criticals get one capped fix round; unresolved criticals and escalations
-  always become tasks (priority 1, in a separate tails epic).
+  criticals get one capped fix round; a critical it does not close — its fix
+  failed, or it came beyond the cap — becomes a child of the epic at priority 1
+  and runs in the findings round like every other finding. The epic is not
+  closed while one is open.
+- **Ordinary work added after the plan has a ceiling; defects do not.** A
+  defect — a task review's Critical or Important, a confirmed Blocker or
+  Should-fix of the gap hunt, a critical the fix round did not close — is
+  always a task of the epic, never counted, never moved. Ordinary work — a
+  review minor left after its fix round, a minor of a gap fix's review, a task
+  made from your answer to a Note — counts toward max(3, floor(30% of the plan
+  tasks)) tasks added after the plan, the ordinary tasks earlier runs added
+  included: a plan of 10 or 11 tasks keeps 3, the 4th goes. Within the ceiling
+  it is a task of this epic and runs; beyond it, it is not run here: it is
+  filed under the tails epic of the release — one per release, titled
+  "Tails of release <release milestone>" (written literally, never translated),
+  attached to the next open milestone after the epic's milestone at priority 1
+  and taken into work first after the push — and does not hold this epic open.
+  The tails epic is filed only when the epic's milestone is a release and the
+  open milestone right after it is a release too: for an epic with no milestone
+  or in a milestone that is not a release, or a release followed by a standing
+  list (the waiting milestone, the backlog without a date) or by nothing, no
+  tails epic is filed, and you are asked which milestone the tails go to; the
+  work waits in a progress entry linked to the epic, the question names it, and
+  the run summary says the work waits for your answer instead of calling it
+  filed. Your answer is a milestone: there the session files the tails epic and
+  under it a task per entry, never a child of this epic. The task made from
+  your answer to a Note is renamed
+  "Note answer: <title>", so every later run counts it; past the ceiling the
+  task itself moves under the tails epic of the release, and this epic does
+  not wait for it — `questions_action` tells the session how. The base of the
+  ceiling is the plan tasks; without a plan, the children with work, never the
+  finding tasks of earlier runs. The run summary names both numbers: ordinary
+  tasks added (against the ceiling) and defect fixes.
 - **Every counter is a literal in the script**, not an agent's judgment: one fix
   round plus one re-review per task, one rebase per merge conflict, one hunt
   pass, one critical-fix round, one findings round.
@@ -287,7 +377,7 @@ first, then pass that file's path as the `plan` argument — the run hands it to
 the helper as `--plan .superpowers/plans/doc-M.md`:
 
 ```
-npx -y conport@^0.7 plan pull <epic id>
+npx -y conport@^0.7.3 plan pull <epic id>
 /conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
 /conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
 ```
@@ -322,10 +412,41 @@ judging a change, hunting for gaps, deciding whether the goal was reached.
 | `merge` | Merges the queued branches one at a time, the full gate after each; a conflict or a red gate aborts that merge cleanly and the batch reports it per branch. |
 | `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics, and the run's own unmerged branches are named in `kept`. The checkout the helper runs in is never removed, even when listed: it is named in `skipped` (a `cleanup skipped: …` note in the run ledger). |
 | `branch` | Names the first of the given local branches that exists, with its head commit — how a run finds the branch of a task it found in REVIEW. |
+| `versions` | Compares the unit version carriers of a commit with the base branch (`origin/<branch>` when it exists, else the short sha of the commit the run started from) and lists every carrier that differs, with its unit and both values (`differs`), every carrier whose version neither side can read (`unreadable`) and every carrier in which a start of the run ahead of `origin/<branch>` already differs from it (`start_differs`: a release step not pushed yet), and whether the start is behind `origin/<branch>` or diverged from it (`start_behind`). The units and their carriers come from the project's manifest `.conport/units.json` as of the start of the run (`units`: `manifest`, `none` when there is none and nothing is compared, `invalid` with `manifest_error`); a carrier present on one side only is not compared. |
 | `cycle` | Writes one step of a task's review cycle to ConPort: the journal entry (`brief`, `report`, `fix` or `review` with its verdict) and the status change that goes with it — REVIEW after a report or a fix, IN_PROGRESS after `changes_requested`. The authors are fixed here, and an entry longer than the server takes is cut with a marker. A refusal by the review rules is reported as the task's state, not as a failed call. |
 | `account` | Writes the run's outcome back to ConPort: closes done tasks with their resolutions, blocks failures, files deferred findings, logs the run summary, closes the epic when the run says it may. Every item is guarded by a read, so re-running the same table changes nothing. |
 | `scout` | Collects the raw material of one task: the task itself, its slice of the plan, the files it names, the Global Constraints, the gate object and the spec reference. It compresses and judges nothing. |
 | `--version` | The plugin version the helper shipped with, as `{"version": "..."}` (`null` when the manifest next to it is unreadable). |
+
+### The unit manifest
+
+Which units your project versions, and where each carries its version, is your
+project's data: a manifest `.conport/units.json` at the repository root. Both
+workflows read it as of the start of the run, so a branch under check cannot
+change what it is checked by. Without it nothing is compared. The manifest is
+read from git, so it must be committed: an uncommitted or ignored file counts as
+no manifest (`units: none`).
+
+```json
+{
+  "units": [
+    { "unit": "the web app", "carriers": [
+      { "path": "web/package.json", "read": { "json": "version" } },
+      { "path": "web/catalog.json", "read": { "json": "plugins[].version" } },
+      { "dir": "web/skills", "file": "SKILL.md", "read": { "skill": "metadata.version" } },
+      { "path": "web/src/version.ts", "read": { "regex": "^export const VERSION = '([^']+)'" } }
+    ] }
+  ]
+}
+```
+
+A carrier is one file (`path`) or every file of one name under a directory
+(`dir` and `file`). Its `read` holds exactly one way to read the version: `json`
+— a field path, where `name[]` maps over a list and the values are joined;
+`regex` — the first group of a regular expression applied to the whole text in
+multiline mode (`^` and `$` match at every line); `skill`
+— `metadata.version` of a skill's frontmatter. One file may carry several units,
+each read by its own expression.
 
 ### The version handshake
 

@@ -97,7 +97,7 @@ ConPort instead of `docs/superpowers/`. Turn it on with
 agent gets the overlay rules from the **Superpowers overlay** block of the
 `conport` skill. There is no commit guard either, so nothing refuses a commit
 of a new file under `docs/superpowers/` — the rules alone keep specs and plans
-out of git. The rules call the `conport` CLI (`npx -y conport@^0.7`), which
+out of git. The rules call the `conport` CLI (`npx -y conport@^0.7.3`), which
 needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`. See
 the [README](../../README.md#superpowers-overlay).
 

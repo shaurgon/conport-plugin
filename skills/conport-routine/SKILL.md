@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 20.6.0
+  version: 21.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -96,7 +96,7 @@ configured level.
 | Level | Name | What the run does |
 |-------|------|-------------------|
 | **0** | Report | Fetch the agenda, reconcile stale work, produce the digest. No changes beyond reconciliation. |
-| **1** | Housekeep | Level 0 + housekeeping: weekly graph cleanup, unblocking/snoozing stuck tasks. |
+| **1** | Housekeep | Level 0 + housekeeping: unblocking/snoozing stuck tasks. |
 | **2** | Execute | Level 1 + actually executing ready tasks, up to `max_tasks_per_run`. |
 
 ---
@@ -149,11 +149,6 @@ by this date", the re-check itself **is** the task's work.
 
 Skip this phase entirely at level 0.
 
-- **Graph cleanup** (weekly cadence) — start `semantic_cleanup(project,
-  dry_run=false)` once per weekly run: it runs the semantic pass and settles
-  every proposal by rule, so nothing is left to review. It returns at once and
-  runs in the background; do not wait for it. A `rate_limited` answer means a
-  cleanup ran recently — skip it and name it in the digest.
 - **`blocked_too_long`** — for each chronically blocked task pick one:
   **unblock** (the blocker is resolved → status back to TODO), **decompose**
   (split out the unblocked part as a new task), or **snooze with a concrete

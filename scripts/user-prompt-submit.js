@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const {
   CONPORT_URL, dataDir, detectProject, projectRoute,
-  authHeader, request, readStdin, fingerprintChanged,
+  authHeader, request, readStdin, fingerprintChanged, epicTailsCachePath,
 } = require('./_common.js');
 
 const MESSAGES_BEFORE_REMINDER = 5;
@@ -101,12 +101,11 @@ async function fetchEpicTails() {
   // Cached, time-boxed, silent-failure: the hook must never slow a prompt.
   const project = detectProject();
   if (!project) return { lines: [], ok: false };
-  // The data dir is machine-global, so the cache file is keyed by project —
-  // otherwise a session in another repo is served the first project's tails
-  // (its epic ids!) for the rest of the TTL. The key is the name as given,
-  // team prefix included: the same short name in two teams is two projects.
-  const cachePath = path.join(dataDir(), 'hook_state',
-    `epic_tails_${encodeURIComponent(project.raw)}.json`);
+  // Keyed by project — otherwise a session in another repo is served the
+  // first project's tails (its epic ids!) for the rest of the TTL. A task
+  // write drops it (track-session-epics.js), so a child closed a moment ago
+  // is not named open from the cache.
+  const cachePath = epicTailsCachePath(project.raw);
   try {
     if (fs.existsSync(cachePath)) {
       const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
@@ -143,6 +142,13 @@ async function fetchEpicTails() {
     const res = await Promise.race([pending, new Promise((resolve) => {
       setTimeout(() => resolve(null), TAILS_REQUEST_TIMEOUT_MS).unref();
     })]);
+    // A known race, left on purpose: a prompt of another session that sent
+    // this request before a task write and gets its answer after the write
+    // dropped the cache stores rows from before the write. The window is the
+    // request budget (≤ TAILS_REQUEST_TIMEOUT_MS), the stale rows live one
+    // TTL at most, the next task write drops them again, and the block only
+    // lists tails — it orders nothing. Closing it would need a write
+    // generation shared between hooks for a 500 ms window.
     if (!res || res.status !== 200) {
       writeTailsCache(cachePath, [], false);
       return { lines: [], ok: false };

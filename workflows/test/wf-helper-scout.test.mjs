@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { extractGate } from '../wf-helper.mjs'
+import { extractGate, linksOf } from '../wf-helper.mjs'
 
 const HELPER = join(dirname(dirname(fileURLToPath(import.meta.url))), 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
@@ -55,10 +55,17 @@ const startMock = async (opts = {}) => {
       if (url.pathname === `/api/v1/projects/${HANDLE}/links`) {
         const type = url.searchParams.get('item_type')
         const id = Number(url.searchParams.get('item_id'))
-        const offset = Number(url.searchParams.get('offset') ?? 0)
-        const limit = Number(url.searchParams.get('limit') ?? 100)
+        const limit = Math.min(Number(url.searchParams.get('limit') ?? 100), opts.linkPage ?? 500)
         const all = links.filter(l => (l.source_type === type && l.source_id === id) || (l.target_type === type && l.target_id === id))
-        return send(res, 200, { links: all.slice(offset, offset + Math.min(limit, opts.linkPage ?? 500)), total: all.length })
+        // As the server pages: by `after` the links numbered above it, oldest
+        // first, with `next_after`; by `offset` from the newest link, without it.
+        if (url.searchParams.has('after')) {
+          const above = all.filter(l => l.id > Number(url.searchParams.get('after')))
+          const rows = above.slice(0, limit)
+          return send(res, 200, { links: rows, total: all.length, next_after: above.length > rows.length ? rows.at(-1).id : null })
+        }
+        const offset = Number(url.searchParams.get('offset') ?? 0)
+        return send(res, 200, { links: [...all].reverse().slice(offset, offset + limit), total: all.length })
       }
       const doc = url.pathname.match(new RegExp(`^/api/v1/projects/${HANDLE}/documents/(\\d+)$`))
       if (doc) {
@@ -382,6 +389,64 @@ test('the links of a task are read page by page', withMock({
   const { out } = await runScout(mock, ['--task', '904', '--project', PROJECT, '--repo-root', emptyRoot()])
   assert.equal(out.spec_doc_id, 970)
 }))
+
+// The links route as one function the helper calls: a page by `after` holds the
+// links numbered above it, oldest first, and `next_after` (null on the last); a
+// page by offset is cut from the newest link and has no `next_after`. With
+// `ignoreAfter` it answers as a server before `after` did: every page by offset.
+// `onRead(n, add)` runs before the n-th read is served; `add()` writes a link.
+const linkRoute = ({ count, page, ignoreAfter = false, onRead = () => {} }) => {
+  const rows = []
+  const add = () => {
+    const id = rows.length + 1
+    rows.push({ id, source_type: 'task', source_id: 100 + id, target_type: 'task', target_id: 7, link_type: 'relates_to' })
+    return id
+  }
+  for (let i = 0; i < count; i++) add()
+  const reads = []
+  const api = async (method, path) => {
+    const query = new URL(path, 'http://localhost').searchParams
+    assert.equal(method, 'GET')
+    assert.equal(new URL(path, 'http://localhost').pathname, `/projects/${HANDLE}/links`)
+    reads.push([query.get('after'), query.get('offset')])
+    onRead(reads.length, add)
+    if (query.has('after') && !ignoreAfter) {
+      const above = rows.filter(l => l.id > Number(query.get('after')))
+      const links = above.slice(0, page)
+      return { links, total: rows.length, next_after: above.length > links.length ? links.at(-1).id : null }
+    }
+    const offset = Number(query.get('offset') ?? 0)
+    return { links: [...rows].reverse().slice(offset, offset + page), total: rows.length }
+  }
+  return { api, reads }
+}
+
+const ids = links => links.map(l => l.id)
+
+test('linksOf walks the pages by after from 0 to a null next_after, never by offset', async () => {
+  const route = linkRoute({ count: 3, page: 2 })
+  const links = await linksOf(route.api, HANDLE, 'task', 7)
+
+  assert.deepEqual(ids(links), [1, 2, 3])
+  assert.deepEqual(route.reads, [['0', null], ['2', null]])
+})
+
+test('linksOf lists every link once while another is written between its pages', async () => {
+  // A link written after the first page, as the service writes automatic links.
+  const route = linkRoute({ count: 3, page: 1, onRead: (n, add) => { if (n === 2) add() } })
+  const got = ids(await linksOf(route.api, HANDLE, 'task', 7))
+
+  assert.equal(new Set(got).size, got.length, 'no link twice: ' + got)
+  for (const id of [1, 2, 3]) assert.ok(got.includes(id), `link ${id} was there at the first page: ` + got)
+})
+
+test('linksOf reads every page by offset from a server that ignores after and answers no next_after', async () => {
+  const route = linkRoute({ count: 3, page: 1, ignoreAfter: true })
+  const got = ids(await linksOf(route.api, HANDLE, 'task', 7))
+
+  assert.deepEqual([...got].sort((a, b) => a - b), [1, 2, 3])
+  assert.deepEqual(route.reads, [['0', null], [null, '1'], [null, '2']])
+})
 
 test('a description naming a doc is not read for the spec: without a linked plan the plan header names it', withMock({
   tasks: [...TASKS, { id: 904, title: 'own spec', status: 'TODO', kind: 'task', description: 'Follows doc-951 closely.' }],

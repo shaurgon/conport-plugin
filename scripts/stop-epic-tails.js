@@ -127,9 +127,8 @@ async function collectTails(epics, auth) {
 
 function formatReason(tails, noRelease) {
   const lines = [
-    '[TAILS] If this turn reports the work as done, it is not — these children ' +
-      'of epics changed in this session are still open; name them to the user. ' +
-      'Otherwise end the turn as planned.',
+    '[TAILS] These children of epics changed in this session are still open — ' +
+      'the epic is not done: dispatch these now, or name the reason each cannot start.',
   ];
   for (const t of tails) {
     const title = t.title ? ` ${t.title}` : '';

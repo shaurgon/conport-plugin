@@ -1,24 +1,22 @@
 #!/usr/bin/env node
 // Deterministic mechanics of the /conport:task and /conport:epic workflows:
 // preflight, project gate, merge batch, cleanup, accounting, scouting, the
-// review cycle of a task and the branch check of a task found in REVIEW. Every
-// subcommand prints exactly
+// review cycle of a task, the branch check of a task found in REVIEW and the
+// check of unit versions against the base branch. Every subcommand prints exactly
 // one strict JSON object on stdout and exits 0 — a red result is data, not a
 // process error. Exit 2 is reserved for CLI misuse. No external dependencies.
 //
 // Mirror rule: the JSON shapes here are the workflow schemas S_PRE, S_BASE,
-// S_MG, S_ACC, S_JAN, S_CYC, S_BR and the scout base S_SCOUT_RAW — edit them
+// S_MG, S_ACC, S_JAN, S_CYC, S_BR, S_VER and the scout base S_SCOUT_RAW — edit them
 // together.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const TAIL_LINES = 30
 const API_BASE = 'https://api.conport.app/api/v1'
-const TAILS_EPIC_TITLE = 'Workflow run tails'
-const TAILS_EPIC_DESCRIPTION = 'Deferred review minors from workflow runs'
 const PLANS_DIR = ['docs', 'superpowers', 'plans']  // where the workflows keep their plans
 const PAGE = 200                                   // the list endpoint's maximum limit
 const PAGE_CAP = 20                                // never walk an unbounded listing
@@ -32,8 +30,37 @@ const TASK_TABLE_KEYS = new Set(['project', 'close', 'block', 'minors_umbrella']
 const EPIC_TABLE_KEYS = new Set(['project', 'epic', 'done', 'failed', 'skipped',
   'parity_failed', 'minors', 'verdict', 'may_close', 'close_resolution'])
 // EPIC_TABLE_KEYS_END
-const EPIC_TAILS_TITLE = epic => 'Tails of epic task-' + epic
-const EPIC_TAILS_DESCRIPTION = 'Findings deferred from the epic run'
+// The tails epic of the release: one per release, named by the release milestone (the
+// epic's own) in a title written literally, never translated, attached to the release
+// milestone right after it and taken first after the push (priority 1). Without a
+// release milestone, or without a release milestone right after it, there is no such
+// epic to file: the person is asked which milestone the tails go to.
+const RELEASE_TAILS_TITLE = milestone => 'Tails of release ' + milestone
+const RELEASE_TAILS_PRIORITY = 1
+const ASKED_WHERE_TAILS_GO = ' — the person is asked which milestone the tails go to'
+// While the person is asked, the tails wait in one progress entry linked to the epic,
+// next to the run summary: every entry with its title, priority and description.
+const TAILS_WAITING_MARK = ' tails waiting for a milestone: '
+const tailsWaitingText = (prefix, entries) => prefix + TAILS_WAITING_MARK +
+  "the owner is asked which milestone the tails epic of the release goes to; under it, 'Tails of release " +
+  "<title of the release milestone>' at priority 1, each entry below becomes a task.\n\n" +
+  entries.map(e => '- ' + e.title + ' (priority ' + e.priority + '): ' + (e.description ?? '')).join('\n')
+// The part of the run resolution naming the ordinary work for the tails epic, as the
+// table writes it; the accountant names where that work actually went. Under a tails
+// epic, only the entries filed or found already filed (`filed`) count as filed.
+const TAILS_PART = /; ordinary work to the tails epic (\d+)/
+const tailsOutcome = (resolution, out, filed) => {
+  if (typeof resolution !== 'string') return resolution
+  if (Number.isInteger(out.tails_epic_id))
+    return resolution.replace(TAILS_PART, (_, n) => '; ordinary work filed in the tails epic task-' + out.tails_epic_id + ': ' +
+      (filed >= Number(n) ? n : filed + ' of ' + n + ', the rest not filed: a call failed'))
+  if (out.tails_epic_needs_milestone && Number.isInteger(out.tails_waiting_progress_id))
+    return resolution.replace(TAILS_PART, (_, n) => "; ordinary work waiting for the owner's answer on its milestone: " + n +
+      ', recorded in progress-' + out.tails_waiting_progress_id)
+  return resolution.replace(TAILS_PART, (_, n) => '; ordinary work not filed: ' + n +
+    (out.tails_epic_needs_milestone ? ', the owner is asked which milestone the tails go to' : ', the tails epic could not be found or made'))
+}
+const RELEASE_TAILS_DESCRIPTION = 'Work of the release beyond what its epics took in, taken into work first after the push'
 // What a parity-failed plan task is: the run found no child of the epic carrying
 // its title. A parity row names the plan task, never an outcome, so this single
 // wording covers every such row.
@@ -411,6 +438,54 @@ const branch = flags => {
   emit({ exists: false, branch: null, head_sha: null })
 }
 
+// The unit versions of a commit against the base branch: an epic does not raise a
+// version, the release step does. The base is the published branch (origin/<branch>)
+// when the repository has it, else the commit the run started from — a run on the
+// default branch merges into it locally, so the local branch is no base. Beside the
+// differences it names the carriers neither side can read (unchecked, never equal),
+// those in which a start ahead of the published branch already differs from it, and
+// whether the start is behind it or diverged (start_behind). Which units the project
+// has and where each carries its version is the project's own manifest
+// (.conport/units.json), read at the start of the run, so a branch under check cannot
+// change what it is checked by: none -> units:"none" and nothing is compared; one that
+// cannot be read -> units:"invalid" with manifest_error. Its reading lives in
+// unit-versions.mjs, loaded only here: every other command runs without it.
+const versions = async flags => {
+  const name = typeof flags.branch === 'string' ? flags.branch : null
+  const start = typeof flags.start === 'string' ? flags.start : null
+  if (!name || !start) return usage('versions requires --branch <name> and --start <sha>')
+  const head = typeof flags.head === 'string' ? flags.head : 'HEAD'
+  const commit = ref => git('rev-parse', '--verify', '--quiet', ref + '^{commit}')
+  const published = commit('refs/remotes/origin/' + name).ok
+  for (const ref of [published ? 'origin/' + name : start, start, head])
+    if (!commit(ref).ok) return errorOut('versions: ' + ref + ' names no commit')
+  // A commit base is named by its short sha: the refusal names the base, and a title
+  // carrying the refusal is cut at 200 characters.
+  const base = published ? 'origin/' + name : gitOut('rev-parse', '--short', start)
+  const tree = ref => ({
+    read: path => (git('cat-file', '-e', ref + ':' + path).ok ? git('show', ref + ':' + path).stdout : null),
+    list: dir => git('ls-tree', '-r', '--name-only', ref, '--', dir).stdout.split('\n').filter(Boolean),
+  })
+  const { MANIFEST_PATH, parseUnitManifest, unitVersionDrift, unreadableCarriers } = await import('./unit-versions.mjs')
+  const nothing = { base, head, differs: [], unreadable: [], start_differs: [], start_behind: false }
+  const text = tree(start).read(MANIFEST_PATH)
+  if (text === null) emit({ units: 'none', ...nothing, equal: true })
+  const manifest = parseUnitManifest(text)
+  if (manifest.error) emit({ units: 'invalid', manifest_error: manifest.error, ...nothing, equal: false })
+  const { units } = manifest
+  const differs = unitVersionDrift(units, tree(base), tree(head))
+  const unreadable = unreadableCarriers(units, tree(base), tree(head))
+  // The direction of the start against the published branch. Ahead (or equal), a start
+  // that already differs from it is a release step not pushed yet: the action there is
+  // the push, never a restore. Behind or diverged — a release pushed from another
+  // checkout and fetched — there is nothing to push (it would not be a fast-forward):
+  // start_behind, and the action is to update the default branch.
+  const ahead = !published || git('merge-base', '--is-ancestor', base, start).ok
+  const startDiffers = published && ahead ? unitVersionDrift(units, tree(base), tree(start)) : []
+  emit({ units: 'manifest', base, head, equal: differs.length === 0 && unreadable.length === 0, differs, unreadable,
+    start_differs: startDiffers, start_behind: !ahead })
+}
+
 // ------------------------------------------------------------------ accounting
 
 // One call against the ConPort tasks API. The key travels in the header only, so
@@ -473,25 +548,32 @@ const listTasks = async (api, project, query) => {
 // fields are kept — an entry written through the MCP tools may carry the message
 // as its title.
 const progressJournal = (api, project) => {
-  let texts = null
+  let entries = null
+  const textsOf = e => [e.title, e.description].filter(t => typeof t === 'string')
   const load = async () => {
-    if (texts) return texts
-    const entries = []
+    if (entries) return entries
+    const all = []
     for (let page = 0; page < PAGE_CAP; page++) {
       const qs = new URLSearchParams({ limit: String(PAGE), offset: String(page * PAGE) })
       const r = await api('GET', `/projects/${project}/progress?${qs}`)
       const batch = (r && r.entries) || []
-      entries.push(...batch)
-      if (batch.length < PAGE || entries.length >= ((r && r.total) ?? entries.length)) break
+      all.push(...batch)
+      if (batch.length < PAGE || all.length >= ((r && r.total) ?? all.length)) break
     }
-    texts = entries.flatMap(e => [e.title, e.description].filter(t => typeof t === 'string'))
-    return texts
+    entries = all
+    return entries
   }
+  // the first entry one of whose texts matches, or undefined
+  const find = async match => (await load()).find(e => textsOf(e).some(match))
   return {
-    has: async match => (await load()).some(match),
-    log: async description => {
-      await api('POST', `/projects/${project}/progress`, { description })
-      if (texts) texts.push(description)
+    has: async match => !!(await find(match)),
+    find,
+    // `extra` carries the link of the entry (linked_item_type, linked_item_id)
+    log: async (description, extra = {}) => {
+      const created = await api('POST', `/projects/${project}/progress`, { description, ...extra })
+      const entry = created && typeof created === 'object' ? created : { description }
+      if (entries) entries.push({ description, ...entry })
+      return entry
     },
   }
 }
@@ -579,58 +661,280 @@ const blockOne = async (c, id, reason) => {
   }
 }
 
+// The open epics of the project: where a tails epic is looked up by its exact title.
+const openEpics = c => listTasks(c.api, c.project, { kind: 'epic', status: 'TODO,IN_PROGRESS,BLOCKED', include_snoozed: 'true' })
+
+// The oldest (lowest id) of the open epics carrying this title, or null: two runs that
+// raced may have left more than one, and every run then settles on the same one.
+const oldestTitled = (epics, title) =>
+  epics.filter(t => t.title === title).sort((a, b) => a.id - b.id)[0] ?? null
+
 // The open tails epic carrying this title, created when there is none. Returns
-// its id, or null when the lookup or the creation failed — the caller then files
-// nothing under it. The step name differs between the two shapes, so it travels
-// with the epic's own fields.
-const ensureTailsEpic = async (c, { step, title, description, priority }) => {
+// it, or null when the lookup or the creation failed — the caller then files nothing
+// under it. A new epic is attached to `milestone_id` when one is given.
+// The lookup comes before the creation, so two parallel runs of one milestone can
+// both miss the epic and both create one: after creating, the run re-reads the open
+// epics of this title in that milestone and keeps the oldest. When that is another
+// run's, whatever sits under this run's epic moves there and this run's epic is
+// cancelled as its duplicate. Only the run's own epic is ever cancelled.
+const ensureTailsEpic = async (c, { step, title, description, priority, milestone_id }) => {
+  const inMilestone = Number.isInteger(milestone_id)
+  let created
   try {
-    const open = await listTasks(c.api, c.project, { kind: 'epic', status: 'TODO,IN_PROGRESS,BLOCKED', include_snoozed: 'true' })
-    const found = open.find(t => t.title === title)
-    if (found) { c.act(step, found.id, 'skipped_already', 'tails epic already open'); return found.id }
-    const created = await c.api('POST', `/projects/${c.project}/tasks`, { title, description, kind: 'epic', priority })
-    c.act(step, created.id, 'done', 'tails epic created')
-    return created.id
+    const found = oldestTitled(await openEpics(c), title)
+    if (found) { c.act(step, found.id, 'skipped_already', 'tails epic already open'); return found }
+    created = await c.api('POST', `/projects/${c.project}/tasks`,
+      { title, description, kind: 'epic', priority, ...(inMilestone ? { milestone_id } : {}) })
+    c.act(step, created.id, 'done', 'tails epic created' + (inMilestone ? ' in milestone ' + milestone_id : ''))
   } catch (e) { c.failed(step, null, 'tails epic lookup or create', e); return null }
+  return dropDuplicate(c, created, title, inMilestone ? milestone_id : null)
 }
 
-// Executes the accounting table of a task run: close, block, minors umbrella.
-// Every item is guarded by a read first, so a rerun of the same table changes
-// nothing.
-const accountTask = async (table, c) => {
-  const { api, project, act, failed } = c
-  const out = { via: VIA, actions: c.actions, minors_created: [], task_closed: false, failed_calls: c.failed_calls }
+// The re-read after creating a tails epic: returns the epic to file under — the oldest
+// open one of the title in the milestone. A failed call leaves this run's epic open
+// and recorded as failed; the run still files under the oldest it knows.
+const dropDuplicate = async (c, created, title, milestone_id) => {
+  const step = 'tails_epic_duplicate'
+  let kept
+  try {
+    const same = (await openEpics(c)).filter(t => (t.milestone_id ?? null) === milestone_id)
+    kept = oldestTitled(same, title)
+  } catch (e) { c.failed(step, created.id, 'tails epic re-read after create', e); return created }
+  if (!kept || kept.id >= created.id) return created
+  try {
+    const kids = await listTasks(c.api, c.project, { parent_task_id: String(created.id), status: 'ALL', include_snoozed: 'true' })
+    for (const kid of kids) await c.api('PATCH', c.taskPath(kid.id), { parent_task_id: kept.id })
+    await c.api('PATCH', c.taskPath(created.id), { status: 'CANCELLED', resolution: 'duplicate of task-' + kept.id })
+    c.act(step, created.id, 'done', 'cancelled as a duplicate of task-' + kept.id +
+      (kids.length ? ', its ' + kids.length + ' task(s) moved there' : ''))
+  } catch (e) { c.failed(step, created.id, 'cancel the duplicate tails epic task-' + created.id, e) }
+  return kept
+}
 
-  if (table.close) out.task_closed = await closeOne(c, table.close.id, table.close.resolution)
+// The tails epic of the release of this epic. The epic's milestone M must be a release
+// (is_release), and the next OPEN milestone by sequence after it, N, a release too —
+// never a standing list (the waiting milestone, the backlog without a date:
+// is_release=false). Then the open epic titled after M is reused, or one is made in N.
+// Otherwise no tails epic is made: an open one of M's title is still reused, and
+// without it the person is asked which milestone the tails go to (needs_milestone);
+// the entries wait for that answer.
+const ensureReleaseTails = async (c, epicId) => {
+  const step = 'tails_epic'
+  let release = null
+  let next = null
+  let why = null
+  try {
+    const epic = await c.api('GET', c.taskPath(epicId))
+    if (!Number.isInteger(epic.milestone_id)) why = 'epic task-' + epicId + ' has no milestone'
+    else {
+      const all = await c.api('GET', `/projects/${c.project}/milestones?include_closed=true`)
+      const list = Array.isArray(all) ? all : []
+      const own = list.find(m => m.id === epic.milestone_id) ?? null
+      if (!own) why = 'milestone ' + epic.milestone_id + ' of epic task-' + epicId + ' is not found'
+      else if (own.is_release !== true) why = 'milestone ' + epic.milestone_id + ' of epic task-' + epicId + ' is not a release'
+      else {
+        release = own
+        next = list.filter(m => m.sequence > own.sequence && m.status === 'OPEN')
+          .sort((a, b) => a.sequence - b.sequence)[0] ?? null
+        if (!next) why = 'no open milestone after the release ' + own.title
+        else if (next.is_release !== true)
+          why = 'the open milestone after the release ' + own.title + ' is ' + next.title + ', a standing list, not a release'
+      }
+    }
+  } catch (e) { c.failed(step, epicId, 'the milestone of epic ' + epicId, e); return { epic: null, needs_milestone: false } }
+  const title = release ? RELEASE_TAILS_TITLE(release.title) : null
+  if (why) {
+    if (title) {
+      let found = null
+      try { found = oldestTitled(await openEpics(c), title) }
+      catch (e) { c.failed(step, null, 'tails epic lookup', e); return { epic: null, needs_milestone: false } }
+      if (found) {
+        c.act(step, found.id, 'skipped_already', 'tails epic already open')
+        return { epic: found, needs_milestone: !Number.isInteger(found.milestone_id) }
+      }
+    }
+    c.act(step, null, 'failed', 'not filed: ' + why + ASKED_WHERE_TAILS_GO)
+    return { epic: null, needs_milestone: true }
+  }
+  const epic = await ensureTailsEpic(c, { step, title, description: RELEASE_TAILS_DESCRIPTION,
+    priority: RELEASE_TAILS_PRIORITY, milestone_id: next.id })
+  // an epic found already open keeps the milestone it has
+  return { epic, needs_milestone: !!epic && !Number.isInteger(epic.milestone_id) }
+}
+
+// The part of a task run's close resolution naming its review minors, as the table
+// writes it; the accountant names where the umbrella actually went before the close.
+const MINORS_PART = /; (\d+) review minor\(s\) left open, for one follow-up task/
+const minorsOutcome = (resolution, filing) => typeof resolution !== 'string' ? resolution
+  : resolution.replace(MINORS_PART, (_, n) => '; ' + n + ' review minor(s) left open, ' + filing)
+
+// Executes the accounting table of a task run: the minors umbrella, then the close —
+// its resolution naming where the umbrella went — and the block. Every item is guarded
+// by a read first, so a rerun of the same table changes nothing.
+const accountTask = async (table, c) => {
+  const out = { via: VIA, actions: c.actions, minors_created: [], task_closed: false,
+    tails_epic_id: null, tails_epic_needs_milestone: false, tails_waiting_progress_id: null, failed_calls: c.failed_calls }
+
+  const filing = table.minors_umbrella ? await accountUmbrella(table.minors_umbrella, c, out) : null
+
+  if (table.close) out.task_closed = await closeOne(c, table.close.id,
+    filing ? minorsOutcome(table.close.resolution, filing) : table.close.resolution)
 
   if (table.block) await blockOne(c, table.block.id, table.block.reason)
-
-  if (table.minors_umbrella) {
-    const { title, description, parent } = table.minors_umbrella
-    // A task of an epic files its umbrella under that epic: the minors are a
-    // finding of it. A task with no epic files it under the tails epic.
-    const own = Number.isInteger(parent)
-    const epic = own ? parent : await ensureTailsEpic(c, {
-      step: 'minors_epic', title: TAILS_EPIC_TITLE, description: TAILS_EPIC_DESCRIPTION, priority: 4,
-    })
-    const where = own ? 'under epic task-' + parent : 'under the tails epic'
-
-    if (epic === null) act('minors_child', null, 'failed', 'no tails epic to attach the umbrella to')
-    else {
-      try {
-        const kids = await listTasks(api, project, { parent_task_id: String(epic), status: 'ALL', include_snoozed: 'true' })
-        const same = kids.find(t => t.title === title)
-        if (same) act('minors_child', same.id, 'skipped_already', 'umbrella already filed')
-        else {
-          const created = await api('POST', `/projects/${project}/tasks`,
-            { title, description, priority: 4, parent_task_id: epic })
-          out.minors_created.push(created.id)
-          act('minors_child', created.id, 'done', 'umbrella filed ' + where)
-        }
-      } catch (e) { failed('minors_child', null, 'minors umbrella under epic ' + epic, e) }
-    }
-  }
   return out
+}
+
+// The umbrella is ordinary work. A task of an epic files it under that epic while the
+// epic's ceiling of work added after the plan has room; beyond it, it goes to the tails
+// epic of the epic's release. With no tails epic to file — the release rule of
+// ensureReleaseTails — it waits in one progress entry for the owner's answer on its
+// milestone. A task with no epic always waits so: only an epic carries a milestone, so
+// the task has no release to find a tails epic by. Returns the words naming where it
+// went: 'filed' only for an umbrella filed or found filed.
+const accountUmbrella = async (umbrella, c, out) => {
+  const { parent, task, title, description } = umbrella
+  const own = Number.isInteger(parent)
+  const inEpic = own ? await withinCeiling(c, umbrella) : false
+  if (inEpic === null) return 'not filed: a call failed'
+  if (Number.isInteger(inEpic)) return 'filed as task-' + inEpic + ' under epic task-' + parent
+  if (inEpic === true) {
+    const id = await fileUmbrella(c, out, umbrella, parent, 'under epic task-' + parent)
+    return id === null ? 'not filed: a call failed' : 'filed as task-' + id + ' under epic task-' + parent
+  }
+  if (!own && !Number.isInteger(task)) {
+    c.act('minors_child', null, 'failed', 'no epic and no task to record the waiting tails by')
+    return 'not filed: no task to record the waiting tails by'
+  }
+  const found = own ? await ensureReleaseTails(c, parent) : noReleaseOf(c, task)
+  out.tails_epic_id = found.epic ? found.epic.id : null
+  out.tails_epic_needs_milestone = found.needs_milestone
+  if (out.tails_epic_id !== null) {
+    const id = await fileUmbrella(c, out, umbrella, out.tails_epic_id, 'under the tails epic of the release')
+    return id === null ? 'not filed: a call failed' : 'filed as task-' + id + ' in the tails epic task-' + out.tails_epic_id
+  }
+  if (!found.needs_milestone) {
+    c.act('minors_child', null, 'failed', 'no tails epic to attach the umbrella to')
+    return 'not filed: the tails epic could not be found or made'
+  }
+  // asked where the tails go: the umbrella waits for the answer in one progress entry
+  // linked to the epic (the task without one) — a rerun finds it by its mark and title
+  const prefix = `[task-run:${task}]`
+  const journal = progressJournal(c.api, c.project)
+  try {
+    const have = await journal.find(t => t.startsWith(prefix + TAILS_WAITING_MARK) && t.includes(title))
+    if (have) {
+      out.tails_waiting_progress_id = have.id ?? null
+      c.act('tails_waiting', have.id, 'skipped_already', 'the waiting tails are already recorded')
+    } else {
+      const entry = await journal.log(tailsWaitingText(prefix, [{ title, priority: UMBRELLA_PRIORITY, description }]),
+        { linked_item_type: 'task', linked_item_id: own ? parent : task })
+      out.tails_waiting_progress_id = entry.id ?? null
+      c.act('tails_waiting', entry.id, 'done', 'the tails waiting for a milestone are recorded')
+    }
+  } catch (e) {
+    c.failed('tails_waiting', null, 'record the tails waiting for a milestone', e)
+    return 'not filed: the owner is asked which milestone the tails go to'
+  }
+  return "waiting for the owner's answer on their milestone, recorded in progress-" + out.tails_waiting_progress_id
+}
+const UMBRELLA_PRIORITY = 4
+
+// A task with no epic: no release milestone, so no tails epic is looked up or made, and
+// the person is asked which milestone the tails go to.
+const noReleaseOf = (c, task) => {
+  c.act('tails_epic', null, 'failed', 'not filed: task-' + task + ' has no epic, so no release milestone' + ASKED_WHERE_TAILS_GO)
+  return { epic: null, needs_milestone: true }
+}
+
+// FINDING_MARKS_BEGIN — mirrored from epic.js; compared byte for byte by test/wf-helper-account.test.mjs.
+// The first words of the description of a child held for the person: the run writes
+// them, and by them a later run without a plan section for the child knows it waits.
+const HELD_MARK = 'Held for the person:'
+// The words the run writes into its finding tasks, by which a later run knows them:
+// the brief of a critical and of a gap, the title of an unmet criterion, and the title
+// prefixes of ordinary work — review minors, and the work a Note's answer asked for.
+const CRITICAL_LEAD = 'A confirmed critical gap of this epic, left open because '
+const GAP_LINE = 'The gap: '
+const UNMET_TITLE = 'Acceptance unmet: '
+const ORDINARY_PREFIXES = ['Review minors left on ', 'Note answer: ']
+// How a child is known by these words. Ordinary work: a title, or the first line of the
+// description, starting with an ordinary prefix. Otherwise a defect: the title of an
+// unmet criterion, a first line of the description starting with any other mark — a
+// defect filed by hand starts it with 'The gap: ' — or a line 'The gap: ' further down.
+const markText = s => String(s ?? '').replace(/\s+/g, ' ').trimStart().toLowerCase()
+const startsWithMark = (s, mark) => markText(s).startsWith(markText(mark))
+const leadLines = t => [t.acceptance, t.description].map(v => String(v || '').trimStart().split('\n')[0])
+const ordinaryMarked = t => ORDINARY_PREFIXES.some(p => startsWithMark(t.title, p) || leadLines(t).some(l => startsWithMark(l, p)))
+const defectMarked = t => !ordinaryMarked(t) && (startsWithMark(t.title, UNMET_TITLE) ||
+  leadLines(t).some(l => [HELD_MARK, CRITICAL_LEAD, GAP_LINE, UNMET_TITLE].some(m => startsWithMark(l, m))) ||
+  [t.acceptance, t.description].some(v => String(v || '').includes('\n' + GAP_LINE)))
+// FINDING_MARKS_END
+
+// The ceiling of work an epic takes after its plan, as epic.js measures it:
+// max(3, floor(30% of the plan tasks)). Work marked ordinary (FINDING_MARKS) always
+// takes a place; with a plan, so does every child without a plan section that no word of
+// a defect marks (a child added by hand included). A plan section that binds a finding
+// task — ordinary or a defect — is no plan task. Without a plan the base is the
+// children that are no finding task, and only work marked ordinary takes a place.
+// The plan's task sections ('### Task N', format B '## Task N') and the ids of the
+// children they bind, outside fenced code.
+const planTasks = text => {
+  const lines = scanFences(text.split('\n')).filter(l => !l.code).map(l => l.text)
+  const a = lines.filter(l => /^###\s+Task\s+\d+/.test(l)).length
+  const ids = new Set()
+  for (const l of lines) {
+    for (const m of l.matchAll(/<!--\s*conport-task:\s*(\d+)\s*-->/g)) ids.add(Number(m[1]))
+    const b = /^##\s+Task\s+\d+.*\bConPort task-(\d+)/.exec(l)
+    if (b) ids.add(Number(b[1]))
+  }
+  return { count: a || lines.filter(l => /^##\s+Task\s+\d+/.test(l)).length, ids }
+}
+const epicCeiling = (kids, text) => {
+  const children = kids.filter(t => t.kind !== 'epic')
+  const ceiling = n => Math.max(3, Math.floor(3 * n / 10))
+  if (text === null)
+    return { used: children.filter(ordinaryMarked).length, ceiling: ceiling(children.filter(t => !ordinaryMarked(t) && !defectMarked(t)).length) }
+  const plan = planTasks(text)
+  const bound = t => plan.ids.has(t.id)
+  return { used: children.filter(t => ordinaryMarked(t) || (!bound(t) && !defectMarked(t))).length,
+    ceiling: ceiling(plan.count - children.filter(t => bound(t) && (ordinaryMarked(t) || defectMarked(t))).length) }
+}
+// The epic's plan: the file carrying its epic anchor in this repository (named relative
+// to it), else the task's plan as the table names it; null without either.
+const epicPlan = (epicId, planPath) => {
+  const found = findPlan(process.cwd(), epicId)
+  const path = found ? relative(process.cwd(), found)
+    : typeof planPath === 'string' && planPath && existsSync(planPath) ? planPath : null
+  return path ? { path, text: readFileSync(path, 'utf8') } : null
+}
+
+// Whether the umbrella fits under its epic's ceiling: the id of the umbrella the epic
+// already holds by this title, true or false, or null when its children could not be read.
+const withinCeiling = async (c, { title, parent, plan_path }) => {
+  try {
+    const kids = await listTasks(c.api, c.project, { parent_task_id: String(parent), status: 'ALL', include_snoozed: 'true' })
+    const same = kids.find(t => t.title === title)
+    if (same) { c.act('minors_child', same.id, 'skipped_already', 'umbrella already filed'); return same.id }
+    const plan = epicPlan(parent, plan_path)
+    const { used, ceiling } = epicCeiling(kids, plan ? plan.text : null)
+    c.act('minors_ceiling', parent, 'done', `ordinary tasks added ${used} of ceiling ${ceiling} of epic task-${parent}, ` +
+      (plan ? 'counted by the plan ' + plan.path : 'counted without a plan'))
+    return used < ceiling
+  } catch (e) { c.failed('minors_child', null, 'children of epic ' + parent, e); return null }
+}
+
+// Files the umbrella as a child of `epic` once: a child of the same title is skipped.
+// Returns its id, or null when a call failed.
+const fileUmbrella = async (c, out, { title, description }, epic, where) => {
+  try {
+    const kids = await listTasks(c.api, c.project, { parent_task_id: String(epic), status: 'ALL', include_snoozed: 'true' })
+    const same = kids.find(t => t.title === title)
+    if (same) { c.act('minors_child', same.id, 'skipped_already', 'umbrella already filed'); return same.id }
+    const created = await c.api('POST', `/projects/${c.project}/tasks`, { title, description, priority: UMBRELLA_PRIORITY, parent_task_id: epic })
+    out.minors_created.push(created.id)
+    c.act('minors_child', created.id, 'done', 'umbrella filed ' + where)
+    return created.id
+  } catch (e) { c.failed('minors_child', null, 'minors umbrella under epic ' + epic, e); return null }
 }
 
 // Executes the accounting table of an epic run, step by step in the order of the
@@ -644,7 +948,8 @@ const accountEpic = async (table, c) => {
   const prefix = `[epic-run:${epicId}]`
   const journal = progressJournal(api, project)
   const out = {
-    via: VIA, actions: c.actions, tails_epic_id: null, tails_children: [], epic_children: [], epic_progress: null,
+    via: VIA, actions: c.actions, tails_epic_id: null, tails_epic_needs_milestone: false, tails_waiting_progress_id: null,
+    tails_children: [], epic_children: [], epic_progress: null,
     epic_closed: false, epic_close_error: null, failed_calls: c.failed_calls,
   }
 
@@ -683,7 +988,9 @@ const accountEpic = async (table, c) => {
   }
 
   // An entry naming a parent is a child of that epic — a finding of the run's own
-  // epic, one child per finding; the rest go to the tails epic.
+  // epic, one child per finding. An entry naming none is ordinary work beyond the
+  // epic's ceiling of added work: it goes to the tails epic of the release, taken into
+  // work first after the push. A defect always names its epic.
   const all = table.minors ?? []
   for (const entry of all.filter(e => Number.isInteger(e.parent))) {
     try {
@@ -700,12 +1007,27 @@ const accountEpic = async (table, c) => {
   }
   const minors = all.filter(e => !Number.isInteger(e.parent))
   if (minors.length) {
-    const tails = await ensureTailsEpic(c, {
-      step: 'tails_epic', title: EPIC_TAILS_TITLE(epicId), description: EPIC_TAILS_DESCRIPTION, priority: 3,
-    })
+    const found = await ensureReleaseTails(c, epicId)
+    const tails = found.epic ? found.epic.id : null
     out.tails_epic_id = tails
+    out.tails_epic_needs_milestone = found.needs_milestone
 
-    if (tails === null) act('tails_child', null, 'failed', 'no tails epic to attach the entries to')
+    // asked where the tails go: the entries wait for the answer in one progress entry
+    // linked to the epic — once per run, a rerun finds it by its mark and its titles
+    if (tails === null && found.needs_milestone) {
+      const mark = prefix + TAILS_WAITING_MARK
+      try {
+        const have = await journal.find(t => t.startsWith(mark) && minors.every(e => t.includes(e.title)))
+        if (have) {
+          out.tails_waiting_progress_id = have.id ?? null
+          act('tails_waiting', have.id, 'skipped_already', 'the waiting tails are already recorded')
+        } else {
+          const entry = await journal.log(tailsWaitingText(prefix, minors), { linked_item_type: 'task', linked_item_id: epicId })
+          out.tails_waiting_progress_id = entry.id ?? null
+          act('tails_waiting', entry.id, 'done', 'the tails waiting for a milestone are recorded')
+        }
+      } catch (e) { failed('tails_waiting', null, 'record the tails waiting for a milestone', e) }
+    } else if (tails === null) act('tails_child', null, 'failed', 'no tails epic to attach the entries to')
     else {
       let kids = null
       try {
@@ -725,10 +1047,13 @@ const accountEpic = async (table, c) => {
     }
   }
 
+  // the resolution names where the ordinary work for the tails epic went
+  const filed = c.actions.filter(a => a.step === 'tails_child' && (a.result === 'done' || a.result === 'skipped_already')).length
+  const resolution = minors.length ? tailsOutcome(table.close_resolution, out, filed) : table.close_resolution
   {
     // Logged for every epic run, as the accountant prompt does it: the summary is
     // the run's trace in the journal and does not depend on the epic being closable.
-    const summary = `${prefix} result: ${table.close_resolution ?? ''}`
+    const summary = `${prefix} result: ${resolution ?? ''}`
     try {
       // One summary per epic run: the resolution text may be reworded between two
       // runs, the prefix and the 'result:' marker identify it.
@@ -756,7 +1081,7 @@ const accountEpic = async (table, c) => {
           out.epic_close_error = 'open children: ' + open.map(t => t.id).join(', ')
           act('epic_close', epicId, 'failed', out.epic_close_error)
         } else {
-          await api('PATCH', taskPath(epicId), { status: 'DONE', resolution: table.close_resolution })
+          await api('PATCH', taskPath(epicId), { status: 'DONE', resolution })
           out.epic_closed = true
           act('epic_close', epicId, 'done', 'epic closed with the run resolution')
         }
@@ -864,6 +1189,10 @@ export const journalBody = s => {
     ...(s.note ? [String(s.note)] : []),
     `Verdict: ${s.verdict} (the reviewer answered ${r.verdict})`,
     ...(findings.length ? section(`Findings (${findings.length}):`, findings.map(findingLine)) : ['Findings: none']),
+    // The ruling on each concern the implementer finished with stays on record.
+    ...section('Concern rulings:', (Array.isArray(r.concern_rulings) ? r.concern_rulings : []).map(c => `#${c.idx} ${c.ruling}`
+      + (c.ruling === 'FINDING' && Number.isInteger(c.finding_idx) ? ` (finding #${c.finding_idx})` : '')
+      + (c.reason ? ' — ' + c.reason : ''))),
     ...section('Unverifiable:', texts(r.unverifiable)),
   ].join('\n')
 }
@@ -1112,15 +1441,34 @@ const findPlan = (root, id) => {
   return null
 }
 
-// Every link an item is the source or the target of, all pages.
-const linksOf = async (api, projectSegment, type, id) => {
+// Every link an item is the source or the target of, all pages. The pages are
+// walked by link number — `after=0` first, then the `next_after` of the last
+// page until it is null — so while links are written or deleted (the service
+// writes automatic ones) every link that was there at the first page and still
+// is comes back exactly once. A walk by offset from the newest link repeats
+// some links and hides others.
+export const linksOf = async (api, projectSegment, type, id) => {
+  const read = paging => api('GET', `/projects/${projectSegment}/links?${new URLSearchParams({
+    item_type: type, item_id: String(id), limit: '500', ...paging,
+  })}`)
   const out = []
-  for (;;) {
-    const query = new URLSearchParams({ item_type: type, item_id: String(id), limit: '500', offset: String(out.length) })
-    const page = await api('GET', `/projects/${projectSegment}/links?${query}`)
-    out.push(...page.links)
-    if (!page.links.length || out.length >= page.total) return out
+  let page = await read({ after: '0' })
+  out.push(...page.links)
+  // A server before `after` ignores it and answers no `next_after` at all (a
+  // server with it answers the key on every page, null on the last): read the
+  // rest from it by offset, as before.
+  if (!('next_after' in page)) {
+    while (page.links.length && out.length < page.total) {
+      page = await read({ offset: String(out.length) })
+      out.push(...page.links)
+    }
+    return out
   }
+  while (page.next_after != null) {
+    page = await read({ after: String(page.next_after) })
+    out.push(...page.links)
+  }
+  return out
 }
 
 // The first of these documents, by id, whose type is `type`; null when none is.
@@ -1241,5 +1589,6 @@ if (invokedDirectly) {
   else if (cmd === 'account') await account(flags)
   else if (cmd === 'cycle') await cycle(flags)
   else if (cmd === 'scout') await scout(flags)
-  else usage('usage: wf-helper.mjs <preflight|gate|merge|cleanup|branch|account|cycle|scout|--version> [options]')
+  else if (cmd === 'versions') await versions(flags)
+  else usage('usage: wf-helper.mjs <preflight|gate|merge|cleanup|branch|versions|account|cycle|scout|--version> [options]')
 }

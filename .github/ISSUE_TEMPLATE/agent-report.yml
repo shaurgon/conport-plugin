@@ -7,15 +7,12 @@ body:
     attributes:
       value: |
         Describe the service's behaviour only: what was called, what was expected, what came back. One problem per issue — search the open agent reports first and comment on a match instead of opening a new one.
-  - type: dropdown
+  - type: input
     id: kind
     attributes:
       label: Kind
-      description: defect — a tool behaves differently from its description; missing — a capability the work needs does not exist; unclear-refusal — a refusal does not say what to do, or its action did not help.
-      options:
-        - defect
-        - missing
-        - unclear-refusal
+      description: "One of three words: defect — a tool behaves differently from its description; missing — a capability the work needs does not exist; unclear-refusal — a refusal does not say what to do, or its action did not help."
+      placeholder: defect, missing or unclear-refusal
     validations:
       required: true
   - type: textarea

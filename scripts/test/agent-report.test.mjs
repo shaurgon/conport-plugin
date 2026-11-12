@@ -25,7 +25,7 @@ const NEW_ISSUE = `https://github.com/${REPO}/issues/new?`
 // The open issues whose title holds the prefix, as a person opens them without gh.
 const SEARCH = `https://github.com/${REPO}/issues?q=is%3Aissue+is%3Aopen+in%3Atitle+%22%5Bagent-report%5D%22+`
 
-/** The form's fields: `{type, id, required, options}` per item of `body`. */
+/** The form's fields: `{type, id, required, description, options}` per item of `body`. */
 function formFields(yaml) {
   const body = yaml.split(/^body:\s*$/m)[1]
   assert.ok(body !== undefined, 'the form has no body')
@@ -33,9 +33,15 @@ function formFields(yaml) {
     type: item.split('\n')[0].trim(),
     id: (/^ {4}id: (\S+)/m.exec(item) || [])[1],
     required: /^ {6}required: true\s*$/m.test(item),
+    description: (/^ {6}description: (.*)$/m.exec(item) || [])[1] || '',
     options: [...item.matchAll(/^ {8}- (\S+)\s*$/gm)].map((m) => m[1]),
   }))
 }
+
+// GitHub fills a field of an issue form from a parameter of the address only
+// when the field is an input or a textarea; a dropdown stays unselected.
+const FILLED_BY_LINK = ['input', 'textarea']
+const KINDS = ['defect', 'missing', 'unclear-refusal']
 
 /** The text from a heading to the next heading of the same or a higher level, as one line. */
 function section(text, heading) {
@@ -61,8 +67,10 @@ test('the issue form asks the kind, the call, the expectation and the answer, an
   const byId = new Map(fields.filter((field) => field.id).map((field) => [field.id, field]))
   const kind = byId.get('kind')
   assert.ok(kind, 'the form has no field kind')
-  assert.equal(kind.type, 'dropdown')
-  assert.deepEqual(kind.options, ['defect', 'missing', 'unclear-refusal'])
+  assert.equal(kind.type, 'input', 'the field kind is not an input: the link cannot fill it')
+  for (const value of KINDS) {
+    assert.ok(kind.description.includes(`${value} —`), `the field kind does not name the value ${value}`)
+  }
   for (const id of ['kind', 'called', 'expected', 'returned']) {
     assert.ok(byId.has(id), `the form has no field ${id}`)
     assert.ok(byId.get(id).required, `the field ${id} is not required`)
@@ -304,7 +312,11 @@ function linkParameters(text) {
 }
 
 test('the link without gh fills every field of the form by its id', () => {
-  const ids = formFields(readFileSync(FORM, 'utf8')).filter((field) => field.id).map((field) => field.id)
+  const fields = formFields(readFileSync(FORM, 'utf8')).filter((field) => field.id)
+  for (const field of fields) {
+    assert.ok(FILLED_BY_LINK.includes(field.type), `the field ${field.id} is a ${field.type}: GitHub does not fill it from the link`)
+  }
+  const ids = fields.map((field) => field.id)
   const expected = ['template', 'title', ...ids]
   const texts = {
     'the skill': section(readFileSync(SKILL, 'utf8'), '## REPORTING TO THE SERVICE DEVELOPERS'),

@@ -85,7 +85,7 @@ Every finding — and any check you'd otherwise answer with a bare "yes" — cit
 - **Important** = this task cannot be trusted until fixed: incorrect or fragile behavior, a missed requirement, or maintainability damage you'd block a merge over (verbatim duplication of a logic block, swallowed errors, tests that assert nothing).
 - **Minor** = polish, "coverage could be broader", style nits.
 - Findings are about THIS diff. Dead code, style or logging gaps in code the diff did not touch are not findings — at most one line under ⚠️ if they create a concrete risk for this change.
-- **Finding-fix tasks:** when the brief says the task fixes an earlier review or gap-hunt finding, review only that fix and report Critical and Important only — omit the Minor section. A fix of a finding is not an invitation to polish.
+- **Finding-fix tasks:** when the brief says the task fixes an earlier review or gap-hunt finding, review only that fix — the finding is closed or it is not — and report every severity, Minor included: what you find there is fixed in that task's own fix round before it merges, never dropped. A fix of a finding is not an invitation to polish code it did not touch.
 - If the plan or brief explicitly mandates something this rubric calls a defect (a test that asserts nothing, verbatim duplication), that IS a finding — report it as Important, labeled **plan-mandated**. The plan's authorship does not grade its own work; a person decides.
 - Acknowledge what was done well BEFORE listing issues — accurate praise helps the implementer trust the rest of the feedback.
 

@@ -2,7 +2,7 @@
 name: conport-roadmap
 description: "Use when about to take a task into work, file an epic or a task, move a task between epics, call a task waiting, close an epic or a milestone, talk about a release, a version bump or a deploy, and before every report to the user with open tasks. The ConPort roadmap rules — milestones, the release point, the make-up of epics, work after a release, waiting on someone else's work. Requires the conport skill for base tool discipline."
 metadata:
-  version: 20.6.0
+  version: 21.0.0
 ---
 
 # ConPort Roadmap
@@ -51,28 +51,30 @@ which release.
 1. **A release milestone holds only what is done before the deploy.** A task
    outside the release's scope is done after the release and sits in a
    milestone after the release point.
-2. **A task that waits is not part of the epic.** Waiting for a deploy,
-   another project, the end of a long run or the user's decision — the task
-   moves at once into an epic whose content is that waiting, in the waiting
-   milestone. A waiting epic is never attached to a release milestone: a
-   measurement or research without a date must not look like part of a
-   release.
+2. **A task that waits is not part of the epic.** Waiting for another project
+   or someone else's service, a date, a measurement window, the end of a long
+   run or the user's decision — the task moves at once into an epic whose
+   content is that waiting, in the waiting milestone. A waiting epic is never
+   attached to a release milestone: a measurement or research without a date
+   must not look like part of a release. Work that needs only the deploy does
+   not wait: it goes to the tails epic of the release (rule 4).
 3. **An epic is uniform.** Either everything in it is done before the deploy,
    or everything waits. A mixed epic is split: the done part stays, the epic
    goes to the release milestone and is closed; the waiting part moves out. An
    epic with done tasks is never moved whole to a milestone after the release —
    its done part is the content of the release.
-4. **Code is ready — the task is closed.** A measurement, a live check after
-   the deploy, a dry run on an environment is a new task, filed at once in an
-   epic of the milestone after the release, not as a child of the epic being
-   released.
+4. **Code is ready — the task is closed.** A live check after the deploy or a
+   dry run on an environment is a new task, filed at once in the tails epic of
+   the release (see *Release*), not as a child of the epic being released. A
+   measurement that waits for its window is waiting work (rule 2).
 5. **Milestone order.** The release milestone stands before the milestone
    after the release. The current milestone is worked; a task from a later one
    only on the user's explicit decision, naming the milestone. "Finish the
    rest" does not override the order.
 6. **Attachment.** Every epic is attached to a milestone (`milestone_id`), and
    the milestone is chosen by one question: it ships in a release — that
-   release's milestone; it waits — the waiting milestone; no date — the backlog
+   release's milestone; it is the tails epic of a release — the milestone right
+   after that release; it waits — the waiting milestone; no date — the backlog
    without a date. An epic without a milestone is an attachment error, not a
    way to take it off the roadmap. When a waiting or undated epic gets a
    release, it moves whole into that release milestone. Two or more related
@@ -106,10 +108,33 @@ which release.
 - Tasks of the milestone after the release do not hold the release and are not
   called blockers.
 - The make-up of a release epic is frozen at the version bump. What is found
-  after the freeze goes into an epic of the next milestone, except defects in
-  this release's code — those are closed before the push.
-- Who bumps the version and when follows the project's own rules (its
-  instructions and memory).
+  after the freeze, and work that can be done right after the push, goes into
+  the tails epic of the release, except defects in this release's code — those
+  are closed before the push. Work that waits on someone else, a date or a
+  measurement window goes to the waiting milestone (rule 2), never into the
+  tails epic.
+- The tails epic of the release is one per release, filed at the first such
+  finding. It is attached to the milestone right after the release — not to a
+  later release milestone with work of its own, not to the backlog without a
+  date — and is taken into work first after the push, before any other
+  milestone. It holds no waiting work and is never closed as CANCELLED because
+  it waits. Its title is `Tails of release <title of the release milestone>`,
+  written literally and never translated: look for an epic with that title
+  before filing one, so a session and the epic workflow never start two. It is
+  filed with priority 1, and only when the open milestone right after the
+  release is a release milestone itself: when it is a standing list (the
+  waiting milestone, the backlog without a date) or there is none, ask the user
+  which milestone the tails go to.
+- After the push, the tails epic of the release is taken into work first,
+  before any other milestone.
+- An epic does not bump a version: its changes go into the changelog of the
+  unit under `## Unreleased`. The version is bumped once, at the release step,
+  after every epic of the release milestone has merged — that bump is the
+  freeze. Which units carry a version and how each is bumped follows the
+  project's own rules (its instructions and memory). The release step is not
+  run through `/conport:task` or `/conport:epic`: they refuse a version that
+  differs from the published default branch, so run them only after the
+  release is pushed.
 - A release milestone closes only after the actual release, with the version
   in the resolution (`update_milestone` with `status='DONE'` and
   `resolution`). "Every epic is closed" is not yet a release.
@@ -165,3 +190,5 @@ The number of open children is recounted after every close and every move.
 | "I'll make an ordinary milestone for the work and a release point after it" | The preferred shape is one release milestone with its epics. Two milestones only on the user's word. |
 | "The waiting epic spoils the release picture — I'll detach it or cancel the waiting milestone" | The waiting and backlog milestones are standing lists; their epics belong there. Leave them. |
 | "I'll attach the measurement to the release milestone, it is about this release" | Waiting work in a release milestone cannot close before the release. The waiting milestone only. |
+| "The epic is ready, here are N findings for the report" | The findings are tasks of this epic — an ordinary one past the growth ceiling goes to the tails epic of the release; the epic is not ready, the work goes on. |
+| "This is after the release, I'll put it into the next milestone or the backlog" | A finding or a check right after the push — into the tails epic of the release, taken first after the push. Work that waits on someone else, a date or a measurement — the waiting milestone. |

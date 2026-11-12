@@ -182,7 +182,7 @@ drift or dangling wikilink gaps.
 - `get_semantically_related_blocks(project, document_id, block_ulid, [limit], [threshold])`
   — top-N semantically similar blocks in OTHER docs, excluding already-
   linked targets.
-- `get_linked(project, item_type='document', item_id, include_section_links=true)`
+- `get_linked(project, item_type='doc', item_id, include_section_links=true)`
   — combined item-graph + Wave 5 section edges for one document.
 - `get_document(project, document_id, raw=false)` — full markdown with
   render-time stubs from incoming supersedes/resolves/extends edges.

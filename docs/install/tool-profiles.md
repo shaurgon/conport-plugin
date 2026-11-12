@@ -29,8 +29,10 @@ groups together: `?profile=core&profile=gaps` is `core,gaps`.
 A name that is no group is refused: every request of such a connection is
 answered with HTTP 400 and the list of valid groups, so the client does not
 connect at all. Reconnect with a profile made of those names only. The group
-`diagrams`, removed with its one tool, is still accepted and lists nothing
-until the plugin's release 21.0.0.
+`diagrams` was removed with its one tool, and `graphrag` and `semantic`, the
+groups of the entity graph and the semantic pass, were removed in the plugin's
+release 21.0.0; all three are still accepted and list nothing until the next
+major release.
 
 ## Groups
 
@@ -55,11 +57,9 @@ rest of `tasks`.
 | `context` | 2 | Product and active context |
 | `search` | 1 | `search` |
 | `links` | 5 | Links between items and between projects |
-| `graphrag` | 6 | Entities, communities and graph statistics |
 | `history` | 3 | Recent activity and item history |
 | `guardrails` | 4 | Conventions and error solutions |
 | `gaps` | 3 | Knowledge-base gaps and the answer to the questions about them |
-| `semantic` | 3 | The semantic pass, its cleanup and statistics |
 | `recipes` | 4 | Context assembly and architecture rendering |
 | `routine` | 6 | Periodic cycles: policy, runs, estimation statistics |
 
@@ -84,11 +84,9 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 | `context` | `update_product_context`, `update_active_context` |
 | `search` | `search` |
 | `links` | `link_items`, `get_linked`, `link_project`, `get_project_links`, `unlink_project` |
-| `graphrag` | `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats` |
 | `history` | `recent_activity`, `item_history`, `context_history` |
 | `guardrails` | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |
 | `gaps` | `gap_list`, `gap_stats`, `answer_question` |
-| `semantic` | `semantic_pass_run`, `semantic_pass_stats`, `semantic_cleanup` |
 | `recipes` | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage`, `render_current_architecture` |
 | `routine` | `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 
@@ -101,20 +99,21 @@ connect with the profile of what you run:
 | What you run | Profile |
 |---|---|
 | Skill `conport` | `full` |
-| Skill `conport-routine` | `core,tasks,milestones,agenda,semantic,routine` |
+| Skill `conport-routine` | `core,tasks,milestones,agenda,routine` |
 | Skill `conport-roadmap` | `tasks,milestones` |
-| Skill `superpowers-conport` | `core,links` |
-| Workflow `task` | `core,tasks,documents,links` |
-| Workflow `epic` | `core,tasks,documents,arch` |
-| Hooks | `core,milestones` |
+| Skill `superpowers-conport` | `core,milestones,links` |
+| Workflow `task` | `core,tasks,milestones,documents,links` |
+| Workflow `epic` | `core,tasks,milestones,documents,arch` |
+| Hooks | `core,tasks,milestones` |
 
 Each profile is the fewest groups that list every tool the files of that part
 name — the tools the part names itself, not the ones a session ends up
 calling. The `conport` skill is the reference of every tool, which is why its
 row says `full`; loading the skill does not require `full`. The hooks call no
-tool themselves: their profile lists the tools they tell the agent to call. To
-run several parts on one connection, name the groups of all of them together —
-`core,milestones,links` for the `superpowers-conport` skill with the hooks.
+tool themselves: their profile lists the tools they tell the agent to call and
+the tool calls they watch for. To run several parts on one connection, name the
+groups of all of them together —
+`core,tasks,milestones,links` for the `superpowers-conport` skill with the hooks.
 
 ## Example: Claude Code
 

@@ -227,7 +227,7 @@ mcp__conport__update_product_context({
 | field | string | yes | vision \| goals \| features \| architecture \| tech_stack \| constraints |
 | value | string/array | yes | New value |
 
-**Returns:** a slim echo — the context row `id` plus the new `version`.
+**Returns:** the version it wrote — `context_type` and the new `version`.
 
 ### update_active_context
 
@@ -250,7 +250,7 @@ mcp__conport__update_active_context({
 | field | string | yes | current_focus \| open_questions |
 | value | string/array | yes | New value |
 
-**Returns:** a slim echo — the context row `id` plus the new `version`.
+**Returns:** the version it wrote — `context_type` and the new `version`.
 
 ### context_history
 
@@ -270,8 +270,9 @@ mcp__conport__context_history({
 | context_type | string | yes | "product" or "active" |
 | limit | integer | no | Max versions (default: 10) |
 
-**Returns:** `versions` (newest `version` first, each with `id`, `content`,
-`version`, `created_at`, `updated_at`) and `total`.
+**Returns:** `versions` (newest `version` first, each with `context_type`,
+`version`, `content`, `created_at`, `updated_at`) and `total`. A version is
+named by `context_type` and `version`; it has no number of its own.
 
 ---
 
@@ -405,9 +406,10 @@ mcp__conport__list_decisions({
 **Returns:** `decisions` (newest first — `id`, `summary`, `rationale`,
 `implementation_details`, `tags`, `source`, `extracted_from_progress_id`,
 `deprecated_at`, `deprecation_reason`, timestamps, plus the lifecycle
-annotation `currency` / `superseded_by` / `age_days`) and `total`. Decisions
-absorbed into a pattern are left out; `only_current` filters after the count,
-so `total` still reports the pre-filter number.
+annotation `currency` / `superseded_by` / `superseded_by_patterns` /
+`age_days`) and `total`. Decisions absorbed into a pattern are left out;
+`only_current` filters after the count, so `total` still reports the
+pre-filter number.
 
 **Refusals:** `invalid_source` for a `source` value outside the vocabulary.
 
@@ -430,8 +432,10 @@ mcp__conport__get_decision({
 
 **Returns:** `summary`, `rationale`, `implementation_details`, `tags`,
 `source`, timestamps and the lifecycle annotation — `currency`, `age_days`,
-`deprecated_at`, `deprecation_reason`, `superseded_by`. An unknown decision is
-an error.
+`deprecated_at`, `deprecation_reason`, `superseded_by` (the decisions that
+replaced it) and `superseded_by_patterns` (the patterns it was absorbed into).
+A decision absorbed into a pattern is `superseded`, never `current`. An
+unknown decision is an error.
 
 ### delete_decision
 
@@ -812,8 +816,9 @@ mcp__conport__add_linked_task({
 | status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED (default: TODO). A new task is never created in REVIEW (`review_from_in_progress_only`): a task enters REVIEW from IN_PROGRESS |
 
 **Returns:** `target_task` (the created task, full body — this one is not
-slimmed), `source_progress` (the log entry written in the source project),
-`link_id` and `summary`.
+slimmed), `source_progress` (the log entry written in the source project)
+and `summary`. The link between them is named by these two ends; it has no
+number of its own in the answer.
 
 **Errors:** passing the same project on both sides fails with 400 — use
 `add_task` for a task in the project you are already in. A `team/` prefix of a
@@ -1303,9 +1308,11 @@ mcp__conport__get_block_backlinks({
 | limit | integer | no | 1..200 (default 50) |
 | offset | integer | no | Pagination offset |
 
-**Returns:** `backlinks` (`link_id`, `from_doc_id`, `from_doc_title`,
+**Returns:** `backlinks` (`from_doc_id`, `from_doc_title`,
 `from_block_ulid`, `to_block_ulid`, `edge_type`, `source_text`, `weight`,
-`source_offset`, `created_at`) and `total`.
+`source_offset`, `created_at`) and `total`. A backlink has no number of its
+own: the document and block it starts in, the block it points at and its
+kind name it.
 
 ### get_semantically_related_blocks
 
@@ -1380,10 +1387,10 @@ A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.7 arch submit <file.json>`,
-`npx -y conport@^0.7 arch withdraw <source>`,
-`npx -y conport@^0.7 arch source <source> [-o <file>]` — and one thing no tool
-does: `npx -y conport@^0.7 arch check` in the repository root checks the
+`npx -y conport@^0.7.3 arch submit <file.json>`,
+`npx -y conport@^0.7.3 arch withdraw <source>`,
+`npx -y conport@^0.7.3 arch source <source> [-o <file>]` — and one thing no tool
+does: `npx -y conport@^0.7.3 arch check` in the repository root checks the
 anchors of the model against the code there and sends only the outcome. When
 to submit a portion, which type a thing takes and what each refusal asks for:
 the section *PROJECT MODEL* of the conport skill.
@@ -1619,8 +1626,10 @@ mcp__conport__arch_entity({
 
 **Returns:** `id`, `type`, `name`, `description`, `aliases`, `technologies`,
 `anchors`, `properties`, `constraints`, `history` (the claims by document),
-`decisions`, `maturity`, `tasks` (the epics of its documents and their
-children), `incoming`, `outgoing`, `stage`, `state`, `scenarios` (`id`,
+`decisions` (`id`, `summary`, `currency`, `superseded_by` — the decisions
+that supersede it, `superseded_by_patterns` — the patterns it was absorbed
+into; each null when there is none), `maturity`, `tasks` (the epics of its
+documents and their children), `incoming`, `outgoing`, `stage`, `state`, `scenarios` (`id`,
 `name`, `kind`, `role` — participant \| subject \| performer \| via: one row
 per scenario and role the entity plays in it).
 
@@ -1668,7 +1677,10 @@ mismatch \| anchor_missing \| check_stale \| removed_but_present \|
 step_without_relation \| scenario_participant_gone, `subject`, `detail`,
 `action`, a `no_portion` debt its `role`, and for a debt of a scenario its
 `scenario_id`), `checks` (the latest background checks that were skipped or
-failed: `source`, `state`, `reason`), `backfill` (`state`, `completed_at`,
+failed: `source`, `state`, `reason`, and for one failed with
+`answer_truncated` its `action`), `retries` (the latest background checks
+whose attempt failed and that wait for the nightly retry: `source`, `reason`,
+`retry_at` — when that run checks them again), `backfill` (`state`, `completed_at`,
 `documents` — the documents with the role structure or history, `submitted`
 — those of them with a portion, `code_sources`, `filled`, `offer`). While the
 backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,
@@ -1758,7 +1770,9 @@ every code source no newer than the last anchor check.
 
 **Refusals:** `{"error", "action", "blockers"}` —
 `backfill_not_ready` (`blockers`: `debts` with their `count`,
-`unchecked_portion` with its `subject`, `state` and `reason`,
+`unchecked_portion` with its `subject`, `state` and `reason`, `retry_at`
+when its check waits for the nightly retry and `action` when it failed with
+`answer_truncated`,
 `code_source_unchecked` with its `subject`), `backfill_not_started`,
 `backfill_already_started`.
 
@@ -1859,7 +1873,7 @@ mcp__conport__link_items({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| source_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) \| entity (an entity of the project model) |
+| source_type | string | yes | decision \| progress \| pattern \| task \| **doc** \| entity (an entity of the project model) — the canonical kinds the schema lists; `document` is taken too, as a synonym of `doc`, and written as `doc` |
 | source_id | integer | yes | Per-project ID of source item |
 | target_type | string | yes | decision \| progress \| pattern \| task \| doc \| entity |
 | target_id | integer | yes | Per-project ID of target item |
@@ -1875,13 +1889,20 @@ the links it creates on its own (`mentions`, `implements`, `derived_from`,
 **Returns:** the created edge — `id`, both endpoints, `link_type`,
 `description`, `weight`, the `created_by*` attribution fields and `created_at`.
 
-**Errors:** an end of the kind `entity` names an entity the project does not
-have — the message says to name one `arch_names` returns. An end of any other
-kind numbered outside the 32-bit integer range (above 2147483647 or below
--2147483648) is refused with `item_not_found` before anything is written —
-the message says to name the item by a number the project has; the REST
+**Errors:** a `source_type` or `target_type` outside the list above is refused
+with `unknown_item_type` before anything is written; the message names the
+types to pass — the same code and sentence the REST `POST /links` answers. An
+end of the kind `entity` names an entity the project does not
+have — `entity_not_found`, the message says to name one `arch_names` returns.
+An end of any other kind that names an item the project does not have — a
+number outside the 32-bit integer range (above 2147483647 or below
+-2147483648) among them — is refused with `item_not_found` before anything is
+written; the message says to name the item by a number the project has. An
+archived document is one the project has. The REST
 `POST /links` refuses a `created_by_item_id` outside that range the same way
-(404).
+(404). Every refusal of the tool reads `<code>: <sentence>` — the code and the
+sentence the REST `POST /links` answers in `error` and `message`, for example
+`item_not_found: The project has no task 10. Name the task by a number the project has.`
 
 ### get_linked
 
@@ -1894,12 +1915,25 @@ end of; `relationship` keeps one link type; the two narrow together. When
 `section_links: { incoming, outgoing }` — the block-level document links where
 this document is either source or target. Default is `false`.
 
+To read every edge of an item, page by `after`: `0` for the first page, then
+the `next_after` of the last page until it is `null`. Such a page holds at most
+100 edges numbered above `after`, oldest first. Every edge that existed at the
+first page and still exists comes back exactly once; an edge written meanwhile
+(automatic links included) may come back or not.
+
 ```
 mcp__conport__get_linked({
   project: <project>,
   item_type: "doc",
   item_id: 12,
   include_section_links: true
+})
+
+mcp__conport__get_linked({
+  project: <project>,
+  item_type: "entity",
+  item_id: 7,
+  after: 0
 })
 
 mcp__conport__get_linked({
@@ -1914,23 +1948,34 @@ mcp__conport__get_linked({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| item_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) \| entity |
+| item_type | string | yes | decision \| progress \| pattern \| task \| **doc** \| entity — the canonical kinds the schema lists; `document` is taken too, as a synonym of `doc`, and read as `doc` |
 | item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Keep the edges of one link type: mentions \| implements \| derived_from \| references \| clarifies \| relates_to \| supersedes \| blocks \| depends_on. Left out, every link type comes back |
 | direction | string | no | outgoing (the item is the source) \| incoming (the item is the target) \| both (default: both) |
 | include_section_links | boolean | no | `item_type: "doc"` only — also return the block-level document links. Default false. |
+| after | integer | no | Page by link number: the edges numbered above it, 0 to 2147483647, oldest first. Pass the `next_after` of the last page for the next one. Left out, the 100 newest edges come back |
 
 **Returns:** `links` (`id`, both endpoints, `link_type`, `description`,
 `weight`, the `created_by*` attribution fields, `created_at`) — at most 100,
 newest first — and `total`, the full number of the edges that pass
 `direction` and `relationship`, so `total` above 100 means older ones were
-left out; with `include_section_links` also `section_links` (`incoming`,
-`outgoing` — document links with `edge_type`, `source_text`, block ULIDs),
-which `direction` and `relationship` do not narrow.
+left out; with `after` the page holds the edges numbered above it, oldest
+first, and `next_after` — the number to pass as `after` for the next page,
+`null` on the last one; with `include_section_links` also `section_links`
+(`incoming`, `outgoing` — document links with their ends, `edge_type`,
+`source_text`, no number of their own), which `direction` and
+`relationship` do not narrow.
 
-**Errors:** a `direction` or a `relationship` outside its list is refused, and
-the message names the values to pass; an `entity` the project does not have
-is refused too. An `item_id` of any other kind outside the 32-bit integer
+**Errors:** an `item_type` outside the list above is refused with
+`unknown_item_type`, the message naming the types to pass, as the REST
+`GET /links` refuses it; a `direction` or a `relationship` outside its list is
+refused, and
+the message names the values to pass; an `after` outside 0 to 2147483647 is
+refused with `invalid_page`; an `entity` the project does not have
+is refused with `entity_not_found`. A refusal of the item type, of the page or
+of a missing entity reads `<code>: <sentence>`, as the REST `GET /links`
+answers it in `error` and `message`, for example
+``invalid_page: Pass an `after` from 0 to 2147483647.`` An `item_id` of any other kind outside the 32-bit integer
 range names no item: the answer is an empty list (`links: []`, `total: 0`,
 and empty `section_links` when asked for), not a refusal.
 
@@ -1961,10 +2006,11 @@ mcp__conport__link_project({
 
 **Link types:** depends_on, part_of, calls, shares_data, extends, deployed_with, shares_database, related_to
 
-**Returns:** the created link — `id`, `source_project` and `target_project`
+**Returns:** the created link — `source_project` and `target_project`
 (handles) with the `canonical_name` of both, `link_type`, `description`,
 `metadata`, `created_by`, `created_at`. Both projects must be in the team of
-the source project, and they must differ.
+the source project, and they must differ. A link is named by its two projects
+and its type; it has no number.
 
 **Errors:** a target outside that team is not found (404), by handle and by
 name alike. A `team/` prefix of a team you are not a member of fails with
@@ -1989,29 +2035,35 @@ mcp__conport__get_project_links({
 | project | string | yes | Project handle or name |
 | direction | string | no | outgoing \| incoming \| both (default: both) |
 
-**Returns:** `outgoing` and `incoming` (each link with `id`, `source_project`
-and `target_project` (handles) with the `canonical_name` of both, `link_type`,
+**Returns:** `outgoing` and `incoming` (each link with `source_project` and
+`target_project` (handles) with the `canonical_name` of both, `link_type`,
 `description`, `metadata`, `created_by`, `created_at`) plus `total` across both
-lists.
+lists. `source_project`, `target_project` and `link_type` are the address
+`unlink_project` takes.
 
 ### unlink_project
 
-Delete a cross-project link
+Delete a cross-project link, named by its two projects and its type
 
 ```
 mcp__conport__unlink_project({
   project: <project>,
-  link_id: 5
+  target_project: "billing",
+  link_type: "depends_on"
 })
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| link_id | integer | yes | ID of the project-link row |
+| project | string | yes | The link's source project: its handle or name |
+| target_project | string | yes | The project the link points to: its handle, its short name, or `team/project` naming the team of the source project |
+| link_type | string | yes | The link's type |
 
-**Returns:** `success: true` and the `link_id`. A link that does not touch this
-project is an error.
+**Returns:** `success: true`, `source_project` and `target_project` (handles)
+and `link_type`. An incoming link is deleted from its source project: a link
+of that type from `project` to `target_project` that does not exist is an
+error naming the link. The old `link_id` argument is refused: send
+`target_project` and `link_type`.
 
 ---
 
@@ -2056,11 +2108,13 @@ exist.
 Each hit carries:
 - `item_type`, `item_id` — the per-project ID, so pair it with `project`;
   a `context` hit has none (`null`) and names its version by
-  `content.context_type` and `content.version`
+  `content.context_type` and `content.version`; a `custom_data` hit has
+  none (`null`) and names its entry by `content.category` and `content.key`
 - `project` (the handle) / `project_name` — which project the hit came from
 - `content` — the item blob. GraphRAG hits carry `via_entity` /
   `via_community` inside it; decision hits are annotated with `currency`
-  (current \| superseded \| deprecated), `superseded_by` and `age_days`
+  (current \| superseded \| deprecated), `superseded_by`,
+  `superseded_by_patterns` and `age_days`, by the rule of `get_decision`
 - `score` — RRF score, `created_at`
 - `_source` — only on pattern/decision hits related through a `derived_from`
   edge: `aggregated_pattern` (with `_aggregated_from`) or
@@ -2090,141 +2144,6 @@ failed to return.
 
 ---
 
-## GraphRAG & Entities
-
-> GraphRAG tools work **without `project`**: each reads the graph of one
-> team — `team`, or your Private Team when it is omitted — and names that team
-> in the reply's `team` (`pers` or the shared team's ID). The graph of a
-> project in a shared team is reached only with that team's `team`.
-
-### entities
-
-Search/list entities
-
-```
-mcp__conport__entities({
-  query: "redis",
-  entity_type: "technology",
-  limit: 10
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| query | string | no | Search query (ILIKE match on canonical_name) |
-| entity_type | string | no | Exact match on the stored type. Extraction emits: technology \| component \| service \| pattern \| standard \| person \| team |
-| limit | integer | no | Max results (default: 20) |
-| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
-
-**Returns:** `entities` (`id`, `canonical_name`, `entity_type`, `description`,
-`mention_count`, `project_count`), `total` and `team`.
-
-### entity
-
-Entity details (cross-project statistics)
-
-```
-mcp__conport__entity({
-  entity_id: 42
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| entity_id | integer | yes | Canonical entity ID |
-| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
-
-**Returns:** `id`, `canonical_name`, `entity_type`, `description`,
-`mention_count`, `project_count`, `projects` (`project` — the handle, `project_name`,
-`decision_count`), `related_entities` (`entity_id`, `canonical_name`,
-`entity_type`, `relation_type`, `direction`) and `team`. An entity unknown in
-that team is an error.
-
-### entity_related
-
-Related items via graph traversal
-
-```
-mcp__conport__entity_related({
-  entity_id: 42,
-  max_depth: 2,
-  relation_types: "USES"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| entity_id | integer | yes | Canonical entity ID |
-| max_depth | integer | no | Traversal depth (default: 2) |
-| relation_types | string | no | Comma-separated relation types to filter |
-| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
-
-**Returns:** `entity_id`, `related_entities` (walked over the in-memory graph
-up to `max_depth`), `total` and `team`. An entity that is not in that team's
-graph is an error.
-
-### communities
-
-List communities (knowledge clusters)
-
-```
-mcp__conport__communities({
-  min_size: 3,
-  include_summaries: true
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| min_size | integer | no | Minimum cluster size (default: 2) |
-| include_summaries | boolean | no | Include summaries (default: true) |
-| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
-
-**Returns:** `communities` (`community_id`, `level`, `entity_count`,
-`entity_names`, `keywords`, plus `summary`, `summary_generated_at` and
-`summary_stale` when summaries are asked for), `total` and `team`. A summary is
-rewritten only when its cluster's membership changed or its text has aged, so
-`summary_stale: true` means the prose describes a different set of entities
-than the one listed — treat it as a hint, not as fact.
-
-### community
-
-Community details with member entities and summary
-
-```
-mcp__conport__community({
-  community_id: "community_0"
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| community_id | string | yes | Community ID (string) |
-| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
-
-**Returns:** `community_id`, `level`, `summary`, `summary_generated_at`,
-`summary_stale`, `keywords`, `entities` (`entity_id`, `canonical_name`,
-`entity_type`), `relationships` (`source_id`, `target_id`, `relation_type`,
-`weight`), `entity_count`, `relationship_count` and `team`.
-
-### graph_stats
-
-Knowledge-graph statistics across all the projects of one team
-
-```
-mcp__conport__graph_stats()
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
-
-**Returns:** `nodes_count`, `edges_count`, `density`, `is_directed`,
-`entity_type_distribution`, `relation_type_distribution`, `is_dirty`,
-`last_save` and `team` — computed over that team's graph only.
-
----
-
 ## History & Activity
 
 ### recent_activity
@@ -2247,11 +2166,15 @@ mcp__conport__recent_activity({
 
 **Returns:** `activity` — decisions, progress entries, patterns and custom data
 merged and sorted by `timestamp` descending, each row `type` + `timestamp` +
-a rendered `description`. Tasks and documents are not part of this feed.
+a rendered `description`; a custom data row also names its entry by
+`category` + `key`. Tasks and documents are not part of this feed.
 
 ### item_history
 
-Version history of a specific item (by per-project ID)
+Version history of a specific item. Name the item the way its type is
+addressed, and pass nothing else: a decision, progress entry or pattern by
+`item_id`; a context version by `context_type` and `version`; a custom data
+entry by `category` and `key`.
 
 ```
 mcp__conport__item_history({
@@ -2259,18 +2182,40 @@ mcp__conport__item_history({
   item_type: "decision",
   item_id: 5
 })
+
+mcp__conport__item_history({
+  project: <project>,
+  item_type: "context",
+  context_type: "product",
+  version: 3
+})
+
+mcp__conport__item_history({
+  project: <project>,
+  item_type: "custom_data",
+  category: "ProjectGlossary",
+  key: "RAG"
+})
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
 | item_type | string | yes | decision \| progress \| pattern \| custom_data \| context |
-| item_id | integer | yes | Per-project item ID (for `custom_data`/`context` the raw ID is used) |
+| item_id | integer | decision, progress, pattern | The item's number in the project |
+| context_type | string | context | product \| active |
+| version | integer | context | The context version |
+| category | string | custom_data | The entry's category |
+| key | string | custom_data | The entry's key |
 
-**Returns:** `item_type`, `item_id` and `history`. Only the current version is
-tracked for these types, so `history` holds a single entry (`version`,
-`timestamp`, `changes`, `changed_by`). Real version chains of contexts live in
-`context_history`.
+Any other combination is refused with the arguments to pass for that type.
+
+**Returns:** `item_type`, the item's address as it was passed (`item_id`, or
+`context_type` + `version`, or `category` + `key`; a context version or a
+custom data entry has no `item_id`) and `history`. Only the current version is
+tracked for these types, so `history` holds a single entry (`version` — for a
+context, its version — `timestamp`, `changes`, `changed_by`). Real version
+chains of contexts live in `context_history`.
 
 ---
 
@@ -2324,8 +2269,9 @@ No parameters.
 ### render_current_architecture
 
 Synthesise the current architecture of a subsystem from decisions, patterns and
-authored spec documents whose tags intersect `scope`. Superseded predecessors
-are walked out, so the render shows what holds *now*. Tag-scoped rather than
+authored spec documents whose tags intersect `scope`. Decisions not in force —
+absorbed into a pattern, deprecated or superseded — are left out, so the render
+shows what holds *now*. Tag-scoped rather than
 start-node-based, which is why it is not an `assemble_context` recipe.
 
 ```
@@ -2397,9 +2343,10 @@ mcp__conport__gap_list({
 | state | string | no | detected \| acknowledged \| dismissed \| resolved. Comma-separated for several (default: `detected`). No gap is in `acknowledged` any more: every acknowledged gap was reopened as `detected`, or closed when its type was retired |
 | limit | integer | no | Max results (default: 50) |
 
-**Returns:** `gaps` (`hash`, `category`, `gap_type`, `subject`, `state`,
-`details`, `first_detected_at`, `last_detected_at`, `dismissed_reason`),
-`total` and `summary`.
+**Returns:** `gaps` (`hash`, `category`, `gap_type`, `subject` — `type` and
+`id`, the id null for the subject types `project` and `active_context` —
+`state`, `details`, `first_detected_at`, `last_detected_at`,
+`dismissed_reason`), `total` and `summary`.
 
 ### gap_stats
 
@@ -2450,92 +2397,6 @@ valid keys: ask the user again with them, never pick one yourself;
 `epic_not_ready` — the epic gained an open task while it was being closed. An
 option that closes a task can also return a refusal of the task cycle (such as
 `done_needs_review`); follow its `message`.
-
----
-
-## Semantic pass
-
-LLM analysis of the knowledge graph. A pass produces **proposals**, and a rule
-settles every one of them without a manual review: graph mutations at or above
-the confidence threshold are applied, those below it and noise are rejected.
-The server applies the rule daily to every project and at the end of each pass,
-so no proposal waits for review.
-
-### semantic_cleanup
-
-One-click cleanup: run the pass, then settle every waiting proposal by the
-rule — reject noise, approve mutations at or above `confidence_threshold` and
-reject those below it, apply what was approved. Returns immediately and runs in
-the background.
-
-```
-mcp__conport__semantic_cleanup({
-  project: <project>,
-  dry_run: false
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| confidence_threshold | number | no | Approve mutations at or above this confidence (default: 0.85) |
-| dry_run | boolean | no | **Default true** — applies nothing in this call, but stores the proposals and approves those at or above `confidence_threshold`; the next daily run (within a day) or any `semantic_pass_run` applies what it approved. Not a preview: with a lowered threshold it approves what the rule would reject. Pass `false` to apply in this call |
-
-**Returns:** `started`, `run_id`, `dry_run`, `poll` and `summary`. Poll
-`semantic_pass_stats`: the run is done once its `recent_runs` entry for
-`run_id` has `completed_at`.
-
-**Already running:** when a pass or cleanup is already open for the project
-the answer is `already_running: true` with the live `run_id` and a `summary` —
-no `error` key; poll that run instead of starting another.
-
-**Refusals:** `rate_limited` (with `retry_after_seconds`) for a non-dry run
-inside the per-owner cooldown.
-
-### semantic_pass_run
-
-Run the pass manually. A real run stores the proposals and then settles every
-waiting one by the rule; a dry run returns them without storing anything.
-
-```
-mcp__conport__semantic_pass_run({
-  project: <project>,
-  dry_run: true
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| scope | string | no | `full` (default, all communities) or `communities` |
-| community_ids | string | no | Comma-separated community IDs, used with `scope: "communities"` |
-| dry_run | boolean | no | Return proposals without saving them (default: false). Previews are not rate-limited |
-
-**Returns:** `pass_run_id`, `proposals` and `residuals` (populated on a dry
-run), `stats` (with `proposal_rules` — what the rule applied and rejected) and
-`summary`.
-
-**Refusals:** `rate_limited` (with `retry_after_seconds`) for a real run inside
-the per-owner cooldown.
-
-### semantic_pass_stats
-
-Pass health: proposal counts, approval rate and the recent runs — also the way
-to poll a background `semantic_cleanup`.
-
-```
-mcp__conport__semantic_pass_stats({
-  project: <project>
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-
-**Returns:** `status_counts`, `type_counts`, `total_proposals`,
-`approval_rate`, `recent_runs` (`id`, `started_at`, `completed_at`, `stats` —
-last 5) and `summary`.
 
 ---
 
@@ -2815,12 +2676,10 @@ kept, or a decision tagged `error-solution` by hand.
 | Patterns | `log_pattern`, `update_pattern`, `list_patterns` |
 | Search | `search` |
 | Linking | `link_items`, `get_linked`, `link_project`, `get_project_links`, `unlink_project` |
-| GraphRAG | `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats` |
 | History | `recent_activity`, `item_history`, `context_history` |
 | Context assembly | `assemble_context`, `list_context_recipes`, `render_current_architecture`, `audit_doc_l1_coverage` |
 | Project model | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill` |
 | Gaps | `gap_list`, `gap_stats`, `answer_question` |
-| Semantic pass | `semantic_cleanup`, `semantic_pass_run`, `semantic_pass_stats` |
 | Routine cycle | `get_agenda`, `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 | Guardrails | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |
 

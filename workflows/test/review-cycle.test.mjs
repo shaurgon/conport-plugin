@@ -142,14 +142,106 @@ test('epic.js: the carry of a plan task names the findings round of the epic', a
 
 // No finding is left as a line: a minor task.js leaves open becomes a follow-up
 // task — the umbrella task the accounting files — without any argument asking for it.
-test('task.js: a minor left open by a task with no epic becomes a follow-up task of the tails epic, and the carry says so', async () => {
+// A task with no epic has no release milestone (only an epic carries one): the follow-up
+// task waits in a progress entry until the person names the milestone of the tails.
+test('task.js: a minor left open by a task with no epic becomes a follow-up task waiting for the milestone, and the carry says so', async () => {
   const { steps, prompt } = await go('task.js', taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null }))
-  assert.ok(steps.find(s => s.label === 'j-carry-fix').body.includes('they become one follow-up task, filed by this run under the tails epic'))
+  assert.ok(steps.find(s => s.label === 'j-carry-fix').body.includes(
+    "the task has no epic, so no release milestone: they become one follow-up task, waiting in a progress entry for the owner's answer on its milestone"))
   const table = accountTable(prompt('account'))
   assert.ok(table.minors_umbrella, 'the umbrella is filed without fileMinors')
-  assert.equal(table.minors_umbrella.parent, undefined, 'no epic: the tails epic takes it')
+  assert.equal(table.minors_umbrella.title, 'Review minors left on task-7', 'the title an epic run counts as ordinary work')
+  assert.equal(table.minors_umbrella.parent, undefined, 'no epic: no release milestone')
+  assert.equal(table.minors_umbrella.task, 7, 'the waiting entry is marked and linked by the task')
   assert.ok(table.minors_umbrella.description.includes('a.js:9'), table.minors_umbrella.description)
-  assert.match(table.close.resolution, /; 1 review minor\(s\) left open, filed as one follow-up task$/)
+  assert.match(table.close.resolution, /; 1 review minor\(s\) left open, for one follow-up task$/, 'the accountant names where it went: filed only when filed')
+  const flat = prompt('account').replace(/\s+/g, ' ')
+  assert.ok(!flat.includes('Workflow run tails'), 'the old tails epic is gone from branch B')
+  assert.ok(flat.includes('1) MINORS (one umbrella, never scattered tasks): task-7 has no epic, so no release milestone'), flat)
+  assert.ok(!flat.includes('get_task(7) -> its milestone M'), 'no release is looked up by a task')
+  assert.ok(!flat.includes("'Tails of release <title of M>'"), 'branch B looks for no tails epic without an epic')
+  for (const text of ['tails_epic_id=null and tails_epic_needs_milestone=true', "'[task-run:7] tails waiting for a milestone: ",
+    "linked_item_type='task', linked_item_id=7", 'tails_waiting_progress_id=<its id>'])
+    assert.ok(flat.includes(text), text)
+})
+
+// No tails epic was filed — no release milestone with a release milestone after it: the
+// umbrella waits in a progress entry, and the owner is asked which milestone the tails go to.
+test('task.js: review minors waiting for a milestone are handed to the session as the tails question', async () => {
+  const { ledger } = await go('task.js', taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null,
+    account: { via: 'wf-helper', actions: [], task_closed: true, tails_epic_id: null, tails_epic_needs_milestone: true, tails_waiting_progress_id: 88 } }))
+  const q = ledger.questions.find(x => x.title === 'The tails of the release have no milestone to go to')
+  assert.ok(q, JSON.stringify(ledger.questions))
+  assert.equal(q.task, null)
+  assert.ok(q.question.includes('progress-88'), q.question)
+  assert.ok(q.question.includes('no tails epic of the release was filed: a task with no epic has no release milestone, or the epic is not in a release milestone,'), q.question)
+  assert.ok(q.question.includes("'Tails of release <title of the release milestone>'"), q.question)
+  const action = ledger.questions_action.replace(/\s+/g, ' ')
+  assert.ok(action.includes('is answered with a milestone'), action)
+  assert.ok(action.includes('priority=1'), action)
+})
+
+// With no progress entry recorded, the question itself carries the minors left open,
+// as epic.js carries its tails entries with their descriptions.
+test('task.js: the tails question lists the minors left open when no progress entry was recorded', async () => {
+  const { ledger } = await go('task.js', taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null,
+    account: { via: 'wf-helper', actions: [], task_closed: true, tails_epic_id: null, tails_epic_needs_milestone: true, tails_waiting_progress_id: null } }))
+  const q = ledger.questions.find(x => x.title === 'The tails of the release have no milestone to go to')
+  assert.ok(q, JSON.stringify(ledger.questions))
+  assert.ok(!q.question.includes('progress-'), q.question)
+  assert.ok(q.question.includes("'Review minors left on task-7' with these minors (its description): - a.js:9 — a nit"), q.question)
+})
+
+// The branch B accountant files the umbrella first and names in the close where it went;
+// the tails epic follows the release rule of the epic accountant.
+test('task.js: branch B files the umbrella before the close and follows the release rule for the tails epic', async () => {
+  const run = taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null })
+  run.answers.scout = { ...run.answers.scout, task: { ...run.answers.scout.task, parent_epic_id: 40 } }
+  const { prompt } = await go('task.js', run)
+  const flat = prompt('account').replace(/\s+/g, ' ')
+  assert.ok(flat.indexOf('1) MINORS') < flat.indexOf('2) CLOSE') && flat.indexOf('2) CLOSE') < flat.indexOf('3) BLOCK'), 'minors, close, block')
+  for (const text of ['(is_release=true)', 'priority=1', "'[task-run:7] tails waiting for a milestone: ", 'tails_waiting_progress_id',
+    "'; <n> review minor(s) left open, for one follow-up task'", "filed as task-<id> in the tails epic task-<tails epic>",
+    "waiting for the owner's answer on their milestone, recorded in progress-<id>"])
+    assert.ok(flat.includes(text), text)
+  assert.ok(!flat.includes('Tails of release of epic task-'), 'no tails epic without a release')
+})
+
+// A tails epic of the release with no milestone to attach it to is a question to the person.
+test('task.js: a tails epic of the release without a milestone is handed to the session as a question', async () => {
+  const { ledger } = await go('task.js', taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null,
+    account: { via: 'wf-helper', actions: [], task_closed: true, tails_epic_id: 777, tails_epic_needs_milestone: true } }))
+  assert.deepEqual(ledger.questions, [{ task: 777, title: 'The tails epic of the release has no milestone',
+    question: 'Task-7 has no milestone after its release to attach the tails epic task-777 to: which milestone should it go to — the one right after the release?' }])
+  assert.match(ledger.questions_action, /^questions holds what only the user can settle/)
+})
+
+// What a reviewer could not verify from the diff alone is not left in the journal
+// only: the run hands it to the session as a question, and the answer is a task.
+test('task.js: what a review could not verify is handed to the session as a question to ask', async () => {
+  const { ledger } = await go('task.js', taskRun({
+    rev: { verdict: 'APPROVED', findings: [MINOR], unverifiable: ['the caller in b.js'] }, fix: FIXED,
+    rev2: { verdict: 'APPROVED', findings: [], unverifiable: ['the caller in b.js', 'the cache of c.js'] } }))
+  const ask = item => ({ task: 7, title: 'Not verified by the review of task-7',
+    question: 'The reviewer could not verify this from the diff alone — is it real, and what closes it? ' + item })
+  assert.deepEqual(ledger.questions, [ask('the caller in b.js'), ask('the cache of c.js')], 'every review, each item once')
+  assert.match(ledger.questions_action, /^questions holds what only the user can settle/)
+})
+
+test('task.js: a run whose reviews verified everything asks nothing', async () => {
+  const { ledger } = await go('task.js', taskRun())
+  assert.deepEqual(ledger.questions, [])
+  assert.equal(ledger.questions_action, null)
+})
+
+test('task.js: the reviewer is told where a minor left open goes — the epic of the task, or a follow-up task waiting for its milestone without one', async () => {
+  const own = taskRun()
+  own.answers.scout = { ...own.answers.scout, task: { ...own.answers.scout.task, parent_epic_id: 40 } }
+  const flat = s => s.replace(/\s+/g, ' ')
+  assert.ok(flat((await go('task.js', own)).prompt('rev')).includes(
+    'becomes a task of epic task-40 (beyond its ceiling of work added after the plan, of the tails epic of the release)'))
+  assert.ok(flat((await go('task.js', taskRun())).prompt('rev')).includes(
+    'becomes a follow-up task waiting for the person to name its milestone (a task with no epic has no release milestone)'))
 })
 
 // A task of an epic: its leftover minor is a finding of that epic, filed under it.
@@ -157,11 +249,28 @@ test('task.js: a minor left open by a task of an epic becomes a task of that epi
   const run = taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null })
   run.answers.scout = { ...run.answers.scout, task: { ...run.answers.scout.task, parent_epic_id: 40 } }
   const { steps, prompt } = await go('task.js', run)
-  assert.ok(steps.find(s => s.label === 'j-carry-fix').body.includes('they become one task of epic task-40, filed by this run'))
+  assert.ok(steps.find(s => s.label === 'j-carry-fix').body.includes(
+    'they become one task of epic task-40, filed by this run — beyond its ceiling of work added after the plan, a task of the tails epic of the release'))
   const table = accountTable(prompt('account'))
   assert.equal(table.minors_umbrella.parent, 40)
-  assert.match(table.close.resolution, /; 1 review minor\(s\) left open, filed as one task of epic task-40$/)
-  assert.ok(prompt('account').includes('minors_umbrella.parent'), 'branch B is told where the umbrella goes')
+  assert.equal(table.minors_umbrella.title, 'Review minors left on task-7')
+  assert.match(table.close.resolution, /; 1 review minor\(s\) left open, for one follow-up task$/)
+  const flat = prompt('account').replace(/\s+/g, ' ')
+  assert.ok(flat.includes('minors_umbrella.parent'), 'branch B is told where the umbrella goes')
+  for (const text of ['max(3, floor(3 × <plan tasks> / 10))', "'<!-- conport-epic: 40 -->'", 'Held for the person:',
+    'A confirmed critical gap of this epic, left open because', "'The gap: '", "'Acceptance unmet: '", "'Review minors left on '", "'Note answer: '",
+    "'Tails of release <title of M>'", 'or a first line of its description or acceptance, starting with', "format B: 'ConPort task-<id>' in the heading"])
+    assert.ok(flat.includes(text), 'branch B counts the ceiling as the helper does: ' + text)
+})
+
+// The plan the scout found for the task travels in the table: the helper reads it when
+// no plan in the repository carries the epic's anchor.
+test('task.js: the umbrella carries the plan of the task to the accounting', async () => {
+  const run = taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null })
+  run.answers.scout = { ...run.answers.scout, task: { ...run.answers.scout.task, parent_epic_id: 40 },
+    brief: { ...run.answers.scout.brief, plan_path: 'docs/superpowers/plans/p.md' } }
+  const { prompt } = await go('task.js', run)
+  assert.equal(accountTable(prompt('account')).minors_umbrella.plan_path, 'docs/superpowers/plans/p.md')
 })
 
 test('task.js: a run with no minor left files no follow-up task', async () => {
@@ -308,10 +417,21 @@ test('task.js: a rebase that fails is still MERGE_CONFLICT', async () => {
   assert.ok(!labels.includes('j-brief-rb'))
 })
 
+// A resumed task's first reviewer owes concern_rulings: its concerns are only in the
+// report entry, so the run asks for the rulings without knowing how many there are.
+// These fixtures have a report entry with no concerns: an empty list.
+const ruledNone = (answers, labels) => {
+  for (const l of labels)
+    if (answers[l] && typeof answers[l] === 'object' && !('concern_rulings' in answers[l]))
+      answers[l] = { ...answers[l], concern_rulings: [] }
+  return answers
+}
+
 // A previous run stopped after its report: the task waits in REVIEW.
 const inReview = over => {
   const run = taskRun(over)
   run.answers.scout = { ...run.answers.scout, task: { ...run.answers.scout.task, status: 'REVIEW' } }
+  ruledNone(run.answers, ['rev', 'rev-r2'])
   return run
 }
 
@@ -482,6 +602,7 @@ const epicInReview = over => {
   const run = epicRun(over)
   const sc = run.answers.scout
   run.answers.scout = { ...sc, tasks: [{ ...sc.tasks[0], conport_status: 'REVIEW' }] }
+  ruledNone(run.answers, ['rev-501', 'rev-501-r2'])
   return run
 }
 

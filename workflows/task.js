@@ -10,8 +10,8 @@ export const meta = {
 // prompts of this file — edit them together. Between task.js and epic.js the
 // mirror parity tests hold byte for byte alike exactly this: every region fenced
 // by a <NAME>_BEGIN / <NAME>_END marker pair that both files carry (PIPE_BASE,
-// FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_JAN, SCOUT_BASE, ACCOUNT_PIPE,
-// AGENT_TYPES, SPEC_EDIT) and the
+// FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_VERSIONS, PIPE_JAN, SCOUT_BASE,
+// ACCOUNT_PIPE, AGENT_TYPES, SPEC_EDIT, REVIEW_CONCERNS) and the
 // SKELETON_VERSION declaration. Everything else the two files share — the
 // judgement prompts included — is duplicated by hand and guarded by nothing.
 
@@ -26,8 +26,11 @@ const TASK = A.task
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
 // No finding is left as a line: a minor the fix round leaves open is always filed as
-// one follow-up task — under the task's own epic when it has one (the minor is a
-// finding of that epic), under the tails epic otherwise. `fileMinors` is no longer needed.
+// one follow-up task, 'Review minors left on task-<id>' — ordinary work: under the task's
+// own epic while that epic's growth ceiling has room, under the tails epic of the release
+// beyond it. A task with no epic has no release milestone (only an epic carries one), so
+// its umbrella waits in a progress entry until the person names the milestone of the
+// tails. `fileMinors` is no longer needed.
 const SKELETON_VERSION = 19     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 
@@ -98,13 +101,18 @@ const L = {
   task: TASK, skeleton_version: SKELETON_VERSION,
   outcome: null, abort_reason: null, abort_detail: null,
   fail_reason: null, fail_detail: null, branch: null, head_sha: null,
-  merge_sha: null, review: null, rereview: null, minors: [],
+  merge_sha: null, review: null, rereview: null, minors: [], versions: null,
   accounting: null, pending_table: null, notes: [], journal: [],
-  service_reports: [], service_reports_action: null,
+  service_reports: [], service_reports_action: null, questions: [], questions_action: null,
 }
 // Every return of the run goes through finish(): the ledger it hands back says what
-// to do with the service reports it carries.
-const finish = () => { L.service_reports_action = serviceReportsAction(L.service_reports); return L }
+// to do with the service reports and the questions it carries.
+const finish = () => {
+  L.service_reports_action = serviceReportsAction(L.service_reports)
+  L.questions = questionsOf()
+  L.questions_action = L.questions.length ? QUESTIONS_ACTION : null
+  return L
+}
 const abort = (reason, detail) => {
   L.outcome = 'ABORTED'; L.abort_reason = reason
   if (detail !== undefined) L.abort_detail = detail
@@ -124,6 +132,44 @@ const collectMinors = rev => {
     if (f.severity === 'MINOR' && !L.minors.some(m => m.file === f.file && m.what === f.what))
       L.minors.push(f)
 }
+// What a reviewer could not verify from the diff alone is never left in the journal
+// only: a task run has no gap hunt to check it, so it becomes a question the session
+// asks the person, and the answer is a task or the reason none is needed.
+const unverified = []
+const noteUnverifiable = rev => {
+  for (const item of (rev && Array.isArray(rev.unverifiable) ? rev.unverifiable : []))
+    if (typeof item === 'string' && item.trim() && !unverified.includes(item)) unverified.push(item)
+}
+// The tails epic of the release belongs to the release milestone right after the
+// release: one found with no milestone, or none filed at all — no release milestone with a
+// release milestone after it — and the person says where the tails go.
+const TAILS_ASKED = 'The tails of the release have no milestone to go to'
+// Two runs of one release can both miss the tails epic and both create one: whoever
+// looks it up takes the oldest, and whoever creates it drops its own duplicate.
+const TAILS_OLDEST = 'found -> use it (several open -> the oldest, lowest id)'
+const TAILS_DEDUP = 'Right after that add_task, re-read the open epics with that exact title in the milestone it was created in (kind=epic, open, to the end): more than one -> keep the oldest (lowest id); when the oldest is not the epic this run created, another run made it at the same time: move every child of the epic this run created to the oldest — list_tasks(parent_task_id=<its own>, status="ALL", include_snoozed=true, to the end), then update_task(parent_task_id=<the oldest>) for each — cancel its own with update_task(status="CANCELLED", resolution="duplicate of task-<the oldest>") and use the oldest; never cancel an epic this run did not create'
+// One line per review minor left open: the body of the umbrella and of the tails question.
+const minorLines = minors => minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : ''))
+const waitingTails = acc => !!acc && !Number.isInteger(acc.tails_epic_id) && acc.tails_epic_needs_milestone === true
+const questionsOf = () => unverified.map(item => ({ task: TASK, title: 'Not verified by the review of task-' + TASK,
+  question: 'The reviewer could not verify this from the diff alone — is it real, and what closes it? ' + item }))
+  .concat(L.accounting && Number.isInteger(L.accounting.tails_epic_id) && L.accounting.tails_epic_needs_milestone === true
+    ? [{ task: L.accounting.tails_epic_id, title: 'The tails epic of the release has no milestone',
+      question: 'Task-' + TASK + ' has no milestone after its release to attach the tails epic task-' + L.accounting.tails_epic_id +
+        ' to: which milestone should it go to — the one right after the release?' }]
+    : [])
+  .concat(waitingTails(L.accounting)
+    ? [{ task: null, title: TAILS_ASKED,
+      question: 'Task-' + TASK + ' left review minors past the growth ceiling of its epic (or has no epic), and no tails epic of the release was filed: ' +
+        'a task with no epic has no release milestone, or the epic is not in a release milestone, or the open milestone right after its release is not a release (a standing list such as ' +
+        'the waiting milestone or the backlog without a date) or there is none. Which milestone should the tails go to? File there the epic ' +
+        "'Tails of release <title of the release milestone>' (the title written literally) at priority 1, and under it the task " +
+        "'Review minors left on task-" + TASK + "'" + (Number.isInteger(L.accounting.tails_waiting_progress_id)
+          ? ' recorded in progress-' + L.accounting.tails_waiting_progress_id + ' (its title, priority and description).'
+          : ' with these minors (its description): ' + minorLines(L.minors).join(' ')) }]
+    : [])
+const QUESTIONS_ACTION = 'questions holds what only the user can settle about this task: ask the user each one — show its title and its question. An answer that asks for work: file that work as a new task (a child of the task\'s epic when it has one) and run it with /conport:task <id>. An answer that no work is needed: nothing is filed. An answer that names a milestone for a tails epic: update_task(<that epic>, milestone_id=<that milestone>). ' +
+  "The question '" + TAILS_ASKED + "' is answered with a milestone, never with a new task of the epic: in that milestone look for the open epic titled 'Tails of release <title of the release milestone>' (written literally, never translated) — " + TAILS_OLDEST + "; else add_task(kind=\"epic\", priority=1, that title, milestone_id=<that milestone>). " + TAILS_DEDUP + ". Under that epic file the task the question names, skipping it when already filed under it."
 
 // ---------------------------------------------------------------- schemas
 
@@ -162,13 +208,55 @@ const S_IMPL = { type: 'object', required: ['status', 'branch', 'head_sha', 'wor
   concerns: { type: 'array', items: { type: 'string' } }, questions: { type: 'array', items: { type: 'string' } },
   spec_blocks: { type: 'array', items: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{26}$' } } } }
 
+// REVIEW_CONCERNS_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
 const S_REV = { type: 'object', required: ['verdict', 'findings'], properties: {
   verdict: { type: 'string', enum: ['APPROVED', 'NEEDS_FIXES'] },
   findings: { type: 'array', items: { type: 'object', required: ['severity', 'file', 'what'], properties: {
     severity: { type: 'string', enum: ['CRITICAL', 'IMPORTANT', 'MINOR'] },
     file: { type: 'string' }, line: { type: 'integer' }, what: { type: 'string' },
     specRef: { type: 'string' }, scenario: { type: 'string' }, fix: { type: 'string' } } } },
-  unverifiable: { type: 'array', items: { type: 'string' } } } }
+  unverifiable: { type: 'array', items: { type: 'string' } },
+  concern_rulings: { type: 'array', items: { type: 'object', required: ['idx', 'ruling', 'reason'], properties: {
+    idx: { type: 'integer' }, ruling: { type: 'string', enum: ['FINDING', 'NOT_A_FINDING'] },
+    finding_idx: { type: 'integer' }, reason: { type: 'string' } } } } } }
+
+// The concerns an implementer finished with reach its reviewer, who rules on each
+// one: a real defect is a finding of the review and takes the ordinary road, anything
+// else is not a finding, with its reason. A review that leaves a concern without a
+// ruling is not accepted — `ruled` turns it into no review, so the reviewer is
+// dispatched again and a second such answer leaves the task unreviewed, never merged.
+// A task an earlier run left in REVIEW has no implementer's answer in this run: its
+// concerns are only in the Concerns section of its latest report entry, so its first
+// reviewer reads them there and owes concern_rulings all the same. Every ruling given
+// must be well formed on both roads; that each concern has one is checked only where
+// the run knows the concerns — a resumed task's number of them is in the journal.
+const concernsOf = impl => (impl && Array.isArray(impl.concerns) ? impl.concerns : [])
+  .filter(c => typeof c === 'string' && c.trim())
+const concernList = concerns => JSON.stringify(concerns.map((what, idx) => ({ idx, what })))
+const CONCERNS = concerns => `=== THE IMPLEMENTER'S CONCERNS — rule on each ===
+The implementer finished with these concerns, each with its idx:${quoted('implementer concerns', concernList(concerns))}`
+const concernRule = where => `\n${where} Rule on EVERY one in
+concern_rulings — a review that leaves one without a ruling is not accepted. A concern
+that is a real defect goes into findings with its severity, calibrated like any other
+finding, and its ruling is FINDING with finding_idx = its index in findings and the
+reason; a concern that is no defect is NOT_A_FINDING with the reason.`
+const RESUMED_CONCERNS = `The latest report entry of this task may list the implementer's
+concerns under "Concerns:" — read it in the journal and give them idx 0, 1, ... in their
+order; concern_rulings is an empty list only when that entry lists none.`
+const rulesConcerns = impl => !!(impl && impl.resumed) || concernsOf(impl).length > 0
+const concernRuleOf = impl => (impl && impl.resumed ? concernRule(RESUMED_CONCERNS)
+  : concernsOf(impl).length ? concernRule("The brief lists the implementer's concerns, each with its idx.") : '')
+const revSchemaOf = impl => (rulesConcerns(impl) ? { ...S_REV, required: [...S_REV.required, 'concern_rulings'] } : S_REV)
+const ruled = (rev, impl) => {
+  if (!rev || !rulesConcerns(impl)) return rev
+  const rulings = Array.isArray(rev.concern_rulings) ? rev.concern_rulings : []
+  const wellFormed = r => !!r && Number.isInteger(r.idx) && r.idx >= 0 && (r.ruling === 'FINDING'
+    ? Number.isInteger(r.finding_idx) && r.finding_idx >= 0 && r.finding_idx < rev.findings.length
+    : r.ruling === 'NOT_A_FINDING' && typeof r.reason === 'string' && !!r.reason.trim())
+  if (!rulings.every(wellFormed)) return null
+  return concernsOf(impl).every((_, i) => rulings.some(r => r.idx === i)) ? rev : null
+}
+// REVIEW_CONCERNS_END
 
 const S_FIX = { type: 'object', required: ['status', 'head_sha'], properties: {
   status: { type: 'string', enum: ['DONE', 'BLOCKED'] },
@@ -194,6 +282,8 @@ const S_ACC = { type: 'object', required: ['actions', 'task_closed'], properties
     step: { type: 'string' }, target: { type: 'integer' },
     result: { type: 'string', enum: ['done', 'skipped_already', 'failed'] }, detail: { type: 'string' } } } },
   minors_created: { type: 'array', items: { type: 'integer' } }, task_closed: { type: 'boolean' },
+  tails_epic_id: { type: ['integer', 'null'] }, tails_epic_needs_milestone: { type: 'boolean' },
+  tails_waiting_progress_id: { type: ['integer', 'null'] },
   failed_calls: { type: 'array', items: { type: 'object', properties: {
     call: { type: 'string' }, error: { type: 'string' } } } } } }
 
@@ -636,6 +726,8 @@ confirmed — into the verdict.`
   const rb = extra && extra.postRebase
     ? `\nThe diff changed by rebase — check the conflicted hunks of the files the brief lists.`
     : ''
+  // Only the first review rules on the concerns: a re-review checks the closure of findings.
+  const cr = extra ? '' : concernRuleOf(impl)
   return `You are the single reviewer of one task. Mutate NOTHING — no files, no git, no
 ConPort writes; run no tests (judge test mechanics by reading the code).
 ${journalRead(sc.project, sc.task.id, UNREADABLE_REVIEW)}
@@ -657,10 +749,12 @@ Calibration is strict, inflation is forbidden. CRITICAL requires all three at on
 (a) the exact spec/acceptance line violated; (b) a concrete failure scenario
 'input -> wrong outcome'; (c) the defect ships to ${MAIN} with this merge. Any missing
 -> downgrade. IMPORTANT = the task cannot be trusted until fixed. MINOR = polish;
-MINOR does not block the merge and is GUARANTEED to land in the tails epic — do not
-inflate 'so it will not get lost': the ledger never loses a minor. Something absent
-from both spec and acceptance is not a finding.
-Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, sc.brief.spec_doc_id, specBlocksOf(impl))}${re}${rb}`
+MINOR does not block the merge: it is fixed in the fix round, and one still open after
+it ${Number.isInteger(sc.task.parent_epic_id)
+    ? `becomes a task of epic task-${sc.task.parent_epic_id} (beyond its ceiling of work added after the plan, of the tails epic of the release)`
+    : 'becomes a follow-up task waiting for the person to name its milestone (a task with no epic has no release milestone)'} — do not inflate 'so it will not get
+lost': no minor is lost. Something absent from both spec and acceptance is not a finding.
+Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, sc.brief.spec_doc_id, specBlocksOf(impl))}${re}${rb}${cr}`
 }
 
 const fixPrompt = (sc, impl, serial) => {
@@ -692,6 +786,60 @@ const mergePrompt = (q, gate) => pipe(mergeCommand(gate), mergeArgs(q, gate))
 const mergeStatePrompt = (q, gate) =>
   pipe(mergeCommand(gate) + ' --state-only', mergeArgs(q.map(({ title, ...row }) => row), gate))
 // PIPE_MERGE_END
+
+// PIPE_VERSIONS_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
+// An epic does not raise a unit version: the release step raises each changed unit
+// once and pushes it, and it is never run through a workflow. Before READY the helper
+// compares every version carrier of the units the project's manifest (.conport/units.json)
+// lists in a commit with the base branch, and any difference
+// refuses READY with one action: push the release step first when the default branch
+// was ahead of the published one at the start of the run and already differed from it,
+// update the default branch first when it was behind the published one or diverged,
+// otherwise restore the version. A check that does not answer, or a carrier whose
+// version neither side can read, refuses READY too: a version the run could not compare
+// is no pass. A project without the manifest has no units to compare: the run passes
+// and says so in one note; a manifest that cannot be read refuses READY until it is fixed.
+const S_VER_DIFF = { type: 'array', items: { type: 'object', required: ['unit', 'path'], properties: {
+  unit: { type: 'string' }, path: { type: 'string' },
+  base: { type: ['string', 'null'] }, head: { type: ['string', 'null'] } } } }
+const S_VER = { type: 'object', required: ['base', 'equal', 'differs'], properties: {
+  units: { type: 'string', enum: ['none', 'manifest', 'invalid'] }, manifest_error: { type: 'string' },
+  base: { type: 'string' }, head: { type: 'string' }, equal: { type: 'boolean' },
+  differs: S_VER_DIFF, start_differs: S_VER_DIFF, start_behind: { type: 'boolean' },
+  unreadable: { type: 'array', items: { type: 'string' } } } }
+
+const versionsPrompt = (branch, start, head) =>
+  pipe(`versions --branch ${shq(branch)} --start ${shq(start)} --head ${shq(head)}`)
+
+const VERSIONS_UNCHECKED = 'the check of unit versions against the base branch did not answer: update the conport plugin and run again'
+const NO_UNIT_MANIFEST = 'versions: the repository has no unit manifest .conport/units.json — unit versions were not compared'
+const unitList = units => (units.length < 2 ? units.join('')
+  : units.slice(0, -1).join(', ') + ' and ' + units[units.length - 1])
+const unitsOf = list => [...new Set((Array.isArray(list) ? list : []).map(d => d && d.unit).filter(u => typeof u === 'string' && u))]
+// What the check found — no manifest, equal, raised, a release step not pushed yet, a
+// default branch behind the published one, or unchecked — and the one action of a
+// refusal (null when there is nothing to compare or every version equals the base's).
+const versionsVerdict = v => {
+  if (!v || typeof v.base !== 'string') return { cause: 'unchecked', action: VERSIONS_UNCHECKED }
+  if (v.units === 'none') return { cause: 'no_manifest', action: null }
+  if (v.units === 'invalid') return { cause: 'unchecked',
+    action: 'Fix .conport/units.json, then run again: ' + (typeof v.manifest_error === 'string' ? v.manifest_error : 'it cannot be read') }
+  if (!Array.isArray(v.differs) || (Array.isArray(v.unreadable) && v.unreadable.length))
+    return { cause: 'unchecked', action: VERSIONS_UNCHECKED }
+  if (v.equal === true && !v.differs.length) return { cause: 'equal', action: null }
+  const units = unitsOf(v.differs)
+  if (!units.length) return { cause: 'unchecked', action: VERSIONS_UNCHECKED }
+  if (v.start_behind === true)
+    return { cause: 'branch_behind', action: 'Update the default branch from ' + v.base + ' first, then run again.' }
+  const released = unitsOf(v.start_differs)
+  if (released.length) return { cause: 'unpushed_release', action: 'Push the release step first, then run again: ' +
+    'the default branch already raises the version of ' + unitList(released) + ' over ' + v.base + '.' }
+  return { cause: 'raised', action: 'Restore the version of ' + unitList(units) + ' as ' + v.base +
+    ' has it; units are raised only at the release step.' }
+}
+const versionsLedger = v => ({ base: v ? v.base : null, differs: v && Array.isArray(v.differs) ? v.differs : [],
+  ...versionsVerdict(v) })
+// PIPE_VERSIONS_END
 
 const rebasePrompt = (sc, impl, serial, MAIN) => {
   const ser = serial ? '; skip tests' : ''
@@ -733,36 +881,77 @@ string or an array -> that is NOT an answer either: discard it and do BRANCH B.
 === BRANCH B (fallback: execute the same TABLE yourself) ===`
 // ACCOUNT_PIPE_END
 
+// The tails epic of the release, found or made by the rule of the epic accountant.
+const releaseTailsStep = (of, task) => `the tails epic of the release: get_task(${of}) -> its milestone M;
+   list_milestones(include_closed=true) -> M and the next OPEN milestone by sequence after
+   M (N). When M is a release milestone (is_release=true): search/list_tasks for the title
+   'Tails of release <title of M>' written literally, never translated (kind=epic, open,
+   to the end) — ${TAILS_OLDEST}, whatever milestone it has (none ->
+   tails_epic_needs_milestone=true). Not found -> add_task(kind="epic", priority=1,
+   title=<that title>, milestone_id=<N>, description='Work of the release beyond what its
+   epics took in, taken into work first after the push') only when N is a release milestone
+   too (is_release=true). ${TAILS_DEDUP}. With a tails epic: tails_epic_id=<its id>, and ONE child of it — a
+   child with the exact title from minors_umbrella.title exists -> skip; else
+   add_task(parent_task_id=<the tails epic>, title=<minors_umbrella.title>, priority=4,
+   description=<minors_umbrella.description, verbatim>). With no tails epic found or made — M
+   is missing or not a release, N is missing or a standing list (is_release=false: the waiting milestone, the
+   backlog without a date) — ${tailsWaitingStep(of, task)}`
+
+// The umbrella waiting in ConPort for the person's answer on the milestone of the tails.
+const tailsWaitingStep = (of, task) => `create no tails epic and file no umbrella: set
+   tails_epic_id=null and tails_epic_needs_milestone=true in the report, the person is asked
+   which milestone the tails go to. The umbrella then waits in ConPort: an entry starting
+   '[task-run:${task}] tails waiting for a milestone: ' that holds minors_umbrella.title
+   exists (search, fallback list_progress to the very end) -> reuse it; else
+   log_progress(description='[task-run:${task}] tails waiting for a milestone: the owner is asked which milestone the tails epic of the release goes to; under it, 'Tails of release <title of the release milestone>' at priority 1, each entry below becomes a task.'
+   followed by a blank line and the line '- <minors_umbrella.title> (priority 4):
+   <minors_umbrella.description>', linked_item_type='task', linked_item_id=${of}) — and set
+   tails_waiting_progress_id=<its id> in the report.`
+
 const accountantPrompt = table => {
-  const minorsStep = table.minors_umbrella && Number.isInteger(table.minors_umbrella.parent)
-    ? `3) MINORS (one umbrella, never scattered tasks): it is a finding of the task's own
-   epic, minors_umbrella.parent: list_tasks(parent_task_id=${table.minors_umbrella.parent},
-   status="ALL", include_snoozed=true); a child with the exact title from
-   minors_umbrella.title exists -> skip; else add_task(parent_task_id=${table.minors_umbrella.parent},
+  const u = table.minors_umbrella
+  const minorsStep = u && Number.isInteger(u.parent)
+    ? `1) MINORS (one umbrella, never scattered tasks): it is ordinary work of the task's own
+   epic, minors_umbrella.parent: list_tasks(parent_task_id=${u.parent}, status="ALL",
+   include_snoozed=true, to the end); a child with the exact title from minors_umbrella.title
+   exists -> it is filed, nothing else. Else count the epic's ceiling of work added after its plan.
+   Its plan: the file under docs/superpowers/plans/ carrying '<!-- conport-epic: ${u.parent} -->',
+   else minors_umbrella.plan_path, else none. A finding child is marked by its words
+   (case and leading spaces ignored): ordinary work has a title, or a first line of its
+   description or acceptance, starting with 'Review minors left on ' or 'Note answer: '; a
+   defect, when not ordinary, has a title starting with 'Acceptance unmet: ', or a first
+   line of its description or acceptance starting with 'A confirmed critical gap of this
+   epic, left open because ', 'Held for the person:', 'The gap: ' or 'Acceptance unmet: ',
+   or a later line of either starting with 'The gap: '. With a plan: plan tasks = its '### Task N' sections (outside code fences;
+   format B: '## Task N') less the ordinary children among those bound to a section (an
+   anchor '<!-- conport-task: <id> -->', format B: 'ConPort task-<id>' in the heading);
+   used = the ordinary children plus the children bound to no section and marked as no
+   defect. Without a plan: plan tasks = the children marked neither ordinary nor defect;
+   used = the ordinary children.
+   ceiling = max(3, floor(3 × <plan tasks> / 10)). used < ceiling -> add_task(parent_task_id=${u.parent},
    title=<minors_umbrella.title>, priority=4, description=<minors_umbrella.description,
-   verbatim>). No tails epic is looked up or created.`
-    : table.minors_umbrella
-    ? `3) MINORS (one umbrella, never scattered tasks): ensure the epic titled
-   'Workflow run tails' exists — search/list_tasks by that EXACT title
-   (kind=epic, open); none -> add_task(kind="epic", priority=4,
-   title='Workflow run tails', description='Deferred review minors from
-   workflow runs'). Then ONE child: a child with the exact title from
-   minors_umbrella.title exists -> skip; else add_task(parent_task_id=<that
-   epic>, title=<minors_umbrella.title>, priority=4,
-   description=<minors_umbrella.description, verbatim>).`
-    : `3) MINORS: none to file — no minor was left open; do NOT create any task.`
+   verbatim>). Else, beyond the ceiling, ${releaseTailsStep(u.parent, u.task)}`
+    : u
+    ? `1) MINORS (one umbrella, never scattered tasks): task-${u.task} has no epic, so no release
+   milestone (only an epic carries one): look up no milestone and no tails epic; ${tailsWaitingStep(u.task, u.task)}`
+    : `1) MINORS: none to file — no minor was left open; do NOT create any task.`
   return `${accountPipe(table)}
 You are the ConPort accountant (conport MCP tools via ToolSearch, project=${table.project}).
 Execute the table STRICTLY in order, each item behind an idempotency guard.
 FORBIDDEN: creating anything beyond the table; rewording resolutions; creating
-any ROOT task.
-1) CLOSE — the table's close: if null skip; else get_task(id); already
-   DONE -> skip; else update_task(task_id=<id>, status="DONE", resolution=<verbatim
-   from the table>) — never replace the description.
-2) BLOCK — the table's block: if null skip; else get_task(id); already
+any ROOT task but the tails epic of the release of step 1.
+${minorsStep}
+2) CLOSE — the table's close: if null skip; else get_task(id); already
+   DONE -> skip; else update_task(task_id=<id>, status="DONE", resolution=<the table's
+   resolution>) — never replace the description. The resolution is verbatim but for its
+   part '; <n> review minor(s) left open, for one follow-up task', which names where step 1
+   put the umbrella: '; <n> review minor(s) left open, filed as task-<id> under epic
+   task-<epic>' or '…, filed as task-<id> in the tails epic task-<tails epic>' (filed, or
+   found already filed there), '…, waiting for the owner's answer on their milestone,
+   recorded in progress-<id>', else '…, not filed: <why>'.
+3) BLOCK — the table's block: if null skip; else get_task(id); already
    BLOCKED -> skip; else update_task(task_id=<id>, status="BLOCKED") and APPEND to
    the description a '## Blocked: <reason>' section (keep the original text).
-${minorsStep}
 A close refused with done_needs_approval, done_needs_review or done_needs_resolution,
 or a block refused with review_exit_not_allowed, is the task's state, not a broken
 call: do NOT retry it and do NOT work around it — report the item failed with the
@@ -829,8 +1018,8 @@ const reviewOf = (label, rev, note) => reviewStep(label, sc.project, sc.task.id,
 const carry = async findings => {
   const epic = sc.task.parent_epic_id
   const where = Number.isInteger(epic)
-    ? 'they become one task of epic task-' + epic + ', filed by this run'
-    : 'they become one follow-up task, filed by this run under the tails epic'
+    ? 'they become one task of epic task-' + epic + ', filed by this run — beyond its ceiling of work added after the plan, a task of the tails epic of the release, or, with no release milestone to file that epic in, waiting for the owner\'s answer on its milestone'
+    : 'the task has no epic, so no release milestone: they become one follow-up task, waiting in a progress entry for the owner\'s answer on its milestone'
   const b = carriedBodies(findings, where)
   if (await cycleStep('j-carry-fix', 'fix', { body: b.fix }))
     await cycleStep('j-carry-review', 'review', { verdict: 'approve', body: b.review })
@@ -866,14 +1055,20 @@ else {
   else {
     L.branch = impl.branch; L.head_sha = impl.head_sha
     await cycleStep('j-report', 'report', { result: impl })   // the report takes the task to REVIEW
+    // The concerns reach the reviewer in a brief of their own; one that does not land dispatches no reviewer.
+    if (concernsOf(impl).length && !(await briefed('j-brief-concerns', CONCERNS(concernsOf(impl)))))
+      fail('BRIEF_NOT_WRITTEN', 'j-brief-concerns')
   }
 }
 
 if (!L.outcome) {
-  const rev = await retry('rev', l => typed(revPrompt(sc, impl, MAIN), { label: l, agentType: AGENT.reviewer, schema: S_REV }))
+  // A review that leaves a concern of the implementer without a ruling counts as none.
+  const rev = await retry('rev', async l =>
+    ruled(await typed(revPrompt(sc, impl, MAIN), { label: l, agentType: AGENT.reviewer, schema: revSchemaOf(impl) }), impl))
   if (!rev) fail('REVIEW_DEAD')
   else {
     L.review = rev
+    noteUnverifiable(rev)
     await reviewOf('j-review', rev, resumed ? REVIEW_NOTES.resumed : null)   // changes requested return the task
     if (rev.findings.length) {                       // minors are fixed on the spot too
       const fixBrief = await briefed('j-brief-fix', TO_FIX(rev))
@@ -888,7 +1083,7 @@ if (!L.outcome) {
         await cycleStep('j-fix', 'fix', { result: fx })
         const reBrief = await briefed('j-brief-rereview', TO_RECHECK(rev, fx))
         const r2 = reBrief ? await typed(revPrompt(sc, impl, MAIN, { rereview: true }), { label: 'rev2', agentType: AGENT.reviewer, schema: S_REV }) : null
-        if (r2) await reviewOf('j-review2', r2, REVIEW_NOTES.rereview)
+        if (r2) { noteUnverifiable(r2); await reviewOf('j-review2', r2, REVIEW_NOTES.rereview) }
         if (!reBrief) fail('BRIEF_NOT_WRITTEN', 'j-brief-rereview')
         else if (!r2 || hard(r2)) fail('RED_AFTER_FIX')
         else {
@@ -901,6 +1096,18 @@ if (!L.outcome) {
 }
 
 phase('Merge')
+// Before READY: the reviewed head must carry every unit version the base branch has.
+// A head that differs is not merged — the task fails with the one action that fixes it.
+// The head a rebase made is checked again before its merge. True when the head may merge.
+const VERSION_FAILS = { unchecked: 'VERSIONS_UNCHECKED', unpushed_release: 'RELEASE_NOT_PUSHED',
+  branch_behind: 'BRANCH_BEHIND_ORIGIN', raised: 'VERSION_RAISED' }
+const versionsPass = async (label, head) => {
+  L.versions = versionsLedger(await retry(label, l => piped(versionsPrompt(MAIN, pre.main_sha, head), { label: l, effort: 'low', schema: S_VER })))
+  if (L.versions.cause === 'no_manifest' && !L.notes.includes(NO_UNIT_MANIFEST)) L.notes.push(NO_UNIT_MANIFEST)
+  if (L.versions.action) fail(VERSION_FAILS[L.versions.cause], L.versions.action)
+  return !L.versions.action
+}
+if (!L.outcome) await versionsPass('versions', L.head_sha)
 if (!L.outcome) {
   const q = [{ id: sc.task.id, branch: L.branch, head_sha: L.head_sha, title: sc.task.title }]
   let mg = await piped(mergePrompt(q, gate), { label: 'merge', effort: 'low', schema: S_MG })
@@ -921,16 +1128,19 @@ if (!L.outcome) {
     const rbDone = !!rb && rb.status === 'DONE'
     const rrBrief = rbDone && await briefed('j-brief-rb', REBASED(rb.conflict_files))
     const rr = rrBrief ? await typed(revPrompt(sc, impl, MAIN, { postRebase: true }), { label: 'rev-rb', agentType: AGENT.reviewer, schema: S_REV }) : null
-    if (rr) await reviewOf('j-review-rb', rr, REVIEW_NOTES.rebase(MAIN))
+    if (rr) { noteUnverifiable(rr); await reviewOf('j-review-rb', rr, REVIEW_NOTES.rebase(MAIN)) }
     if (rbDone && !rrBrief) { fail('BRIEF_NOT_WRITTEN', 'j-brief-rb'); res = null }
     else if (!rb || !rr || hard(rr)) { fail('MERGE_CONFLICT'); res = null }
     else {
       L.head_sha = rb.head_sha
       if (rr.findings.length) { collectMinors(rr); await carry(rr.findings) }
-      const m1 = await piped(mergePrompt([{ ...q[0], head_sha: rb.head_sha }], gate),
-                             { label: 'merge-rb', effort: 'low', schema: S_MG })
-      res = m1 && m1.results[0]
-      if (res && res.status === 'CONFLICT') { fail('MERGE_CONFLICT'); res = null }
+      if (!(await versionsPass('versions-rb', rb.head_sha))) res = null
+      else {
+        const m1 = await piped(mergePrompt([{ ...q[0], head_sha: rb.head_sha }], gate),
+                               { label: 'merge-rb', effort: 'low', schema: S_MG })
+        res = m1 && m1.results[0]
+        if (res && res.status === 'CONFLICT') { fail('MERGE_CONFLICT'); res = null }
+      }
     }
   }
   if (!L.outcome) {
@@ -949,10 +1159,8 @@ if (!L.outcome) {
 
 phase('Accounting')                       // always, once the implementer has started
 if (L.branch || L.outcome === 'FAILED') {
-  const minorsNote = L.minors.length
-    ? '; ' + L.minors.length + ' review minor(s) left open, filed as one ' +
-      (Number.isInteger(sc.task.parent_epic_id) ? 'task of epic task-' + sc.task.parent_epic_id : 'follow-up task')
-    : ''
+  // the accountant names where the umbrella went: filed only when it was filed
+  const minorsNote = L.minors.length ? '; ' + L.minors.length + ' review minor(s) left open, for one follow-up task' : ''
   const table = {
     project: sc.project,
     close: L.outcome === 'MERGED'
@@ -962,10 +1170,12 @@ if (L.branch || L.outcome === 'FAILED') {
     block: L.outcome === 'FAILED'
       ? { id: sc.task.id, reason: L.fail_reason + (L.fail_detail ? ': ' + JSON.stringify(L.fail_detail) : '') }
       : null,
+    // The title an epic run counts as ordinary work; the plan of the task helps the
+    // accounting find the epic's plan tasks; the task marks and links the waiting entry.
     minors_umbrella: L.minors.length
-      ? { title: 'Review minors: task-' + sc.task.id + ' run',
+      ? { title: 'Review minors left on task-' + sc.task.id, task: sc.task.id, plan_path: sc.brief.plan_path ?? null,
           description: ('Review minors left open by the /conport:task run of task-' + sc.task.id + ':\n' +
-            L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '')).join('\n')).slice(0, 1900),
+            minorLines(L.minors).join('\n')).slice(0, 1900),
           ...(Number.isInteger(sc.task.parent_epic_id) ? { parent: sc.task.parent_epic_id } : {}) }
       : null,
   }

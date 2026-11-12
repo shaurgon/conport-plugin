@@ -82,7 +82,7 @@ submitted: the documents bring it.
 migrations, routes against the API description or the route files, tools
 against their registry. A difference goes into the inventory.
 
-**After every `code` portion** run `npx -y conport@^0.7 arch check` in the
+**After every `code` portion** run `npx -y conport@^0.7.3 arch check` in the
 repository root. A skeleton submitted earlier grows by submitting the same
 source again: read it with `arch_source`, add to it, submit it. No tool of its
 own builds the skeleton: it is this step.
@@ -276,10 +276,13 @@ each item and call again:
 - `debts` — the model still owes work: clear the debts of `arch_status`;
 - `unchecked_portion` — the latest background check of a document portion is
   neither `done` nor skipped for its size. A `pending` check: wait for it to
-  close. A portion whose `state` is `none`, `failed` or `skipped` for another
+  close; one with `retry_at` failed an attempt and the nightly run checks it
+  again at that time — it is not hung, do not resubmit it. A check `failed`
+  with `answer_truncated`: take the blocker's `action` — it splits the
+  document, so that each check answers about a part. A portion whose `state` is `none`, `failed` or `skipped` for another
   reason: submit the portion again — the submission starts a new check;
 - `code_source_unchecked` — a `code` source was submitted after the latest
-  anchor check: run `npx -y conport@^0.7 arch check`.
+  anchor check: run `npx -y conport@^0.7.3 arch check`.
 
 A portion whose check was skipped for its size (`document_too_long`) does not
 block the completion, nor does a document longer than 60 000 characters whose
@@ -307,4 +310,4 @@ and step 5 attaches them again on the next pass.
 
 In a project whose model has `code` sources: after an epic that changed the
 code is merged, submit the skeleton of the units it touched again and run
-`npx -y conport@^0.7 arch check`.
+`npx -y conport@^0.7.3 arch check`.
