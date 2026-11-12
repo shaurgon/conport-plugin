@@ -4,7 +4,7 @@ export const meta = {
   phases: [
     { title: 'Preflight' }, { title: 'Scout' }, { title: 'Baseline' }, { title: 'Parity' },
     { title: 'Waves' }, { title: 'Execute' }, { title: 'Hunt' }, { title: 'Fix criticals' },
-    { title: 'Acceptance' }, { title: 'Accounting' }, { title: 'Cleanup' },
+    { title: 'Findings' }, { title: 'Anchors' }, { title: 'Acceptance' }, { title: 'Accounting' }, { title: 'Cleanup' },
   ],
 }
 // Mirror rule: the mechanical skeletons live in wf-helper.mjs and in the pipe
@@ -26,10 +26,16 @@ if (A.epic === undefined || A.epic === null) throw new Error('conport epic workf
 const EPIC = A.epic
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
-const FILE_MINORS = !!A.fileMinors // default: leftover minors live in the ledger only — they never become tasks
+// No finding is left as a line: a finding the findings round could not give a child of
+// the epic is filed by the accounting as a child of the epic, and it holds the epic
+// open. `fileMinors` is no longer needed.
 const CAP_WAVE = 5
 const CAP_CRIT = 5
-const SKELETON_VERSION = 18     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
+// The first words of the description of a child held for the person: the run writes
+// them, and by them a later run without a plan section for the child knows it waits.
+const HELD_MARK = 'Held for the person:'
+const FINDING_INDEX = 20000      // plan_index of the first finding task: above every section number of a plan
+const SKELETON_VERSION = 19     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 
 // AGENT_TYPES_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
@@ -50,9 +56,39 @@ const AGENT = {
 // untyped straight away, and the ledger names the type once.
 const NO_AGENT_TYPE = /agent type '[^']*' not found/
 const missingTypes = new Set()
+// A problem of the conport service itself that an agent of the run meets — a tool
+// that behaves unlike its description, a refusal that names no action or whose action
+// did not help, a kind or a type the work needs and the service lacks — is never
+// filed from the run: no person is at it. The agent answers the report in
+// service_reports; ask() offers that field to every judgement agent, collects the
+// reports into the ledger as a list of their own, and the run hands them back to
+// the session with the action serviceReportsAction names. The pipes stay mechanical
+// and are never asked: they only pipe the helper's output.
+const S_SERVICE_REPORTS = { type: 'array', items: { type: 'object', required: ['title', 'body'], properties: {
+  title: { type: 'string' }, body: { type: 'string' } } } }
+const SERVICE_REPORT_RULE = `
+A problem of the conport service itself (a tool that behaves unlike its description, a
+refusal that names no action or whose action did not help, a kind or a type the work
+needs and the service lacks) -> file no GitHub issue and post no comment: no person is at
+this run. Return each such report in service_reports as {title, body}, laid out as the
+conport skill's REPORTING TO THE SERVICE DEVELOPERS section lays it out, with no project
+content in it.`
+const ask = async (prompt, opts) => {
+  const r = await agent(prompt + SERVICE_REPORT_RULE, { ...opts, schema: { ...opts.schema,
+    properties: { ...opts.schema.properties, service_reports: S_SERVICE_REPORTS } } })
+  for (const s of (r && Array.isArray(r.service_reports) ? r.service_reports : []))
+    if (s && typeof s.title === 'string' && typeof s.body === 'string' &&
+        !L.service_reports.some(x => x.title === s.title && x.body === s.body))
+      L.service_reports.push({ title: s.title, body: s.body, from: opts.label })
+  return r
+}
+// What the ledger tells the session about the reports it carries: nothing for none.
+const serviceReportsAction = reports => (reports.length
+  ? 'service_reports holds reports for the conport service developers that agents of this run met and did not file, with no person at the run: take each through the steps of REPORTING TO THE SERVICE DEVELOPERS in the conport skill that a session with a person takes after writing a report: ask the user — show its title and body — and only after the user agrees file it or comment, with gh, or without gh by the links.'
+  : null)
 const typed = async (prompt, opts) => {
   if (!missingTypes.has(opts.agentType)) {
-    try { return await agent(prompt, opts) } catch (e) {
+    try { return await ask(prompt, opts) } catch (e) {
       if (!NO_AGENT_TYPE.test(String(e && e.message))) throw e
       if (!missingTypes.has(opts.agentType)) {
         missingTypes.add(opts.agentType)
@@ -61,13 +97,16 @@ const typed = async (prompt, opts) => {
     }
   }
   const { agentType, ...untyped } = opts
-  return agent(prompt, { ...untyped, label: untyped.label + '-untyped' })
+  return ask(prompt, { ...untyped, label: untyped.label + '-untyped' })
 }
 // AGENT_TYPES_END
 // The one action of each refusal at the start of a run (mirrored from task.js).
 const NO_API_KEY = 'set CONPORT_API_KEY (or the api key option of the conport plugin) and run again: the agents work from the task journal in ConPort'
 const STALE_HELPER = 'update the conport plugin: its workflow helper does not say whether an api key is set'
 const hard = rev => rev.findings.some(f => f.severity === 'CRITICAL' || f.severity === 'IMPORTANT')
+// What holds a task's merge: a serious finding, and for a task filed from a finding
+// any finding at all — its minors are fixed before it merges, never filed again.
+const blocks = (t, rev) => hard(rev) || (!!t.finding && rev.findings.length > 0)
 
 // ---------------------------------------------------------------- schemas
 
@@ -102,7 +141,7 @@ const S_SCOUT = { type: 'object', required: ['project', 'plan_path', 'epic', 'ta
       produces: { type: 'array', items: { type: 'string' } },
       deps: { type: 'array', items: { type: 'integer' } },
       acceptance: { type: 'string' }, spec_card: { type: 'string' },
-      conport_status: { type: 'string' },
+      conport_status: { type: 'string' }, description: { type: 'string' },
       coverage: { type: 'string', enum: ['both', 'plan_only', 'conport_only', 'uncovered', 'already_done'] } } } },
   divergences: { type: 'array', items: { type: 'object', properties: {
     kind: { type: 'string' }, detail: { type: 'string' } } } },
@@ -159,6 +198,7 @@ const S_HUNT = { type: 'object', required: ['gaps'], properties: {
     gid: { type: 'integer' }, category: { type: 'integer' }, claim: { type: 'string' },
     evidence: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'should_fix', 'note'] },
     umbrella: { type: 'boolean' }, instances: { type: 'array', items: { type: 'string' } },
+    question: { type: 'string' },
     min_action: { type: 'object', required: ['title'], properties: {
       title: { type: 'string' }, note: { type: 'string' } } },
     check_hint: { type: 'string' } } } },
@@ -183,10 +223,16 @@ const S_ACC = { type: 'object', required: ['actions', 'epic_closed'], properties
     step: { type: 'string' }, target: { type: 'integer' },
     result: { type: 'string', enum: ['done', 'skipped_already', 'failed'] }, detail: { type: 'string' } } } },
   tails_epic_id: { type: ['integer', 'null'] }, tails_children: { type: 'array', items: { type: 'integer' } },
+  epic_children: { type: 'array', items: { type: 'integer' } },
   epic_progress: { type: ['object', 'null'], properties: { open: { type: 'integer' }, closed: { type: 'integer' } } },
   epic_closed: { type: 'boolean' }, epic_close_error: { type: ['string', 'null'] },
   failed_calls: { type: 'array', items: { type: 'object', properties: {
     call: { type: 'string' }, error: { type: 'string' } } } } } }
+
+// The anchor check of the project model after the merges: the CLI's own line
+// (its counts, or its refusal) travels into the report as it was printed.
+const S_ANCHORS = { type: 'object', required: ['status', 'line'], properties: {
+  status: { type: 'string', enum: ['CHECKED', 'NO_ANCHORS', 'FAILED'] }, line: { type: 'string' } } }
 
 const S_JAN = { type: 'object', properties: {
   deleted: { type: 'array', items: { type: 'string' } }, kept: { type: 'array', items: { type: 'string' } },
@@ -306,10 +352,19 @@ below, byte for byte:${fenced('step.json', JSON.stringify(step))}Below, <tmp> is
 // The branches an earlier run may have left for a task, its latest attempt first.
 const branchPrompt = branch => pipe('branch --names ' + shq(JSON.stringify([branch + '-ctx', branch + '-r2', branch])))
 
-// The verdict the journal gets is the run's own decision: a CRITICAL or IMPORTANT
-// finding sends the work back; minors alone never block, so they are an approval
-// the fixer still polishes.
-const journalVerdict = rev => (hard(rev) ? 'changes_requested' : 'approve')
+// The verdict the journal gets is the run's own decision: any open finding sends
+// the work back, a minor too — the fix round closes it. A minor that round leaves
+// open does not hold a plan task's merge: the run carries it on and says so in the
+// journal, with a fix entry and an approving review of its own (carriedBodies), so
+// the task closes from REVIEW with nothing it found left unsaid.
+const journalVerdict = rev => (rev.findings.length ? 'changes_requested' : 'approve')
+const carriedBodies = (findings, where) => {
+  const list = findings.map(f => '- [' + f.severity + '] ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what).join('\n')
+  return {
+    fix: 'Fix report: the review findings below are left open after the fix round and carried on — ' + where + '\nOpen findings:\n' + list,
+    review: 'Verdict: approve — the run accepts the task with its open review findings carried on: ' + where + '\nOpen findings:\n' + list,
+  }
+}
 const REVIEW_NOTES = {
   resumed: 'Review of the branch an earlier run left',
   rereview: 'Re-review after the fix',
@@ -480,6 +535,9 @@ project for every MCP call below (conport tools via ToolSearch).
    without a section) | uncovered (child with neither section nor acceptance
    criterion). Children DONE/CANCELLED -> already_done.
    Every task with a child carries conport_status = that child's status, verbatim.
+   A child whose description starts with 'Held for the person:' waits for the person:
+   coverage conport_only (never uncovered) unless a plan section binds it; its
+   acceptance and its description are that description VERBATIM, never compressed.
 base.plan_path is null -> locate the plan yourself before filling those values:
 grep the anchor '<!-- conport-task: <id> -->' of the id above (an epic id: its
 '<!-- conport-epic: <id> -->' anchor) across docs/superpowers/plans/*.md, else a
@@ -524,6 +582,9 @@ Return strict JSON per schema; minimal texts, pointers instead of copies.
    without a section) | uncovered (child with neither section nor acceptance
    criterion). Children DONE/CANCELLED -> already_done.
    Every task with a child carries conport_status = that child's status, verbatim.
+   A child whose description starts with 'Held for the person:' waits for the person:
+   coverage conport_only (never uncovered) unless a plan section binds it; its
+   acceptance and its description are that description VERBATIM, never compressed.
 7) via: set via="mcp" — this branch is the MCP fallback; the ledger records which
    branch ran the scout.
 Return strict JSON per schema; minimal texts, pointers instead of copies.`
@@ -609,15 +670,21 @@ const briefBody = (t, sc, gate, extra) => {
   const noPlan = sc.plan_path === null
   const slice = t.lines ? `, lines ${t.lines.from}-${t.lines.to}` : ''
   const files = filesOf(t) ?? []
-  const source = !noPlan
-    ? [`Details and ready-made code: the plan ${sc.plan_path}${slice} (ONLY those lines; the path inside a worktree is the same).`]
-    : ['There is no plan file. The brief is the task\'s ConPort brief plus the spec digest — nothing else is authoritative:',
-       quoted('task brief', t.acceptance)]
+  // A finding task has no plan section: the finding it was filed from is its requirement.
+  const source = t.finding
+    ? ['This task is a finding of this epic run and has no plan section. The finding, verbatim, is the whole requirement:',
+       quoted('finding', t.acceptance)]
+    : !noPlan
+      ? [`Details and ready-made code: the plan ${sc.plan_path}${slice} (ONLY those lines; the path inside a worktree is the same).`]
+      : ['There is no plan file. The brief is the task\'s ConPort brief plus the spec digest — nothing else is authoritative:',
+         quoted('task brief', t.acceptance)]
+  const acceptance = t.finding ? 'the finding quoted below is closed'
+    : noPlan ? 'the task brief quoted below' : ((t.acceptance ?? '').trim() || 'as the plan slice states it')
   return [
     `# Brief: task-${t.conport_id} "${t.title}" of epic task-${sc.epic.id}`,
     '',
     `Files in scope: ${files.length ? files.join(', ') : 'not listed — derive them from the brief'}.`,
-    `Acceptance: ${noPlan ? 'the task brief quoted below' : ((t.acceptance ?? '').trim() || 'as the plan slice states it')}`,
+    `Acceptance: ${acceptance}`,
     ...source,
     'Spec card — the spec layer of a review; empty means there is no spec card and the acceptance criterion is the spec layer:',
     quoted('spec card', t.spec_card ?? ''),
@@ -713,9 +780,13 @@ Calibration is strict, inflation is forbidden. CRITICAL requires all three at on
 (a) the exact spec/acceptance line violated; (b) a concrete failure scenario
 'input -> wrong outcome'; (c) the defect ships to ${MAIN} with this merge. Any missing
 -> downgrade. IMPORTANT = the task cannot be trusted until fixed. MINOR = polish;
-MINOR does not block the merge and is GUARANTEED to land in the tails epic — do not
-inflate 'so it will not get lost': the ledger never loses a minor. Something absent
-from both spec and acceptance is not a finding.
+${t.finding
+    ? `This task was filed from a finding: report every severity — every finding, MINOR
+included, is fixed in this task's own fix round before it merges; nothing you find is
+filed as a new task or dropped.`
+    : `MINOR does not block the merge: it is fixed in the fix round, and one still open after
+it becomes a task of this epic — do not inflate 'so it will not get lost': no minor is
+lost.`} Something absent from both spec and acceptance is not a finding.
 Each finding: file:line + specRef + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, specDocOf(sc), specBlocksOf(impl))}${re}${rb}`
 }
 
@@ -766,7 +837,8 @@ Collapse a class of same-shaped instances into ONE umbrella finding with a list.
 Each gap: proof (goal phrase + the place where it is absent) + severity
 (blocker|should_fix|note) + minimal action (title + 1-2 sentences) + check_hint
 (HOW to verify by observation: grep / command / file). At most 12, ranked.
-Unsure about scope — a note with a question for the owner, do not invent.
+Unsure about scope — a note with a question for the owner, do not invent; a note carries
+in question the one question for the owner: it is asked, never built on a guess.
 A covered category = "covered: <pointer>" in one line.`
 
 const gapVerifyPrompt = (gaps, sc, MAIN) => `Adversarial verification of the hunter's findings, one by one, strictly in order.
@@ -814,6 +886,31 @@ Calibration is strict. CRITICAL requires: the gap is NOT closed, with a concrete
 scenario. IMPORTANT = the fix cannot be trusted. MINOR = polish, does not block.
 Each finding: file:line + scenario + minimal fix (<=3 lines).${specReviewRule(sc.project, specDocOf(sc), specBlocksOf(impl))}`
 
+// The merges changed the code on the default branch, so the anchors of the
+// project model are checked against it here, by the run itself: the server
+// never gets the code, only the outcome the CLI sends. A project without
+// portions with anchors has nothing to check, and the CLI is not run for it.
+const ANCHOR_CHECK = project => `npx -y conport@^0.7 arch check -p ${project}`
+const anchorsPrompt = (project, MAIN) => `Mechanical step: the anchor check of the project model after the merges of this run.
+Decide nothing about the code, fix nothing, edit no file.
+ConPort MCP tools via ToolSearch, project=${project}.
+arch_sources is not among your tools -> return {"status": "FAILED", "line": "the connection has no tool group arch"}.
+1) Call arch_sources. No source at all -> return {"status": "NO_ANCHORS", "line": "the project has no portion"}.
+2) The project has a portion with anchors when a source of kind code exists, or when
+   arch_source of a document source returns an entity with a non-empty anchors list
+   (read the document sources one by one and stop at the first such entity). None ->
+   return {"status": "NO_ANCHORS", "line": "no portion carries anchors"}.
+3) In the repository root (git rev-parse --show-toplevel), on ${MAIN} — any other current
+   branch -> return {"status": "FAILED", "line": "the repository root is on <branch>, not ${MAIN}"} —
+   run exactly ONE command: ${ANCHOR_CHECK(project)}
+   Exit code 0 -> return {"status": "CHECKED", "line": "<its stdout line, verbatim>"}.
+   Any other exit code -> return {"status": "FAILED", "line": "<its stderr line, verbatim>"}.
+A Bash call of yours is refused — denied by the permission system or a classifier, so the
+command never ran -> return {"status": "FAILED", "line": "refused: <the refusal text, one line>"};
+do not rephrase the command, do not reach the same effect another way.`
+// What the report says when the check did not run: the one command that runs it by hand.
+const anchorsByHand = (project, MAIN) => `run ${ANCHOR_CHECK(project)} in the repository root on ${MAIN}`
+
 const goalPrompt = (sc, ledgerBrief, gate, MAIN) => `You are the acceptor of epic task-${sc.epic.id}. One question: is the GOAL achieved — not
 whether the tasks are closed.
 GOAL verbatim:${fenced('epic goal', sc.epic.goal)}Definition of done (from the spec digest / the plan's finish contract):${digestBlock(sc, 'none — judge against the goal and the acceptances')}LEDGER (task outcomes, FAILED/SKIPPED with reasons, unresolved criticals, escalations):${fenced('ledger', ledgerBrief)}Do not trust the ledger — verify each DoD criterion by OBSERVATION: a named command
@@ -857,7 +954,8 @@ string or an array -> that is NOT an answer either: discard it and do BRANCH B.
 const accountantPrompt = table => `${accountPipe(table)}
 You are the ConPort accountant (conport MCP tools via ToolSearch, project=${table.project}).
 Execute the table STRICTLY in order, each item behind an idempotency guard.
-FORBIDDEN: add_task with parent_task_id=${table.epic}; creating anything beyond the table;
+FORBIDDEN: add_task with parent_task_id=${table.epic} beyond the minors entries that name it as
+parent; creating anything beyond the table;
 rewording resolutions.
 1) DONE_LIST — the table's done: for each {id, resolution}: get_task(id); already
    DONE -> skip; else update_task(status="DONE", resolution=<verbatim>) — never
@@ -873,15 +971,18 @@ rewording resolutions.
    exact string '[epic-run:${table.epic}]' via conport search (fallback: list_progress
    paginated to the very end); if no entry with this prefix and this title ->
    log_progress '[epic-run:${table.epic}] plan task without a child: <title> — <outcome>'.
-5) TAILS_LIST — the table's minors: when non-empty -> search/list_tasks for
+5) TAILS_LIST — the table's minors. First each entry with a parent: a finding of
+   this epic the run could not give a child — list_tasks(parent_task_id=<parent>,
+   status="ALL", include_snoozed=true); an OPEN child (not DONE, not CANCELLED) with
+   the same title exists -> skip — a closed one is another task, never this finding's;
+   else add_task(parent_task_id=<parent>, title, description, priority). Then the
+   entries without a parent: when there are any -> search/list_tasks for
    the EXACT title 'Tails of epic task-${table.epic}' (kind=epic, open); none ->
    add_task(kind="epic", priority=3, title='Tails of epic task-${table.epic}',
-   description='Findings deferred from the epic run'). Then each entry: a child of
+   description='Findings deferred from the epic run'). Then each entry without a parent: a child of
    the tails epic with the same title exists -> skip; else add_task(
    parent_task_id=<tails epic>, title, description, priority). Priority-1 entries
-   are unresolved criticals and escalations; a priority-4 entry is the single
-   minors umbrella. Create NOTHING beyond this list — deferred minors outside it
-   live in the run ledger, never as tasks.
+   are unresolved criticals and escalations. Create NOTHING beyond this list.
 6) Run summary: log_progress '[epic-run:${table.epic}] result: ${table.close_resolution}'
    (same dedup guard: search, fallback full pagination) — numbers, not a chronicle.
 7) Closing: only if the table's may_close is true. list_tasks(
@@ -901,14 +1002,18 @@ branch B is the MCP path.`
 
 // ---------------------------------------------------------------- helpers
 
+// One review finding as one line: where, what, and the fix the reviewer named.
+const minorLine = f => f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '')
+
 function mkLedger(epicId) {
   const L = {
     epic: epicId, skeleton_version: SKELETON_VERSION, mode: 'PLAN',
     outcome: null, aborted: false, abort_reason: null, abort_detail: null,
     already_done: [], conport_only: [], uncovered: [], parity_failed: [],
-    minors: [], gaps: null, gap_hunt: null, gap_minors: [], criticals: [],
-    unresolved_criticals: [], escalations: [], rejected_gaps: [],
+    minors: [], gaps: null, gap_hunt: null, gap_minors: [], criticals: [], findings: [], unfiled_findings: [], waiting_for_person: [],
+    unresolved_criticals: [], escalations: [], rejected_gaps: [], anchor_check: null,
     accounting: null, pending_table: null, tasks: {}, notes: [], journal: [],
+    service_reports: [], service_reports_action: null,
     of: t => (L.tasks[t.key] = L.tasks[t.key] || { id: t.conport_id ?? null, title: t.title }),
     fail: (t, reason, detail) => { const r = L.of(t); r.state = 'FAILED'; r.reason = reason; r.detail = detail },
     built: (t, impl) => { const r = L.of(t); r.state = 'BUILT'; r.impl = impl },
@@ -960,9 +1065,75 @@ function mkLedger(epicId) {
         .map(g => ({ ...g, proof: verdictOf(g).proof }))
       L.criticals = crit.slice(0, cap)
       L.escalations = crit.slice(cap)
-      L.gap_minors = confirmed.filter(g => verdictOf(g).severity_final !== 'critical')   // CONFIRMED without severity_final is not lost
+      // CONFIRMED without severity_final is not lost; a confirmed one becomes a task in the findings round
+      L.gap_minors = confirmed.filter(g => verdictOf(g).severity_final !== 'critical')
+        .map(g => ({ ...g, proof: verdictOf(g).proof, confirmed: true }))
         .concat(hunt.gaps.filter(g => { const v = verdictOf(g); return !v || v.verdict === 'UNVERIFIABLE' }))
     },
+    // The findings the run left open, each to become a child of the epic: the review
+    // minors still open after a plan task's fix round, one task per task they came
+    // from, and every gap below critical. A confirmed gap runs; a Note is a question
+    // and a gap nobody could verify needs the person's word, so both are filed with
+    // their question and held — never run. Titles are made distinct from each other and
+    // from every task of the plan and every task this run executed or found done (taken),
+    // so the creation agent, which settles by title, never hands a finding such a task.
+    // A child of the epic with no plan section — a finding task of an earlier run — is
+    // not taken: the same finding reported again reuses it by its title, never a twin.
+    findingTasks: (taken = []) => {
+      const byTask = new Map()
+      for (const m of L.minors) byTask.set(m.from, [...(byTask.get(m.from) || []), m])
+      const review = [...byTask].map(([from, items]) => ({
+        source: 'review', items, title: 'Review minors left on task-' + from,
+        brief: 'The review minors of task-' + from + ' left open after its fix round; fix each:\n' +
+          items.map(m => '- ' + minorLine(m)).join('\n'),
+        files: { modify: [...new Set(items.map(m => m.file))], test: [] } }))
+      const gaps = L.gap_minors.map(g => {
+        const held = !g.confirmed ? 'unverified' : g.severity === 'note' ? 'question' : null
+        const question = held === 'question'
+          ? (g.question || 'Does the goal require this, and what closes it?')
+          : held ? 'Is this gap real, and what closes it?' : null
+        const lead = held === 'question' ? [HELD_MARK + ' a Note is a question only the person can answer.']
+          : held ? [HELD_MARK + ' the verifier could not confirm this finding by observation.'] : []
+        return { source: 'gap', items: [g], title: g.min_action.title, held, question,
+          brief: [...lead, g.min_action.title + '.' + (g.min_action.note ? ' ' + g.min_action.note : ''), 'The gap: ' + g.claim,
+            ...(g.proof ? ['Observed by the verifier: ' + g.proof] : []),
+            ...(g.check_hint ? ['Verify by: ' + g.check_hint] : []),
+            ...(question ? ['Question: ' + question] : [])].join('\n'),
+          files: null }
+      })
+      const seen = new Map(taken.map(t => [titleKey(t), 1]))
+      return review.concat(gaps).map((f, i) => {
+        const k = titleKey(f.title); const n = (seen.get(k) || 0) + 1; seen.set(k, n)
+        return { ...f, title: n > 1 ? f.title + ' (' + n + ')' : f.title, plan_index: FINDING_INDEX + i }
+      })
+    },
+    // The children the creation agent settled leave the ledger as findings: a held
+    // one is recorded with its question, the rest become tasks of the run. An id the
+    // run already holds — a plan task carrying the same title, or another finding's
+    // child — is not taken: that finding stays open, named in unfiled_findings, and
+    // holds the epic open.
+    fileFindings: (found, made) => {
+      const ids = new Map(((made && made.created) || []).filter(c => c && c.conport_id != null)
+        .map(c => [c.plan_index, c.conport_id]))
+      const filed = []
+      for (const f of found) {
+        const id = ids.get(f.plan_index)
+        if (id == null || L.tasks[String(id)] || L.findings.some(x => x.id === id)) {
+          L.unfiled_findings.push({ title: f.title, brief: f.brief, question: f.question ?? null }); continue
+        }
+        if (f.held) L.findings.push({ key: String(id), id, source: f.source, title: f.title, held: f.held, question: f.question })
+        else {
+          filed.push({ key: String(id), conport_id: id, plan_index: f.plan_index, kind: 'work', finding: f.source,
+            title: f.title, acceptance: f.brief, spec_card: '', lines: null, files: f.files,
+            consumes: [], produces: [], deps: [], coverage: 'finding', runnable: true })
+          L.findings.push({ key: String(id), id, source: f.source, title: f.title })
+        }
+        if (f.source === 'review') L.minors = L.minors.filter(m => !f.items.includes(m))
+        else L.gap_minors = L.gap_minors.filter(g => !f.items.includes(g))
+      }
+      return filed
+    },
+    isFinding: key => L.findings.some(f => f.key === key),
     criticalsToFix: () => L.criticals,
     unresolved: (g, stage) => L.unresolved_criticals.push({ gid: g.gid, claim: g.claim, stage }),
     mergedBranches: () => Object.values(L.tasks).filter(r => r.state === 'DONE' && r.impl)
@@ -1006,12 +1177,20 @@ function classifyCoverage(sc, L, noPlan) {
   return sc.tasks.map(t => {
     const key = t.conport_id != null ? String(t.conport_id) : 'p' + t.plan_index
     const done = t.coverage === 'already_done'
-    const runnable = !done && t.kind === 'work' && (noPlan
+    // A child held for the person carries a question, not work: without a plan
+    // section that binds it, it waits for the person and is never run.
+    const section = !noPlan && (t.coverage === 'both' || t.coverage === 'plan_only')
+    // the mark is read from the description too, and a held child the scout called
+    // uncovered still waits: the scout's acceptance alone may have lost it
+    const marked = [t.acceptance, t.description].some(v => String(v || '').trimStart().startsWith(HELD_MARK))
+    const waits = !done && !section && marked
+    const runnable = !done && !waits && t.kind === 'work' && (noPlan
       ? (t.coverage !== 'uncovered' && (t.acceptance || '').trim() !== '')
-      : (t.coverage === 'both' || t.coverage === 'plan_only'))
+      : section)
     if (done) L.already_done.push(key)
+    if (waits) L.waiting_for_person.push({ id: t.conport_id, title: t.title })
     if (!noPlan && t.coverage === 'conport_only') L.conport_only.push({ id: t.conport_id, title: t.title })
-    if (t.coverage === 'uncovered') L.uncovered.push({ id: t.conport_id, title: t.title })
+    if (t.coverage === 'uncovered' && !waits) L.uncovered.push({ id: t.conport_id, title: t.title })
     return { ...t, key, runnable }
   })
 }
@@ -1126,32 +1305,42 @@ function buildCallTable(sc, L, goal) {
     .map(([, r]) => ({ id: r.id, reason: (r.reason || r.state) + (r.detail ? ': ' + JSON.stringify(r.detail) : '') }))
   const skippedList = rows.filter(([, r]) => r.state === 'SKIPPED_DEP' && r.id)
     .map(([, r]) => ({ id: r.id, dep: r.dep }))               // dep = the failed supplier's key from propagateSkips
-  const deferred = L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '') + ' [task ' + f.from + ']')
-    .concat((L.gap_minors || []).map(g => '- ' + (g.not_verified ? '[NOT VERIFIED] ' : '') + g.min_action.title + ' — ' + g.claim))
+  // what the findings round left open: the minors of the finding tasks' own reviews,
+  // the unverified gaps and any finding the creation agent did not settle
+  // A finding the findings round could not give a child is filed here as a child of
+  // this epic, one per finding, with its brief: never a line of the ledger only.
+  const unfiled = L.unfiled_findings.map(f => ({ title: f.title, description: f.brief.slice(0, 1900), priority: 3, parent: sc.epic.id }))
   const minors = L.unresolved_criticals.map(u => ({
     title: 'UNRESOLVED CRITICAL: ' + u.claim, priority: 1,
     description: 'Critical gap not fixed in the run (failed at ' + u.stage + ').' }))
     .concat(L.escalations.map(g => ({
       title: 'ESCALATED CRITICAL: ' + g.min_action.title, priority: 1,
       description: 'Confirmed critical beyond the per-run cap: ' + g.claim })))
-    .concat((FILE_MINORS && deferred.length) ? [{
-      title: 'Review minors of the epic run', priority: 4,
-      description: ('Deferred minors and unverified gap findings of the run:\n' + deferred.join('\n')).slice(0, 1900) }] : [])
-  // by default deferred minors travel ONLY in the returned ledger — they never become tasks
+    .concat(unfiled)
+  // a finding held for the person or left without a child keeps the epic open
+  const held = L.findings.filter(f => f.held).length
+  // children that wait for the person: held by this run, or by an earlier one
+  const waiting = [...new Set(L.findings.filter(f => f.held).map(f => f.id).concat(L.waiting_for_person.map(w => w.id)))]
   const mayClose = !!goal && goal.verdict === 'READY' &&
-    !L.unresolved_criticals.length && !L.escalations.length
-  const planRowsTotal = rows.filter(([k]) => !k.startsWith('gap')).length   // denominator counts plan tasks only, not gap fixes
+    !L.unresolved_criticals.length && !L.escalations.length && !held && !L.unfiled_findings.length && !waiting.length
+  // the plan denominator counts plan tasks only, not gap fixes or finding tasks
+  const planRowsTotal = rows.filter(([k]) => !k.startsWith('gap') && !L.isFinding(k)).length
+  const planDone = doneList.filter(d => !L.isFinding(String(d.id))).length
+  const findingsDone = L.findings.filter(f => L.tasks[f.key] && L.tasks[f.key].state === 'DONE').length
   const table = { project: sc.project, epic: sc.epic.id, done: doneList, failed: failedList,
     skipped: skippedList, parity_failed: L.parity_failed, minors, verdict: goal ? goal.verdict : 'UNKNOWN',
     may_close: mayClose,
-    close_resolution: 'plan tasks ' + doneList.length + '/' + planRowsTotal +
-      ' merged; criticals fixed ' + (L.criticals.length - L.unresolved_criticals.length) + ' of ' +
-      L.criticals.length + '; tails filed ' + minors.length + '; minors deferred in ledger ' + deferred.length +
-      '; gate green; acceptance ' + (goal ? goal.verdict : 'UNKNOWN') }
+    close_resolution: 'plan tasks ' + planDone + '/' + planRowsTotal +
+      ' merged; finding tasks ' + findingsDone + '/' + (L.findings.length - held) + ' merged; findings held for the person ' + held +
+      '; criticals fixed ' + (L.criticals.length - L.unresolved_criticals.length) + ' of ' +
+      L.criticals.length + '; tails filed ' + (minors.length - unfiled.length) + '; findings filed at the accounting ' + unfiled.length +
+      '; gate green; acceptance ' + (goal ? goal.verdict : 'UNKNOWN') +
+      (waiting.length ? '; waiting for the person: ' + waiting.map(id => 'task-' + id).join(', ') : '') }
   return Object.fromEntries(EPIC_TABLE_KEYS.map(k => [k, table[k]]))
 }
 function finishLedger(L, goal, acc) {
   L.goal = goal ?? null
+  L.service_reports_action = serviceReportsAction(L.service_reports)
   return L
 }
 const abort = (L, reason, detail) => { L.abortRun(reason, detail); return finishLedger(L, null, null) }
@@ -1178,7 +1367,7 @@ if (pre.current_branch !== pre.branch)
 const MAIN = pre.branch
 
 phase('Scout')
-const sc = await retry('scout', l => agent(scoutPrompt(EPIC, PROJECT, A.plan), { label: l, schema: S_SCOUT }))
+const sc = await retry('scout', l => ask(scoutPrompt(EPIC, PROJECT, A.plan), { label: l, schema: S_SCOUT }))
 if (!sc) return abort(L, 'ABORTED_NO_SCOUT')
 L.notes.push('scout via:"' + (sc.via ?? 'unknown') + '"')  // the branch that ran the scout: wf-helper (A) or mcp (B)
 if (sc.epic.kind !== 'epic') return abort(L, 'ABORTED_NOT_EPIC', 'this id is not an epic — use /conport:task for a single task')
@@ -1198,7 +1387,7 @@ if (base.gate !== 'GREEN') return abort(L, 'ABORTED_RED_BASELINE', base.red_summ
 phase('Parity')
 let tasks = classifyCoverage(sc, L, noPlan)
 if (!noPlan && tasks.some(t => t.coverage === 'plan_only')) {
-  const kids = await retry('children', l => agent(childrenPrompt(EPIC, sc.project), { label: l, effort: 'low', schema: S_CHILDREN }))
+  const kids = await retry('children', l => ask(childrenPrompt(EPIC, sc.project), { label: l, effort: 'low', schema: S_CHILDREN }))
   const par = kids ? matchPlanToChildren(tasks, kids.children) : null
   // Missing children are created before applyParity, so an id earned here keeps the
   // task out of parity_failed; a dead agent leaves the task unmatched, as before.
@@ -1207,7 +1396,7 @@ if (!noPlan && tasks.some(t => t.coverage === 'plan_only')) {
       const t = tasks.find(x => x.plan_index === f.plan_index)
       return { plan_index: f.plan_index, title: f.title, brief: (t && t.acceptance) ? t.acceptance : '' }
     })
-    const made = await retry('create-children', l => agent(createChildrenPrompt(EPIC, sc.project, missing), { label: l, effort: 'low', schema: S_CREATED }))
+    const made = await retry('create-children', l => ask(createChildrenPrompt(EPIC, sc.project, missing), { label: l, effort: 'low', schema: S_CREATED }))
     if (made) applyCreated(par, made.created)
   }
   if (par && par.unplanned.length) L.notes.push('epic children outside the plan: ' + par.unplanned.join('; '))
@@ -1230,11 +1419,23 @@ const cycleStep = (label, t, kind, fields) => cycle(label, { project: sc.project
 // Every dispatch reads the latest brief of its child: it is written first, and a
 // dispatch whose brief did not land is not made.
 const briefed = (label, t, extra) => cycleStep(label, t, 'brief', { body: briefBody(t, sc, gate, extra) })
+// Minors a plan task's fix round left open go to the findings round; the journal
+// records it with a fix entry and an approving review of the run's own, so the
+// child leaves REVIEW with them on record.
+const CARRIED_TO = 'they become a task of this epic: in its findings round, or at its accounting when that round could not file them'
+const carry = async (t, findings) => {
+  const b = carriedBodies(findings, CARRIED_TO)
+  if (await cycleStep(`j-carry-fix-${t.key}`, t, 'fix', { body: b.fix }))
+    await cycleStep(`j-carry-review-${t.key}`, t, 'review', { verdict: 'approve', body: b.review })
+}
 const NO_CHILD = 'the plan task has no ConPort child, so it has no journal to be briefed through: create the child (plan import) and run again'
-for (let w = 0; w < waves.length; w++) {
+// One wave of tasks, the whole road of each: brief, implementer, review, fix,
+// merge. `tag` names the wave in the merge labels. An abort of the run returns
+// at once with L.aborted set; the caller ends the run.
+const runWave = async (wave, tag) => {
   // A plan task without a child has no journal: it is not dispatched.
   const live = []
-  for (const t of waves[w].filter(t => !L.skippedDep(t))) {
+  for (const t of wave.filter(t => !L.skippedDep(t))) {
     if (t.conport_id == null) L.fail(t, 'NO_CONPORT_TASK', NO_CHILD)
     else live.push(t)
   }
@@ -1288,20 +1489,21 @@ for (let w = 0; w < waves.length; w++) {
         typed(fixPrompt(t, sc, L.implOf(t), SERIAL), { label: l, agentType: AGENT.fixer, schema: S_FIX })) : null
       adoptWorktree(L.implOf(t), fx)
       if (!fx || fx.status !== 'DONE') {
-        if (hard(rev) && !fixBrief) { L.fail(t, 'BRIEF_NOT_WRITTEN', `j-brief-fix-${t.key}`); continue }
-        if (hard(rev)) { L.fail(t, 'FIX_FAILED'); continue }
-        L.collectMinors(t, rev); L.approve(t, L.implOf(t).head_sha)  // minors alone never block — leftovers to the ledger
+        if (blocks(t, rev) && !fixBrief) { L.fail(t, 'BRIEF_NOT_WRITTEN', `j-brief-fix-${t.key}`); continue }
+        if (blocks(t, rev)) { L.fail(t, 'FIX_FAILED'); continue }
+        L.collectMinors(t, rev); await carry(t, rev.findings)   // minors alone never block — leftovers become a finding task
+        L.approve(t, L.implOf(t).head_sha)
       } else {
-        // A returned child goes back to REVIEW with the fix report; after an
-        // approval with minors the child is still in REVIEW and takes none.
-        if (hard(rev)) await cycleStep(`j-fix-${t.key}`, t, 'fix', { result: fx })
+        // Any finding returned the child to IN_PROGRESS: the fix report takes it back to REVIEW.
+        await cycleStep(`j-fix-${t.key}`, t, 'fix', { result: fx })
         const reBrief = await briefed(`j-brief-rereview-${t.key}`, t, TO_RECHECK(rev, fx))
         const r2 = reBrief ? await typed(revPrompt(t, sc, L.implOf(t), MAIN, { rereview: true }),
                                          { label: `rev2-${t.key}`, agentType: AGENT.reviewer, schema: S_REV }) : null
         if (r2) await reviewStep(`j-review2-${t.key}`, sc.project, t.conport_id, r2, REVIEW_NOTES.rereview)
         if (!reBrief) { L.fail(t, 'BRIEF_NOT_WRITTEN', `j-brief-rereview-${t.key}`); continue }
-        if (!r2 || hard(r2)) { L.fail(t, 'RED_AFTER_FIX'); continue }
-        L.collectMinors(t, r2); L.approve(t, fx.head_sha)
+        if (!r2 || blocks(t, r2)) { L.fail(t, 'RED_AFTER_FIX'); continue }
+        if (r2.findings.length) { L.collectMinors(t, r2); await carry(t, r2.findings) }
+        L.approve(t, fx.head_sha)
       }
     } else L.approve(t, L.implOf(t).head_sha)
   }
@@ -1309,31 +1511,31 @@ for (let w = 0; w < waves.length; w++) {
   const q = b.filter(t => L.isApproved(t))
   if (q.length) {
     const rows = q.map(t => mergeRow(t, L))
-    let mg = await piped(mergePrompt(rows, gate), { label: `merge-w${w}`, effort: 'low', schema: S_MG })
+    let mg = await piped(mergePrompt(rows, gate), { label: `merge-${tag}`, effort: 'low', schema: S_MG })
     if (!mg) {                                               // not a blind retry
-      const st = await piped(mergeStatePrompt(rows, gate), { label: `mstate-w${w}`, effort: 'low', schema: S_MG })
+      const st = await piped(mergeStatePrompt(rows, gate), { label: `mstate-${tag}`, effort: 'low', schema: S_MG })
       if (!st) { L.markUnknownMerge(q) }
       else {
         applyMerge(L, q, st, { stateOnly: true })   // a survey, not a verdict: unmerged rows stay pending for the retry below
         // A red baseline found by the survey aborts here, before the retry:
         // re-merging onto a base the run has already given up on is the one
         // thing this recovery must never do.
-        if (L.aborted) return finishLedger(L, null, null)
+        if (L.aborted) return
         const rest = q.filter(t => L.pendingMerge(t))
         if (rest.length) {
-          mg = await piped(mergePrompt(rest.map(t => mergeRow(t, L)), gate), { label: `merge-w${w}-r2`, effort: 'low', schema: S_MG })
+          mg = await piped(mergePrompt(rest.map(t => mergeRow(t, L)), gate), { label: `merge-${tag}-r2`, effort: 'low', schema: S_MG })
           mg ? applyMerge(L, rest, mg) : L.markUnknownMerge(rest)
         }
       }
     } else applyMerge(L, q, mg)
-    if (L.aborted) return finishLedger(L, null, null)
+    if (L.aborted) return
     // 6) conflict retries: 1 rebase -> re-review of the new diff -> mini-merge
     // The rebaser and its reviewer each read a brief of their own, written first.
     for (const t of q.filter(t => L.isConflict(t))) {
       if (!(await briefed(`j-brief-rebase-${t.key}`, t, TO_REBASE(L.implOf(t).branch, MAIN)))) {
         L.fail(t, 'BRIEF_NOT_WRITTEN', `j-brief-rebase-${t.key}`); continue
       }
-      const rb = await agent(rebasePrompt(t, sc, L.implOf(t), SERIAL, MAIN), { label: `rebase-${t.key}`, schema: S_REB })
+      const rb = await ask(rebasePrompt(t, sc, L.implOf(t), SERIAL, MAIN), { label: `rebase-${t.key}`, schema: S_REB })
       adoptWorktree(L.implOf(t), rb)
       const rbDone = !!rb && rb.status === 'DONE'
       const rrBrief = rbDone && await briefed(`j-brief-rb-${t.key}`, t, REBASED(rb.conflict_files))
@@ -1343,13 +1545,18 @@ for (let w = 0; w < waves.length; w++) {
         : null
       if (rr) await reviewStep(`j-review-rb-${t.key}`, sc.project, t.conport_id, rr, REVIEW_NOTES.rebase(MAIN))
       if (rbDone && !rrBrief) { L.fail(t, 'BRIEF_NOT_WRITTEN', `j-brief-rb-${t.key}`); continue }
-      if (!rb || !rr || hard(rr)) { L.fail(t, 'MERGE_CONFLICT'); continue }
+      if (!rb || !rr || blocks(t, rr)) { L.fail(t, 'MERGE_CONFLICT'); continue }
+      if (rr.findings.length) { L.collectMinors(t, rr); await carry(t, rr.findings) }
       const m1 = await piped(mergePrompt([mergeRow(t, L, rb.head_sha)], gate),
                              { label: `merge-${t.key}-rb`, effort: 'low', schema: S_MG })
       m1 ? applyMerge(L, [t], m1) : L.markUnknownMerge([t])  // a second conflict fails inside applyMerge
-      if (L.aborted) return finishLedger(L, null, null)
+      if (L.aborted) return
     }
   }
+}
+for (let w = 0; w < waves.length; w++) {
+  await runWave(waves[w], 'w' + w)
+  if (L.aborted) return finishLedger(L, null, null)
   L.propagateSkips(waves)   // consumers of a failed task's produces in later waves -> SKIPPED_DEP, never dispatched
 }
 
@@ -1358,7 +1565,7 @@ const fates = exec.map(t => `${t.key} | ${t.title} | ${fateOf(L, t)} | ${t.files
 const hunt = await retry('hunt', l => typed(huntPrompt(sc, fates, pre.main_sha, MAIN), { label: l, agentType: AGENT.gapHunter, schema: S_HUNT }))
 if (!hunt) L.gap_hunt = 'SKIPPED_AGENT_FAILED'
 else if (hunt.gaps.length) {
-  const gv = await retry('gapverify', l => agent(gapVerifyPrompt(hunt.gaps, sc, MAIN), { label: l, schema: S_GV }))
+  const gv = await retry('gapverify', l => ask(gapVerifyPrompt(hunt.gaps, sc, MAIN), { label: l, schema: S_GV }))
   L.classifyGaps(hunt, gv, CAP_CRIT)
 }
 
@@ -1385,18 +1592,46 @@ if (crits.length) {
   }
 }
 
+// One round, before the verdict: every finding left open becomes a child of the
+// epic. A review minor its fix round did not close and a confirmed gap run the
+// whole road of a task; a Note and an unverified gap are filed with their question
+// and held for the person. The review of a finding task reports every severity and
+// all of it is fixed before that task merges — nothing is filed again or dropped.
+// A finding left without a child holds the epic open.
+phase('Findings')
+const found = L.findingTasks(tasks
+  .filter(t => t.coverage !== 'conport_only' || L.tasks[t.key] || L.already_done.includes(t.key)).map(t => t.title))
+if (found.length) {
+  const missing = found.map(f => ({ plan_index: f.plan_index, title: f.title, brief: f.brief }))
+  const made = await retry('create-findings', l => ask(createChildrenPrompt(EPIC, sc.project, missing), { label: l, effort: 'low', schema: S_CREATED }))
+  const filed = L.fileFindings(found, made)
+  const findingWaves = buildWaves(filed, CAP_WAVE)
+  for (let w = 0; w < findingWaves.length; w++) {
+    await runWave(findingWaves[w], 'f' + w)
+    if (L.aborted) return finishLedger(L, null, null)
+  }
+}
+
+phase('Anchors')                                             // after every merge of the run, the gap fixes and the finding tasks included
+const anch = await retry('anchors', l => ask(anchorsPrompt(sc.project, MAIN), { label: l, effort: 'low', schema: S_ANCHORS }))
+// A check that did not run never fails the epic: the report names the command that runs it.
+L.anchor_check = !anch ? { status: 'AGENT_FAILED', line: '', action: anchorsByHand(sc.project, MAIN) }
+  : anch.status === 'FAILED' ? { status: anch.status, line: anch.line, action: anchorsByHand(sc.project, MAIN) }
+  : { status: anch.status, line: anch.line }
+
 phase('Acceptance')
 const ledgerBrief = JSON.stringify({
   outcomes: Object.fromEntries(Object.entries(L.tasks).map(([k, r]) => [k, { state: r.state, reason: r.reason ?? null, merge_sha: r.merge_sha ?? null }])),
   conport_only: L.conport_only, uncovered: L.uncovered, parity_failed: L.parity_failed,
   unresolved_criticals: L.unresolved_criticals, escalations: L.escalations, gap_hunt: L.gap_hunt,
+  findings: L.findings, unfiled_findings: L.unfiled_findings, waiting_for_person: L.waiting_for_person,
 })
-const goal = await retry('goal', l => agent(goalPrompt(sc, ledgerBrief, gate, MAIN), { label: l, schema: S_GOAL }))
+const goal = await retry('goal', l => ask(goalPrompt(sc, ledgerBrief, gate, MAIN), { label: l, schema: S_GOAL }))
 // null -> verdict UNKNOWN -> the epic is not closed (conservative)
 
 phase('Accounting')
 const table = buildCallTable(sc, L, goal)
-const acc = await retry('account', l => agent(accountantPrompt(table), { label: l, effort: 'low', schema: S_ACC }))
+const acc = await retry('account', l => ask(accountantPrompt(table), { label: l, effort: 'low', schema: S_ACC }))
 if (!acc) { L.accounting = 'INCOMPLETE'; L.pending_table = table }
 else {
   L.accounting = acc

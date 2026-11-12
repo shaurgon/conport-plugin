@@ -9,6 +9,7 @@ actually does under the hood.
 - [Tasks grouped by parent](./tasks-grouped-by-parent.md) — "show me TODO tasks, group by parent"
 - [Project status](./project-status.md) — "what's the status of the project"
 - [Save everything important](./save-to-conport.md) — "save what matters to ConPort"
+- [Tell the service developers about a problem](./agent-issues.md) — a defect, a missing capability or an unclear refusal of ConPort, filed as a public GitHub issue
 
 ## Claude.ai
 

@@ -70,7 +70,7 @@ mcp__conport__init({
 | skill_id | string | no | Skill the client runs (`conport`, `conport-agent`) — only used to detect an available skill update |
 | skill_version | string | no | Semver of the installed SKILL.md content (independent of the plugin release tag) |
 | client_type | string | no | Calling environment: `claude-code` \| `claude-ai` \| `cursor` \| `openclaw` \| `mcporter` \| `paperclip`. Picks the install-guide URL of an update notice |
-| questions | boolean | no | `true` (default) when a person is at the session: up to three questions are returned and marked as asked. Pass `false` for a run with no person — a subagent, a routine cycle: no question is returned or marked |
+| questions | boolean | no | `true` (default) when a person is at the session: up to three questions are returned and marked as asked. Pass `false` for a run with no person — a subagent, a routine cycle: no question is returned or marked, and `instructions` carries no offer to fill the project model (the key `arch.backfill.offer` stays) |
 
 **Returns:** `project` (the project's handle — pass it as `project` to every
 other tool), `name` (the short name), `canonical_name`
@@ -95,7 +95,11 @@ step) only when the project has them;
 `review_tasks` (`id`, `title`, `priority` of the tasks waiting in REVIEW, most
 recently updated first, snoozed ones left out) only when some task waits — and
 then `instructions` carries "Review: N task(s) await a reviewer — have them
-reviewed before taking new work"; `backlog.top` rows carry `milestone_id` and the
+reviewed before taking new work"; `arch` (the debts of the project model:
+`total` and up to five `debts`, each `kind`, `subject`, `detail` and the one
+`action` — see *Project model*) only when the model owes work — and then
+`instructions` carries "Model debts: N — take the action of each debt in
+`arch`; `arch_status` lists them all"; `backlog.top` rows carry `milestone_id` and the
 current milestone's rows float up.
 Top-5 excludes subtasks of active epics so
 you see roots + orphans; `effective_priority` rolls up the most-important
@@ -1046,7 +1050,7 @@ mcp__conport__add_document({
 | project | string | yes | Project handle or name |
 | title | string | yes | Title (max 200 chars) |
 | content | string | yes | Content (max 50000 chars) |
-| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| plan \| other. For `diagram`, `content` is the JSON spec |
+| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| plan \| other |
 | author | string | no | Author (max 100 chars) |
 | tags | array | no | Tags |
 | parent_document_id | integer | no | Per-project ID of parent document |
@@ -1069,10 +1073,7 @@ mcp__conport__update_document({
 
 The body is parsed into blocks server-side via the block reconciliation algorithm — unchanged blocks keep their ULIDs (and their embeddings/entity mentions), changed blocks get re-embedded, deleted blocks are dropped. Cheaper than naive replace because only the dirty parts hit Mistral.
 
-Metadata-only updates work without a `content` field — pass just `title`, `doc_type`, `tags`, etc. The body and its blocks stay as they are, unless `doc_type` changes to or from `diagram`:
-
-- **To `diagram`** — the body (`content` of this call, else the stored one) must be a diagram spec. Otherwise the call is rejected and nothing is written: create the diagram as a new document instead, with `add_document`, `doc_type: "diagram"` and the spec as `content`. An accepted change removes the document's blocks, the links its blocks wrote, its entity mentions and its embedding — a diagram keeps none.
-- **From `diagram`** to any other type — blocks are built from the stored body. They get new ids, so a link to a block the document had before it became a diagram no longer resolves. A new markdown `content` in the same call is rejected: change `doc_type` first, then send `content` in a second call. When the new type is `spec`, that second call is a spec body edit: it needs `change_kind: "amend"` and a `reason` (see `change_kind` below).
+Metadata-only updates work without a `content` field — pass just `title`, `doc_type`, `tags`, etc. The body and its blocks stay as they are.
 
 For surgical single-block edits, prefer `update_block` (skips the parse/reconcile round-trip).
 
@@ -1082,21 +1083,20 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 | document_id | integer | yes | Per-project document ID |
 | content | string | no | Full markdown body. Omit for metadata-only update. |
 | title | string | no | New title |
-| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| diagram \| plan \| other. A change to or from `diagram` is more than metadata — see above |
+| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| plan \| other |
 | tags | array | no | New tag list |
 | author | string | no | New author |
 | status | string | no | Lifecycle status — `active` (default) or `archived`. Archived documents drop out of default listings and search but stay readable by id. |
 | change_kind | string | no | `amend` \| `substantive` — required to change the **body** of a `doc_type='spec'` document. `substantive` is always rejected: author a new spec with `add_document` and emit a `supersedes` edge instead |
 | reason | string | no | Why the amendment was made. Required with `change_kind: "amend"`, recorded in the spec amendment log |
+| model_role | string | no | Role in the project model — `structure` (describes what exists now) \| `history` (describes what has been replaced) \| `none` (no portion). Metadata: needs no `change_kind`, leaves the body as it is. `none` withdraws the document's portion of the model |
 
 **Returns:** a slim echo — `id` and `tags`.
 
 **Errors:** a `doc_role='derived_view'` document rejects any body change (it
 is regenerated by the recipe runner); a spec body edit without `change_kind`,
 with `change_kind: "substantive"`, or with `change_kind: "amend"` and no
-`reason`, is rejected as well. So is a change of `doc_type` to `diagram` over
-a body that is not a diagram spec, and a markdown `content` sent together with
-a change of `doc_type` away from `diagram`.
+`reason`, is rejected as well.
 
 ### list_blocks
 
@@ -1246,10 +1246,11 @@ mcp__conport__list_documents({
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
 | doc_type | string | no | Filter by type |
+| model_role | string | no | Filter by role in the project model: `structure` \| `history` \| `none` |
 | limit | integer | no | Max results (default: 50) |
 
 **Returns:** `documents` (newest update first — `id`, `title`, `doc_type`,
-`doc_role`, `status`, `author`, `tags`, timestamps, `content_preview` truncated
+`doc_role`, `model_role`, `status`, `author`, `tags`, timestamps, `content_preview` truncated
 at 200 chars, `content_length`) and `total`. Archived documents are not listed.
 
 ### get_document
@@ -1275,7 +1276,7 @@ mcp__conport__get_document({
 | raw | boolean | no | If true, bypass stub injection. Default false. |
 
 **Returns:** the full document — `id`, `title`, `content`, `doc_type`,
-`doc_role`, `status`, `parent_document_id`, `author`, `external_url`, `tags`,
+`doc_role`, `model_role`, `status`, `parent_document_id`, `author`, `external_url`, `tags`,
 `children_count`, timestamps. An unknown document is an error.
 
 ### get_block_backlinks
@@ -1355,24 +1356,180 @@ mcp__conport__delete_document({
 
 ---
 
-## Architecture diagrams
+## Project model
 
-A diagram is a document (`doc_type='diagram'`) whose body is a JSON spec the
-dashboard draws itself. The body is written through `add_document` /
-`update_document` and read through `get_document`. The one tool of its own is
-the list.
+The model of the system the project builds: entities (person, external_system,
+unit, component, interface, store, data, setting) and the relations between
+them (contains, calls, starts, reads, writes, derived_from, replaces,
+references). It is made of portions: what one source says about the system.
+A source is a `spec` or `architecture` document (`doc-N`), a document of any
+type whose `model_role` is `structure` or `history`, or a part of the code
+(`code:<label>`, any number of labels); a document whose `model_role` is
+`none` is never a source. A new submission of a source
+replaces its earlier portion as a whole and leaves the other sources alone.
+A portion also carries the behaviour scenarios of its source (`scenarios`:
+`sequence`, `states`, `activity`), whose participants are entities of the
+model; `arch_scenarios` and `arch_scenario` read them.
 
-An existing document becomes a diagram, or stops being one, through
-`update_document` with a new `doc_type` — only over a body that is a diagram
-spec in the first case, and without a new markdown body in the second. See
-`update_document` for what each change does to the document's blocks.
+Before extracting a portion, read the names of the model (`arch_names`) to
+name existing entities by their names, and take the block ULIDs of the
+document from `list_blocks`. To change a portion, read it (`arch_source`),
+edit it and submit it again.
 
-### list_diagrams
+A decision is linked to an entity with `link_items` (`decision` → `entity`,
+`clarifies`), or by its number in the `decisions` of the entity in a portion.
 
-List a project's diagrams with the scope each was drawn for.
+The `conport` CLI does the same from the shell —
+`npx -y conport@^0.7 arch submit <file.json>`,
+`npx -y conport@^0.7 arch withdraw <source>`,
+`npx -y conport@^0.7 arch source <source> [-o <file>]` — and one thing no tool
+does: `npx -y conport@^0.7 arch check` in the repository root checks the
+anchors of the model against the code there and sends only the outcome. When
+to submit a portion, which type a thing takes and what each refusal asks for:
+the section *PROJECT MODEL* of the conport skill.
+
+**Filling the model of an existing project** — the backfill — is the
+procedure `references/model-backfill.md` of the conport skill; no tool of its
+own builds the skeleton of the code, the agent writes it as `code:<label>`
+portions. The procedure gives every document its role with `update_document`
+(`model_role`), moves the state of the backfill with `arch_backfill`
+(`in_progress`, `completed`, `declined`), and reads the active decisions
+without an entity from `arch_status` while the backfill runs
+(`unlinked_decisions`, page by page with `unlinked_after`).
+`npx -y conport@^0.7.3 arch withdraw --all` reports every source of the project
+and removes nothing; with `--apply` it withdraws them all, documents and code,
+and returns the backfill to its start. It runs only on the user's word.
+
+### arch_submit
+
+Submit the portion of a source.
 
 ```
-mcp__conport__list_diagrams({
+mcp__conport__arch_submit({
+  project: <project>,
+  portion: {
+    source: "doc-N",
+    entities: [
+      {name: "Gateway", type: "unit", action: "introduced", block: "<block ULID>",
+       note: "Takes every request", technologies: ["nginx"]},
+      {name: "Search", type: "component", action: "introduced", block: "<block ULID>",
+       anchors: [{kind: "path", value: "src/search/service.py"}]}
+    ],
+    relations: [
+      {type: "contains", source: "Gateway", target: "Search", action: "introduced", block: "<block ULID>"}
+    ]
+  }
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| portion | object | yes | `source` (`doc-N` or `code:<label>`), `entities`, `relations`, `dismissed`, `scenarios` |
+
+An entity: `name`, `type` (required for a new one), `action` (introduced \|
+changed \| removed \| replaced \| mentioned), `block` (a block ULID of the
+document) or `anchors` (`kind` path \| symbol \| command \| route \| table and
+`value`; a path from the repository root, without a line number), `note`, and
+optionally `description`, `aliases`, `technologies`, `properties` (`name`,
+`value`), `constraints` (`text`, `block`), `renamed_from`, `replaced_by` (with
+`replaced` only) and `decisions` (decision numbers). A relation: `type`,
+`source`, `target` (names or aliases), `action`, `block`, and optionally
+`label` and `constraints`. A code portion takes only `introduced`. `dismissed`
+lists findings of the background check the agent rejects: `subject` (entity \|
+scenario, entity by default), `kind` (missing \| invented, and
+step_without_relation for the debt of a scenario), `name`, `where` (for a
+scenario: the text of the step, or `whole_scenario`; empty for an entity),
+`reason`.
+
+`scenarios` lists the behaviour scenarios of the source: without the field
+the scenarios of the source stay, an empty list deletes them, a list replaces
+them as a whole (at most 30). A scenario: `name`, `kind` (sequence \| states \|
+activity), `description`, `block` in a document portion or `anchor` (`kind`
+path \| symbol, `value`) in a code portion, optionally `renamed_from` and
+`takes_over` (a scenario of another source it takes over). A `sequence`:
+`participants` (`key`, `entity`, `role`) and `steps` (`from`, `to` — keys,
+`kind` call \| reply \| async, `text`, `via` — an interface, `branch` —
+`label` and `type` alt \| opt \| loop); at most 40 steps, 10 participants,
+300 characters of a step's text. A `states` scenario: `subject`, `states`
+(`name`, `description`, `initial`, `final`) and `transitions` (`from`, `to`,
+`text`, `performer`); at most 30 states, 60 transitions. An `activity`:
+`nodes` (`key`, `kind` start \| end \| action \| decision \| fork \| join \|
+wait, `text`, `performer`, `scenario` — on an action, the scenario it runs) and
+`transitions` (`from`, `to`, `condition`); at most 60 nodes, 90 transitions.
+Entities are named by a name or an alias of the portion or of `arch_names`.
+
+**Returns:** `source`, `entities` and `relations` (`created`, `updated`,
+`deleted`), `scenarios` (`created`, `updated`, `deleted`; null when the
+portion has no field `scenarios`), `check_id` — the background check of a
+document portion (null for code).
+
+**Refusals:** a portion the write-time check refuses answers
+`{"error": "portion_rejected", "errors": [{code, subject, message, action}]}`
+with every error at once, and nothing is written. The codes:
+`unknown_entity_type`, `unknown_relation_type`, `relation_endpoint_missing`,
+`relation_endpoint_removed`, `relation_pair_not_allowed`, `second_owner`,
+`block_not_found`, `entity_without_ground`, `name_collision`,
+`anchor_malformed`, `source_not_found`, `decision_not_found`,
+`portion_too_large`, `entity_reference_missing`, `unknown_scenario_kind`,
+`unknown_node_kind`, `scenario_participant_missing`,
+`scenario_participant_removed`, `scenario_ref_unknown`, `scenario_malformed`,
+`scenario_name_taken`, `scenario_too_large`. A portion off the schema is
+`portion_invalid`.
+
+### arch_withdraw
+
+Withdraw the portion of a source: its claims leave the model, and an entity
+no other source claims is deleted with its links.
+
+```
+mcp__conport__arch_withdraw({
+  project: <project>,
+  source: "code:backend"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| source | string | yes | `doc-N` or `code:<label>` |
+
+**Returns:** `source`, `entities` and `relations` (`created`, `updated`,
+`deleted`).
+
+**Refusals:** `source_malformed` (not `doc-N` nor `code:<label>`),
+`portion_not_found` (the source has no portion).
+
+### arch_source
+
+Read the portion of a source in the form it was submitted in, with only the
+fields it set: submitting it again changes nothing another source said.
+
+```
+mcp__conport__arch_source({
+  project: <project>,
+  source: "doc-N"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| source | string | yes | `doc-N` or `code:<label>` |
+
+**Returns:** `source`, `entities`, `relations`, `dismissed`, `scenarios` (in
+the form of a submission; empty for a source without scenarios). A dismissal
+of the debt `step_without_relation` is kept on its scenario and is not given
+back.
+
+**Refusals:** `source_malformed`, `portion_not_found`.
+
+### arch_sources
+
+List the portions of the project: documents by number, then the code by label.
+
+```
+mcp__conport__arch_sources({
   project: <project>
 })
 ```
@@ -1381,8 +1538,229 @@ mcp__conport__list_diagrams({
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
 
-**Returns:** `diagrams` (`id`, `title`, `scope` from the stored spec,
-`updated_at`) and `total`.
+**Returns:** `sources` (`source`, `kind`, `document_id`, `title`, `author`,
+`submitted_at`, `stale` — the document changed after the submission, `check`
+— the state and reason of its latest background check).
+
+### arch_names
+
+List the names of the model a page at a time: every entity, whatever its
+state.
+
+```
+mcp__conport__arch_names({
+  project: <project>,
+  limit: 200,
+  offset: 0
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| limit | integer | no | Entities per page, 1 to 500 (default 200) |
+| offset | integer | no | Entities to skip (default 0) |
+
+**Returns:** `names` (`id`, `name`, `type`, `aliases`, `state`), `total`,
+`next_offset` (null on the last page).
+
+**Refusals:** `invalid_page` (a `limit` or an `offset` out of bounds).
+
+### arch_get
+
+Read a slice of the model in one of four views. Each entity carries its
+`stage` (planned — no anchor, declared — anchors none of which the last
+anchor check found, built — a `path` or `symbol` anchor found) and `maturity`
+(the number of linked decisions); each relation its `weight` (the share of
+done tasks of the epics of the document that introduced it).
+
+```
+mcp__conport__arch_get({
+  project: <project>,
+  view: "neighbourhood",
+  entity: 12,
+  depth: 2
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| view | string | yes | composition \| neighbourhood \| contribution \| data |
+| expand | integer[] | no | composition: the units shown with their parts |
+| entity | integer | no | neighbourhood: the entity in the middle |
+| depth | integer | no | neighbourhood: 1 or 2 (default 1) |
+| documents | integer[] | no | contribution: one to three document numbers |
+| unit | integer | no | data: the unit to keep to |
+
+**Returns:** `view`, `entities` (`id`, `type`, `name`, `technologies`,
+`state`, `stage`, `maturity`, `parent_id`, `expandable`, `expanded`,
+`documents`), `relations` (`id`, `type`, `source_id`, `target_id`, `label`,
+`state`, `weight`, `lifted`, `count`, `documents`).
+
+**Refusals:** `entity_not_found`, `unit_not_found`, `invalid_depth`,
+`too_many_documents`, `document_has_no_portion`.
+
+### arch_entity
+
+Read the card of an entity.
+
+```
+mcp__conport__arch_entity({
+  project: <project>,
+  entity_id: 12
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| entity_id | integer | yes | The number of the entity |
+
+**Returns:** `id`, `type`, `name`, `description`, `aliases`, `technologies`,
+`anchors`, `properties`, `constraints`, `history` (the claims by document),
+`decisions`, `maturity`, `tasks` (the epics of its documents and their
+children), `incoming`, `outgoing`, `stage`, `state`, `scenarios` (`id`,
+`name`, `kind`, `role` — participant \| subject \| performer \| via: one row
+per scenario and role the entity plays in it).
+
+**Refusals:** `entity_not_found`.
+
+### arch_lookup
+
+Find the entities anchored at a path, a symbol, a command, a route or a
+table, and those anchored at a directory above a path.
+
+```
+mcp__conport__arch_lookup({
+  project: <project>,
+  anchor: "src/search/service.py"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| anchor | string | yes | The value of an anchor |
+
+**Returns:** `entities` (`id`, `name`, `type`, `state`, `stage`, `anchors` —
+the ones that matched, nearest first).
+
+### arch_status
+
+List the debts of the model, each with the one action to take, and the
+backfill of the model.
+
+```
+mcp__conport__arch_status({
+  project: <project>,
+  unlinked_after: 0
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| unlinked_after | integer | no | While the backfill runs: the page of `unlinked_decisions` starts after this decision number, 0 to 2147483647 |
+
+**Returns:** `total`, `debts` (`kind` — no_portion \| portion_stale \|
+mismatch \| anchor_missing \| check_stale \| removed_but_present \|
+step_without_relation \| scenario_participant_gone, `subject`, `detail`,
+`action`, a `no_portion` debt its `role`, and for a debt of a scenario its
+`scenario_id`), `checks` (the latest background checks that were skipped or
+failed: `source`, `state`, `reason`), `backfill` (`state`, `completed_at`,
+`documents` — the documents with the role structure or history, `submitted`
+— those of them with a portion, `code_sources`, `filled`, `offer`). While the
+backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,
+`next_after` — the `unlinked_after` of the next page, null on the last one)
+lists the current decisions no entity is bound to (by a `clarifies` link from
+the decision to the entity); in any other state the key is absent.
+
+**Refusals:** `invalid_page` (an `unlinked_after` outside 0 to 2147483647).
+
+### arch_scenarios
+
+List the behaviour scenarios of the project a page at a time, by name.
+
+```
+mcp__conport__arch_scenarios({
+  project: <project>,
+  limit: 200,
+  offset: 0
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| limit | integer | no | Scenarios per page, 1 to 500 (default 200) |
+| offset | integer | no | Scenarios to skip (default 0) |
+
+**Returns:** `scenarios` (`id`, `name`, `kind` — sequence \| states \|
+activity, `source`, `steps` — the number of steps or transitions, `block`,
+`anchor`, `submitted_at`), `total`, `next_offset` (null on the last page).
+
+**Refusals:** `invalid_page` (a `limit` or an `offset` out of bounds).
+
+### arch_scenario
+
+Read a behaviour scenario with its source, its participants, states or nodes
+and its steps in the order of the submission; every entity it names carries
+its `state` and `stage`.
+
+```
+mcp__conport__arch_scenario({
+  project: <project>,
+  scenario_id: 3
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| scenario_id | integer | yes | The number of the scenario |
+
+**Returns:** `id`, `name`, `kind`, `description`, `source` (`source`,
+`kind`, `document_id`, `title`, `submitted_at`, `stale`, `check`,
+`document_state`), `block`, `block_missing`, `anchor`, `anchor_status`
+(found \| missing \| unchecked, null without a check), `debt_dismissal`
+(`reason`, null without one), `subject`, `nodes`, `steps`.
+
+**Refusals:** `scenario_not_found`.
+
+### arch_backfill
+
+Move the backfill of the model — its filling from the documents the project
+already has — to a new state.
+
+```
+mcp__conport__arch_backfill({
+  project: <project>,
+  state: "in_progress"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| state | string | yes | in_progress \| completed \| declined |
+
+`in_progress` starts the backfill from any state, right after the inventory of
+the documents is approved and their roles are written. `completed` closes it,
+from `in_progress`, and again on a completed backfill, which keeps its date of
+completion: the server accepts it only without a debt of the model, with every
+document portion passed by its background check or skipped for its size, and
+every code source no newer than the last anchor check.
+`declined` — only on the user's refusal, before the start.
+
+**Returns:** `state`, `completed_at`, `documents`, `submitted`,
+`code_sources`, `filled`, `offer`.
+
+**Refusals:** `{"error", "action", "blockers"}` —
+`backfill_not_ready` (`blockers`: `debts` with their `count`,
+`unchecked_portion` with its `subject`, `state` and `reason`,
+`code_source_unchecked` with its `subject`), `backfill_not_started`,
+`backfill_already_started`.
 
 ---
 
@@ -1481,9 +1859,9 @@ mcp__conport__link_items({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| source_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) |
+| source_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) \| entity (an entity of the project model) |
 | source_id | integer | yes | Per-project ID of source item |
-| target_type | string | yes | decision \| progress \| pattern \| task \| doc |
+| target_type | string | yes | decision \| progress \| pattern \| task \| doc \| entity |
 | target_id | integer | yes | Per-project ID of target item |
 | relationship | string | no | Link type (default: relates_to) |
 | description | string | no | Link description |
@@ -1496,6 +1874,14 @@ the links it creates on its own (`mentions`, `implements`, `derived_from`,
 
 **Returns:** the created edge — `id`, both endpoints, `link_type`,
 `description`, `weight`, the `created_by*` attribution fields and `created_at`.
+
+**Errors:** an end of the kind `entity` names an entity the project does not
+have — the message says to name one `arch_names` returns. An end of any other
+kind numbered outside the 32-bit integer range (above 2147483647 or below
+-2147483648) is refused with `item_not_found` before anything is written —
+the message says to name the item by a number the project has; the REST
+`POST /links` refuses a `created_by_item_id` outside that range the same way
+(404).
 
 ### get_linked
 
@@ -1528,7 +1914,7 @@ mcp__conport__get_linked({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| item_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) |
+| item_type | string | yes | decision \| progress \| pattern \| task \| **doc** (documents are `doc` here, not `document`) \| entity |
 | item_id | integer | yes | Per-project ID of the item |
 | relationship | string | no | Keep the edges of one link type: mentions \| implements \| derived_from \| references \| clarifies \| relates_to \| supersedes \| blocks \| depends_on. Left out, every link type comes back |
 | direction | string | no | outgoing (the item is the source) \| incoming (the item is the target) \| both (default: both) |
@@ -1543,7 +1929,10 @@ left out; with `include_section_links` also `section_links` (`incoming`,
 which `direction` and `relationship` do not narrow.
 
 **Errors:** a `direction` or a `relationship` outside its list is refused, and
-the message names the values to pass.
+the message names the values to pass; an `entity` the project does not have
+is refused too. An `item_id` of any other kind outside the 32-bit integer
+range names no item: the answer is an empty list (`links: []`, `total: 0`,
+and empty `section_links` when asked for), not a refusal.
 
 ---
 
@@ -1665,7 +2054,9 @@ project of the team the call names is an error (`Project '<project>' not
 found`), the same for a project of another team and for one that does not
 exist.
 Each hit carries:
-- `item_type`, `item_id` — the per-project ID, so pair it with `project`
+- `item_type`, `item_id` — the per-project ID, so pair it with `project`;
+  a `context` hit has none (`null`) and names its version by
+  `content.context_type` and `content.version`
 - `project` (the handle) / `project_name` — which project the hit came from
 - `content` — the item blob. GraphRAG hits carry `via_entity` /
   `via_community` inside it; decision hits are annotated with `currency`
@@ -2427,7 +2818,7 @@ kept, or a decision tagged `error-solution` by hand.
 | GraphRAG | `entities`, `entity`, `entity_related`, `communities`, `community`, `graph_stats` |
 | History | `recent_activity`, `item_history`, `context_history` |
 | Context assembly | `assemble_context`, `list_context_recipes`, `render_current_architecture`, `audit_doc_l1_coverage` |
-| Architecture diagrams | `list_diagrams` |
+| Project model | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill` |
 | Gaps | `gap_list`, `gap_stats`, `answer_question` |
 | Semantic pass | `semantic_cleanup`, `semantic_pass_run`, `semantic_pass_stats` |
 | Routine cycle | `get_agenda`, `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |

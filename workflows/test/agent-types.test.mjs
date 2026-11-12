@@ -131,6 +131,23 @@ test('the gap hunter and the final reviewer hand their findings back in their an
   }
 })
 
+// An epic is not ready while a finding of it is open: no severity of the gap
+// hunter or of the final reviewer is set aside for later work or for a line to the
+// owner. Every finding proposes a task, and a Note carries the question a person answers.
+test('every finding of the gap hunter and of the final reviewer proposes a task; a Note carries its question', () => {
+  const setAside = [/next piece of work/i, /one line (in the report|to the owner)/i, /becomes no task/i,
+    /gets no task proposal/i, /Note[^.]*is not work/i, /worth one line to the owner/i]
+  for (const role of ['sdd-gap-hunter', 'sdd-final-reviewer']) {
+    const text = body(role).replace(/\s+/g, ' ')
+    for (const pattern of setAside) assert.doesNotMatch(text, pattern, `${role}: ${pattern}`)
+    assert.match(text, /every finding proposes a task: a title and 1-2 sentences of scope/i, `${role}: a task per finding`)
+    assert.match(text, /becomes a task of the epic/i, `${role}: where the task lands`)
+  }
+  const hunter = body('sdd-gap-hunter').replace(/\s+/g, ' ')
+  assert.match(hunter, /A \*\*Note\*\* also carries the question to put to a person/, 'the Note carries its question')
+  assert.match(hunter, /findings table \(severity, gap, evidence, proposed task, question \(for a Note\)\)/, 'the table has the question')
+})
+
 // A task that changes behaviour a spec describes changes the spec in the same
 // task: the roles that write edit it by blocks and name the blocks; the roles
 // that only read find the miss and never take the edit on.

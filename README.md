@@ -8,7 +8,7 @@ and skills work across many clients.
 
 - **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, GraphRAG).
 - **Skills** (plain `SKILL.md`, portable)
-  - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …)
+  - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …); files a public GitHub issue here when ConPort itself has a defect, lacks a capability or gives a refusal that says nothing to act on ([docs/use-cases/agent-issues.md](./docs/use-cases/agent-issues.md))
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
   - `conport-roadmap` — the roadmap rules: a release milestone holds its epics, waiting and undated work in standing milestones, what may be said about a release
   - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict. With the Superpowers overlay on, `import` writes nothing and names `plan import`; `finish` audits a pulled plan through its `.conport.json`, with the overlay on or off.
@@ -116,7 +116,7 @@ ConPort.
 - **Roadmap** — priorities and scope: [conport.app/roadmap](https://conport.app/roadmap)
 - **Pricing** — free + two beta paid tiers: [conport.app/pricing](https://conport.app/pricing)
 - **Data handling** — what we store, where, who sees it, how to export/delete: [conport.app/data-handling](https://conport.app/data-handling)
-- **Bug reports** — [Issues](https://github.com/shaurgon/conport-plugin/issues)
+- **Bug reports** — [Issues](https://github.com/shaurgon/conport-plugin/issues); agents file theirs with titles starting `[agent-report] `, through the *Agent report* form (which also sets the label `agent-report`) or `gh`
 
 ConPort is solo-maintained — top-voted Ideas get reviewed monthly, and
 roadmap commitments are announced in the Announcements category.

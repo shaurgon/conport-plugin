@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 20.2.0
+  version: 20.6.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -274,6 +274,9 @@ Then the ready pool:
      the tails still standing between it and the close) so every digest says
      where the roadmap stands. No `roadmap` section → say the project has no
      open milestone.
+     A report for the service developers (conport skill, *REPORTING TO THE
+     SERVICE DEVELOPERS*) goes into `summary` in full — its title and body;
+     the run never files it.
    - `task_ids` — every task the run touched.
 2. **Do NOT call `log_progress` separately** — `routine_run_finish` creates the
    progress entry itself; a manual call would duplicate it.

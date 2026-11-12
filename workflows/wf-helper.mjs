@@ -606,10 +606,14 @@ const accountTask = async (table, c) => {
   if (table.block) await blockOne(c, table.block.id, table.block.reason)
 
   if (table.minors_umbrella) {
-    const { title, description } = table.minors_umbrella
-    const epic = await ensureTailsEpic(c, {
+    const { title, description, parent } = table.minors_umbrella
+    // A task of an epic files its umbrella under that epic: the minors are a
+    // finding of it. A task with no epic files it under the tails epic.
+    const own = Number.isInteger(parent)
+    const epic = own ? parent : await ensureTailsEpic(c, {
       step: 'minors_epic', title: TAILS_EPIC_TITLE, description: TAILS_EPIC_DESCRIPTION, priority: 4,
     })
+    const where = own ? 'under epic task-' + parent : 'under the tails epic'
 
     if (epic === null) act('minors_child', null, 'failed', 'no tails epic to attach the umbrella to')
     else {
@@ -621,7 +625,7 @@ const accountTask = async (table, c) => {
           const created = await api('POST', `/projects/${project}/tasks`,
             { title, description, priority: 4, parent_task_id: epic })
           out.minors_created.push(created.id)
-          act('minors_child', created.id, 'done', 'umbrella filed under the tails epic')
+          act('minors_child', created.id, 'done', 'umbrella filed ' + where)
         }
       } catch (e) { failed('minors_child', null, 'minors umbrella under epic ' + epic, e) }
     }
@@ -640,7 +644,7 @@ const accountEpic = async (table, c) => {
   const prefix = `[epic-run:${epicId}]`
   const journal = progressJournal(api, project)
   const out = {
-    via: VIA, actions: c.actions, tails_epic_id: null, tails_children: [], epic_progress: null,
+    via: VIA, actions: c.actions, tails_epic_id: null, tails_children: [], epic_children: [], epic_progress: null,
     epic_closed: false, epic_close_error: null, failed_calls: c.failed_calls,
   }
 
@@ -678,7 +682,23 @@ const accountEpic = async (table, c) => {
     } catch (e) { failed('parity_progress', null, 'log the parity gap of "' + title + '"', e) }
   }
 
-  const minors = table.minors ?? []
+  // An entry naming a parent is a child of that epic — a finding of the run's own
+  // epic, one child per finding; the rest go to the tails epic.
+  const all = table.minors ?? []
+  for (const entry of all.filter(e => Number.isInteger(e.parent))) {
+    try {
+      const kids = await listTasks(api, project, { parent_task_id: String(entry.parent), status: 'ALL', include_snoozed: 'true' })
+      // Only an open child is this finding filed before: a closed one of the same
+      // title is another task the run finished — a plan task, say.
+      const same = kids.find(t => t.title === entry.title && !['DONE', 'CANCELLED'].includes(String(t.status).toUpperCase()))
+      if (same) { act('finding_child', same.id, 'skipped_already', 'entry already filed'); continue }
+      const created = await api('POST', `/projects/${project}/tasks`,
+        { title: entry.title, description: entry.description, priority: entry.priority, parent_task_id: entry.parent })
+      out.epic_children.push(created.id)
+      act('finding_child', created.id, 'done', 'entry filed under epic task-' + entry.parent)
+    } catch (e) { failed('finding_child', null, 'finding entry "' + entry.title + '"', e) }
+  }
+  const minors = all.filter(e => !Number.isInteger(e.parent))
   if (minors.length) {
     const tails = await ensureTailsEpic(c, {
       step: 'tails_epic', title: EPIC_TAILS_TITLE(epicId), description: EPIC_TAILS_DESCRIPTION, priority: 3,

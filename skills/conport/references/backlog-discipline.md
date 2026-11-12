@@ -63,28 +63,33 @@ What is filed is done right away. The backlog shrinks by doing what was found,
 not by refusing to file it; a filed task is not deleted later as speculative
 and is not left hanging.
 
-**Only what matters becomes a task:**
+**An epic is not ready while a finding of it is open.** Every finding of the
+epic's work that is not fixed in the same pass becomes a task of the current
+epic and is done before the epic is declared ready:
 
-| Source | A task of the epic, done at once | Not a task of the epic |
-|---|---|---|
-| Code review | Critical, Important | Minor |
-| Gap hunt | Blocker | Should-fix, Note |
-| Anything else | A confirmed defect of behaviour | Polish, style, wider coverage |
+| Source | A task of the current epic, done before the epic is ready |
+|---|---|
+| Gap hunt | Blocker, Should-fix, Note — every severity |
+| Code review, final review | Critical, Important, and a Minor not fixed in the same pass |
+| Anything else | A confirmed defect of behaviour |
 
-A gap-hunt Should-fix is a real gap that does not hold the work it was found
-in, so it is not filed into the running epic: list it for the user at the end
-of the run, and it becomes a task in the next piece of work when the user says
-so. A Note is one line in the report. A Minor inside the diff under review is
-fixed by its author in the same pass; a Minor outside that diff — dead code
-nearby, style, "coverage could be wider" — is dropped with one line in the
-report. The reason for the threshold: "the reviewer found nothing" never
-converges — the stronger the reviewer, the more it finds.
+A Minor inside the diff under review is fixed by its author in the same pass;
+one left open after that pass becomes a task like any other finding. A Minor
+outside that diff — dead code nearby, style — is not a finding of that review.
+A Note is a question: when only the user can answer it, ask the user at once,
+and the answer becomes the task. A finding is never kept aside for the end of
+the run: the report and the readiness entry name the task numbers made from
+the findings, not the findings themselves.
 
 ## Depth: one level
 
-A task filed from a finding is reviewed on its own diff only, and that review
-reports only Critical and Important findings. A finding from a finding becomes
-a task only when it is a defect of behaviour, never polish.
+A task filed from a finding is reviewed on its own diff, and that review
+reports every severity: its author fixes all of it, Minor included, in the
+task's own fix round, before the task merges. Nothing that review finds is
+filed as a new task, and nothing is dropped. Only a defect of behaviour found
+outside that task's diff becomes a new task — never polish. This is what keeps
+the rule above from looping: "the reviewer found nothing" never converges — the
+stronger the reviewer, the more it finds.
 
 ## A change to behaviour a spec describes changes the spec
 
@@ -126,14 +131,13 @@ tail nobody counts feels done while it is not.
 
 The make-up of a release epic is frozen at the moment the version is bumped.
 
-- Before the freeze, the findings that become tasks of the epic (see the
-  threshold above) go into this epic and are closed before the bump.
-- A finding made after the freeze goes into an epic of the next milestone, not
-  into the release epic — except a defect in code that is already in this
-  release, which is closed before the push.
+- Before the freeze, the findings of the epic (see above: every severity) go
+  into this epic as tasks and are closed before the bump.
+- A finding made after the freeze goes into an epic of the next milestone as a
+  task, not into the release epic and not into a report line — except a defect
+  in code that is already in this release, which is closed before the push.
 - After the freeze only the Critical and Important findings of the final
-  review in this release's code hold the bump. A gap-hunt Should-fix never
-  holds it: it is listed for the user, as at any other time.
+  review in this release's code hold the bump.
 - Work that cannot be finished before the push for an outside reason (a
   production artifact, another party's service) goes to an epic for the work
   after the release, with the reason written into the task.

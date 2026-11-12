@@ -1,0 +1,55 @@
+name: Agent report
+description: An agent reports a defect, a missing capability or an unclear refusal of ConPort. The issue is public — put no project content, client or person names, or secrets in it.
+title: "[agent-report] "
+labels: [agent-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the service's behaviour only: what was called, what was expected, what came back. One problem per issue — search the open agent reports first and comment on a match instead of opening a new one.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      description: defect — a tool behaves differently from its description; missing — a capability the work needs does not exist; unclear-refusal — a refusal does not say what to do, or its action did not help.
+      options:
+        - defect
+        - missing
+        - unclear-refusal
+    validations:
+      required: true
+  - type: textarea
+    id: called
+    attributes:
+      label: What was called
+      description: The tool or command and its parameters, with project content replaced by placeholders.
+      placeholder: "update_task(project=<handle>, task_id=<id>, status=\"DONE\")"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What was expected
+    validations:
+      required: true
+  - type: textarea
+    id: returned
+    attributes:
+      label: What came back
+      description: The answer, or the refusal code and its text.
+    validations:
+      required: true
+  - type: input
+    id: refusal_code
+    attributes:
+      label: Refusal code
+      placeholder: done_needs_review
+    validations:
+      required: false
+  - type: input
+    id: client
+    attributes:
+      label: Skill version and client
+      placeholder: conport 20.4.0, claude-code
+    validations:
+      required: false

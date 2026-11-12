@@ -315,6 +315,26 @@ test('umbrella: the tails epic and its child are created once, the rerun skips b
   assert.equal(mock.tasks.size, before, 'the rerun creates nothing')
 }))
 
+// A task of an epic: its leftover minors are a finding of that epic, so the
+// umbrella is filed under it — no tails epic is looked up or created.
+test('umbrella: with a parent epic the child is filed under it once, and no tails epic is touched', withMock({
+  tasks: [{ id: 40, title: 'The task epic', status: 'IN_PROGRESS', kind: 'epic' }],
+}, async mock => {
+  const table = { project: PROJECT, close: null, block: null, minors_umbrella: { ...UMBRELLA, parent: 40 } }
+  const { out: first } = await runAccount(mock, table)
+  assert.equal(first.actions.filter(a => a.step === 'minors_epic').length, 0, 'no tails epic step')
+  assert.equal(step(first, 'minors_child').result, 'done')
+  assert.match(step(first, 'minors_child').detail, /under epic task-40/)
+  const child = mock.tasks.get(first.minors_created[0])
+  assert.equal(child.parent_task_id, 40)
+  assert.equal(child.description, UMBRELLA.description)
+  assert.equal([...mock.tasks.values()].filter(t => t.title === 'Workflow run tails').length, 0)
+  const before = mock.tasks.size
+  const { out: second } = await runAccount(mock, table)
+  assert.equal(step(second, 'minors_child').result, 'skipped_already')
+  assert.equal(mock.tasks.size, before, 'the rerun creates nothing')
+}))
+
 // The list endpoint caps a page at 200, so a project with more open epics than
 // that hides the tails epic behind an offset. A lookup stopping at the first
 // page would not find it and would file a second 'Workflow run tails' epic.
@@ -546,6 +566,49 @@ test('epic table: a failed child in REVIEW is reported as refused and every late
   assert.deepEqual(out.failed_calls, [])
   assert.equal(mock.tasks.get(7).status, 'REVIEW')
   assert.equal(mock.tasks.get(7).description, 'spec of B')
+}))
+
+// A finding the findings round could not give a child is a finding of the run's
+// own epic: its entry names that epic as parent and becomes its child, one per
+// finding; no tails epic is made for it.
+const UNFILED = { title: 'Review minors left on task-5', description: 'The review minors of task-5 …', priority: 3, parent: EPIC }
+
+test('epic table: an entry with a parent is filed as a child of that epic, once, and no tails epic is made for it', withMock({ tasks: epicTasks(RUN_CHILDREN) }, async mock => {
+  const table = epicTable({ minors: [UNFILED] })
+  const { out } = await runAccount(mock, table)
+  assert.equal(tailsEpic(mock), undefined, 'no tails epic')
+  assert.equal(steps(out, 'tails_epic').length, 0)
+  const child = [...mock.tasks.values()].find(t => t.title === UNFILED.title)
+  assert.equal(child.parent_task_id, EPIC)
+  assert.equal(child.description, UNFILED.description)
+  assert.equal(child.priority, 3)
+  assert.deepEqual(out.epic_children, [child.id])
+  assert.equal(steps(out, 'finding_child')[0].result, 'done')
+  const before = mock.tasks.size
+  const { out: second } = await runAccount(mock, table)
+  assert.equal(steps(second, 'finding_child')[0].result, 'skipped_already')
+  assert.equal(mock.tasks.size, before)
+}))
+
+// A closed child of the same title is not the finding's task: it is a task the run
+// already finished (a plan task, say). Only an open child counts as already filed.
+test('epic table: a closed child of the same title is not taken for the finding — a new child is filed', withMock({
+  tasks: epicTasks([{ id: 5, title: UNFILED.title, status: 'DONE', parent_task_id: EPIC, description: 'a plan task' }, ...RUN_CHILDREN.slice(1)]),
+}, async mock => {
+  const { out } = await runAccount(mock, epicTable({ done: [], minors: [UNFILED] }))
+  assert.equal(steps(out, 'finding_child')[0].result, 'done')
+  const filed = [...mock.tasks.values()].filter(t => t.title === UNFILED.title)
+  assert.equal(filed.length, 2)
+  assert.deepEqual(out.epic_children, [filed.find(t => t.id !== 5).id])
+}))
+
+test('epic table: entries with and without a parent go each to their own epic', withMock({ tasks: epicTasks(RUN_CHILDREN) }, async mock => {
+  const { out } = await runAccount(mock, epicTable({ minors: [CRITICAL, UNFILED] }))
+  const tails = tailsEpic(mock)
+  assert.equal([...mock.tasks.values()].find(t => t.title === CRITICAL.title).parent_task_id, tails.id)
+  assert.equal([...mock.tasks.values()].find(t => t.title === UNFILED.title).parent_task_id, EPIC)
+  assert.equal(out.tails_children.length, 1)
+  assert.equal(out.epic_children.length, 1)
 }))
 
 // -------------------------------------------------------------- epic closing

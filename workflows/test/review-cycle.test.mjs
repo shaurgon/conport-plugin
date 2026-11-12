@@ -96,12 +96,77 @@ test('task.js: changes requested -> return, fix, REVIEW, re-review, then the clo
   assert.match(steps[6].note, /re-review/i)
 })
 
-test('task.js: minor findings alone are an approval — the fixer polishes, no fix entry, the re-review is recorded', async () => {
+test('task.js: a minor finding alone requests changes too — the fix entry and the re-review are recorded', async () => {
   const { ledger, steps } = await go('task.js', taskRun({
     rev: { verdict: 'NEEDS_FIXES', findings: [MINOR] }, fix: FIXED, rev2: CLEAN,
   }))
   assert.equal(ledger.outcome, 'MERGED')
-  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'approve', 'brief', 'brief', 'approve'])
+  assert.deepEqual(steps.map(s => s.verdict ?? s.step), ['brief', 'report', 'changes_requested', 'brief', 'fix', 'brief', 'approve'])
+})
+
+// A minor the fix round leaves open does not hold the merge, but the journal says
+// so: a fix entry and an approving review of the run's own name the open minors
+// and where they went, so the task leaves REVIEW with its findings on record.
+for (const [file, run, k, over] of [
+  ['task.js', taskRun, '', { rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null }],
+  ['epic.js', epicRun, '-501', { 'rev-501': { verdict: 'APPROVED', findings: [MINOR] }, 'fix-501': null, 'fix-501-r2': null }],
+]) {
+  test(`${file}: a minor left open after a dead fixer is journalled changes_requested, then carried with a fix and an approval`, async () => {
+    const { ledger, steps } = await go(file, run(over))
+    assert.deepEqual(steps.filter(s => s.step !== 'brief').map(s => [s.label, s.verdict ?? s.step]), [
+      ['j-report' + k, 'report'], ['j-review' + k, 'changes_requested'],
+      ['j-carry-fix' + k, 'fix'], ['j-carry-review' + k, 'approve']])
+    const carriedFix = steps.find(s => s.label === 'j-carry-fix' + k).body
+    assert.match(carriedFix, /^Fix report: the review findings below are left open after the fix round and carried on — /)
+    assert.ok(carriedFix.includes('- [MINOR] a.js:9 — a nit'), carriedFix)
+    assert.match(steps.find(s => s.label === 'j-carry-review' + k).body, /^Verdict: approve — the run accepts the task with its open review findings carried on: /)
+    assert.ok(ledger.journal.every(j => j.ok))
+  })
+
+  test(`${file}: a minor the re-review still finds is journalled changes_requested, then carried`, async () => {
+    const r = file === 'task.js'
+      ? { rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: FIXED, rev2: { verdict: 'APPROVED', findings: [MINOR] } }
+      : { 'rev-501': { verdict: 'APPROVED', findings: [MINOR] }, 'fix-501': FIXED, 'rev2-501': { verdict: 'APPROVED', findings: [MINOR] } }
+    const { steps } = await go(file, run(r))
+    assert.deepEqual(steps.filter(s => s.step !== 'brief').map(s => [s.label, s.verdict ?? s.step]), [
+      ['j-report' + k, 'report'], ['j-review' + k, 'changes_requested'], ['j-fix' + k, 'fix'],
+      ['j-review2' + k, 'changes_requested'], ['j-carry-fix' + k, 'fix'], ['j-carry-review' + k, 'approve']])
+  })
+}
+
+test('epic.js: the carry of a plan task names the findings round of the epic', async () => {
+  const { steps } = await go('epic.js', epicRun({ 'rev-501': { verdict: 'APPROVED', findings: [MINOR] }, 'fix-501': null, 'fix-501-r2': null }))
+  assert.ok(steps.find(s => s.label === 'j-carry-fix-501').body.includes(
+    'they become a task of this epic: in its findings round, or at its accounting when that round could not file them'))
+})
+
+// No finding is left as a line: a minor task.js leaves open becomes a follow-up
+// task — the umbrella task the accounting files — without any argument asking for it.
+test('task.js: a minor left open by a task with no epic becomes a follow-up task of the tails epic, and the carry says so', async () => {
+  const { steps, prompt } = await go('task.js', taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null }))
+  assert.ok(steps.find(s => s.label === 'j-carry-fix').body.includes('they become one follow-up task, filed by this run under the tails epic'))
+  const table = accountTable(prompt('account'))
+  assert.ok(table.minors_umbrella, 'the umbrella is filed without fileMinors')
+  assert.equal(table.minors_umbrella.parent, undefined, 'no epic: the tails epic takes it')
+  assert.ok(table.minors_umbrella.description.includes('a.js:9'), table.minors_umbrella.description)
+  assert.match(table.close.resolution, /; 1 review minor\(s\) left open, filed as one follow-up task$/)
+})
+
+// A task of an epic: its leftover minor is a finding of that epic, filed under it.
+test('task.js: a minor left open by a task of an epic becomes a task of that epic, and the carry says so', async () => {
+  const run = taskRun({ rev: { verdict: 'APPROVED', findings: [MINOR] }, fix: null, 'fix-r2': null })
+  run.answers.scout = { ...run.answers.scout, task: { ...run.answers.scout.task, parent_epic_id: 40 } }
+  const { steps, prompt } = await go('task.js', run)
+  assert.ok(steps.find(s => s.label === 'j-carry-fix').body.includes('they become one task of epic task-40, filed by this run'))
+  const table = accountTable(prompt('account'))
+  assert.equal(table.minors_umbrella.parent, 40)
+  assert.match(table.close.resolution, /; 1 review minor\(s\) left open, filed as one task of epic task-40$/)
+  assert.ok(prompt('account').includes('minors_umbrella.parent'), 'branch B is told where the umbrella goes')
+})
+
+test('task.js: a run with no minor left files no follow-up task', async () => {
+  const { prompt } = await go('task.js', taskRun())
+  assert.equal(accountTable(prompt('account')).minors_umbrella, null)
 })
 
 test('task.js: a re-review that still finds a serious defect requests changes again and the run fails', async () => {
@@ -646,3 +711,24 @@ for (const [file, run, impl] of [['task.js', taskRun, 'impl'], ['epic.js', epicR
     for (const c of calls) assert.doesNotMatch(c.prompt, /project_id/, `${c.label} still names project_id`)
   })
 }
+
+// ------------------------------------------------------------ a minor after a rebase
+
+test('epic.js: a minor the review after a rebase finds is journalled changes_requested, carried, and the child still merges', async () => {
+  const { ledger, steps } = await go('epic.js', epicConflict({ 'rev-rb-501': { verdict: 'APPROVED', findings: [MINOR] } }))
+  const tail = steps.filter(s => s.step !== 'brief').slice(-3).map(s => [s.label, s.verdict ?? s.step])
+  assert.deepEqual(tail, [['j-review-rb-501', 'changes_requested'], ['j-carry-fix-501', 'fix'], ['j-carry-review-501', 'approve']])
+  assert.equal(ledger.tasks['501'].state, 'DONE')
+  assert.deepEqual(ledger.minors.map(m => m.what), ['a nit'], 'the minor goes to the findings round')
+})
+
+test('task.js: a minor the review after a rebase finds is journalled changes_requested and carried', async () => {
+  const { steps } = await go('task.js', taskRun({
+    merge: { results: [{ id: 7, status: 'CONFLICT', conflict_files: ['a.js'] }] },
+    rebase: { status: 'DONE', head_sha: 'hhh7', conflict_files: ['a.js'] },
+    'rev-rb': { verdict: 'APPROVED', findings: [MINOR] },
+    'merge-rb': { results: [{ id: 7, status: 'MERGED', merge_sha: 'iii8' }] },
+  }))
+  const tail = steps.filter(s => s.step !== 'brief').slice(-3).map(s => [s.label, s.verdict ?? s.step])
+  assert.deepEqual(tail, [['j-review-rb', 'changes_requested'], ['j-carry-fix', 'fix'], ['j-carry-review', 'approve']])
+})

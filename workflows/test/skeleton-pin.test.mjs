@@ -16,8 +16,8 @@ import { fileURLToPath } from 'node:url'
 // run this file (node --test <this file>) and copy the version and the sha256 it
 // prints in the failure message into PIN.
 const PIN = {
-  version: 18,
-  sha256: '6cc6eb8d4f713de3916af8fa60147c777ab485d9cc56c14c44b9abb39a78eb9b',
+  version: 19,
+  sha256: '73e960cd1f9ea0fd5850610156c5d8f487b40f0530d06e08a0b49df747f428c9',
 }
 
 const WORKFLOWS = dirname(dirname(fileURLToPath(import.meta.url)))

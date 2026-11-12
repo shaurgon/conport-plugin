@@ -20,7 +20,7 @@ A profile is a comma-separated list of groups. Name it in either place:
 | Where | Example |
 |---|---|
 | Parameter of the MCP address | `https://api.conport.app/mcp?profile=core` |
-| Request header | `X-Conport-Profile: core,gaps,diagrams` |
+| Request header | `X-Conport-Profile: core,gaps,arch` |
 
 When both are sent, the header wins. `full`, an empty value and no value at all
 mean the full list. A header or a parameter sent several times names all its
@@ -28,7 +28,9 @@ groups together: `?profile=core&profile=gaps` is `core,gaps`.
 
 A name that is no group is refused: every request of such a connection is
 answered with HTTP 400 and the list of valid groups, so the client does not
-connect at all. Reconnect with a profile made of those names only.
+connect at all. Reconnect with a profile made of those names only. The group
+`diagrams`, removed with its one tool, is still accepted and lists nothing
+until the plugin's release 21.0.0.
 
 ## Groups
 
@@ -46,7 +48,7 @@ rest of `tasks`.
 | `milestones` | 3 | Roadmap milestones |
 | `agenda` | 1 | The single-call briefing of a routine run |
 | `documents` | 12 | Documents and block-level editing |
-| `diagrams` | 1 | Architecture diagrams |
+| `arch` | 12 | The project model: portions, views, entity cards, scenarios, lookups by anchor, debts, the backfill |
 | `decisions` | 7 | Decisions, their retirement and deletion |
 | `progress` | 4 | The progress log |
 | `patterns` | 3 | Patterns |
@@ -75,7 +77,7 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 | `milestones` | `add_milestone`, `update_milestone`, `list_milestones` |
 | `agenda` | `get_agenda` |
 | `documents` | `add_document`, `update_document`, `list_documents`, `get_block_backlinks`, `get_semantically_related_blocks`, `get_document`, `delete_document`, `list_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
-| `diagrams` | `list_diagrams` |
+| `arch` | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill` |
 | `decisions` | `sync_decision`, `update_decision`, `deprecate_decision`, `reactivate_decision`, `list_decisions`, `get_decision`, `delete_decision` |
 | `progress` | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
 | `patterns` | `log_pattern`, `update_pattern`, `list_patterns` |
@@ -103,7 +105,7 @@ connect with the profile of what you run:
 | Skill `conport-roadmap` | `tasks,milestones` |
 | Skill `superpowers-conport` | `core,links` |
 | Workflow `task` | `core,tasks,documents,links` |
-| Workflow `epic` | `core,tasks,documents` |
+| Workflow `epic` | `core,tasks,documents,arch` |
 | Hooks | `core,milestones` |
 
 Each profile is the fewest groups that list every tool the files of that part
@@ -146,7 +148,7 @@ connections — https://docs.claude.com/en/docs/claude-code/mcp. Named
 skill calls them by.
 
 To widen the list later, add groups to the address
-(`?profile=core,gaps,diagrams`) and reconnect.
+(`?profile=core,gaps,arch`) and reconnect.
 
 ## What the agent is told
 

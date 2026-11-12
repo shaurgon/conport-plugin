@@ -68,6 +68,22 @@ creates).
    directly below that line. `plan import` builds a new task's description
    from these two lines and refuses, before writing anything, a section that
    would create a task without them. The terminal finish section needs neither.
+
+   **Submit the portion of the spec.** Right after the import, before any task
+   starts, submit what the spec says about the system as its portion of the
+   project model — the section "PROJECT MODEL" of the conport skill holds the
+   rules. The behaviour the spec describes — exchanges between participants,
+   the life of one thing, a process with branches — goes in the same portion,
+   as its `scenarios` (the part "Scenarios" of that section). Read the names
+   of the model (`arch_names`, every page), the scenarios (`arch_scenarios`)
+   and the blocks of the spec (`list_blocks` of `doc-N`), write the portion with
+   `"source": "doc-N"` to `.superpowers/drafts/<date>-<topic>-portion.json`
+   and submit it: `arch_submit(project=<project>, portion=<the portion>)` or
+   `npx -y conport@^0.7 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
+   A refusal lists every error with its action: take them all and submit
+   again. Delete the file once the portion is accepted. If the spec is
+   amended later, read the portion back with `arch_source`, bring it in line
+   and submit it again.
 6. **Execution.** `npx -y conport@^0.7 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
@@ -138,6 +154,12 @@ creates).
    the pulled plan → `superpowers-conport` in `finish` mode on the pulled plan
    file → on a `READY` verdict the epic is closed, then the release follows
    the conport skill's section "Epic in its own branch".
+
+   In a project whose model has `code` sources (`arch_sources` lists them):
+   once an epic that changed the code is merged, submit the skeleton of the
+   units it touched again — read each portion with `arch_source`, bring it in
+   line with the code, submit it — and run `npx -y conport@^0.7 arch check`
+   in the repository root.
 
 ## When the CLI fails
 

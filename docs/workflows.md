@@ -48,6 +48,18 @@ reviewer hand their findings back in their answer to whoever started them;
 the session that leads an epic starts the final reviewer once, after every
 task has merged.
 
+No person is at a run, so an agent of `/conport:task` or `/conport:epic` that
+meets a problem of the conport service itself files no GitHub issue: every
+judgement step — not the helper's mechanical steps — may answer
+`service_reports`, a list of reports with a `title` and a `body`. The run
+collects them from its agents' answers into its ledger under
+`service_reports` (each with `from`, the label of the step that gave it; an
+empty list when none did), and `service_reports_action` tells the session to
+take each report through the steps of *REPORTING TO THE SERVICE DEVELOPERS* in
+the conport skill that a session with a person takes after writing a report:
+show you the title and the body, and only after you agree file it or comment,
+with `gh` or by the links without it.
+
 ## `/conport:task`
 
 Deterministic execution of one ConPort task, end to end:
@@ -61,11 +73,13 @@ Deterministic execution of one ConPort task, end to end:
 The run takes the task through the review cycle of ConPort and writes it into
 the task's journal as it goes: a `brief` with the assignment before the
 implementer starts, the implementer's `report` (the task moves to REVIEW), the
-reviewer's `review` with its verdict. A serious finding is `changes_requested`:
-the task returns to IN_PROGRESS for the next round, the fix comes back as a
-`fix` entry (the task moves to REVIEW again) and the re-review is one more
-`review`. Minor findings alone are an `approve`. The task is closed from
-REVIEW after the approval, with the run's resolution. The entries are signed
+reviewer's `review` with its verdict. Any finding, a minor too, is
+`changes_requested`: the task returns to IN_PROGRESS for the next round, the fix
+comes back as a `fix` entry (the task moves to REVIEW again) and the re-review is
+one more `review`. A minor still open after that round does not block the merge:
+the run writes a `fix` entry and an approving `review` of its own that list the
+open minors and where they went, so the journal says what was left. The task is
+closed from REVIEW after the approval, with the run's resolution. The entries are signed
 `orchestrator` (the brief), `implementer` (the report and the fix) and
 `reviewer` (the review) — the reviewer never signs as the author of the work it
 reviews.
@@ -109,7 +123,6 @@ it leaves the machine.
 | `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor comment, but only across `docs/superpowers/plans/*.md` — if your plans live anywhere else, `plan` is effectively required. A plan kept in ConPort is pulled first — see [A plan kept in ConPort](#a-plan-kept-in-conport). |
 | `gate` | object | no | `{dir, commands}` — the directory to run in and the list of gate commands. Omitted → taken from the plan's Global Constraints. |
 | `serialChecks` | boolean | no | Worktree agents run static checks only — all tests are deferred to the merge gate, which runs alone. For projects whose gate shares one test database. |
-| `fileMinors` | boolean | no | Leftover minors (rare — minors are normally fixed in the run) are collected into ONE umbrella task under the "Workflow run tails" epic. Off by default: leftovers travel only in the run ledger. |
 
 Example:
 
@@ -121,9 +134,11 @@ Example:
 
 - **Minor review findings are fixed in the same run.** The fix round applies
   every finding, minors included. A minor still open after the round does not
-  block the merge — it travels in the run ledger; no task is ever created for it
-  unless you pass `fileMinors`, and then all leftovers become ONE umbrella task
-  under a tails epic, never scattered root tasks.
+  block the merge, but it is never left as a line: the journal records it as
+  carried, and the run files it as ONE follow-up task — a child of the task's
+  own epic when it has one, under the "Workflow run tails" epic otherwise — with
+  no argument needed (the former `fileMinors` argument is no
+  longer read).
 - **An epic id is rejected.** An epic is not a unit of execution; use
   `/conport:epic`.
 - **A task with neither an acceptance criterion nor a plan slice is rejected.**
@@ -197,24 +212,41 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
    merge — a red gate aborts that merge cleanly and fails the task,
 5. run ONE gap-hunt pass over the whole change, verify every finding
    adversarially, fix at most five confirmed criticals in one round,
-6. accept the GOAL by observation — not by counting closed tasks,
-7. write everything back to ConPort: done tasks closed with resolutions, failures
-   marked BLOCKED with reasons, deferred findings collected into a separate
-   "Tails" epic, and the epic itself closed only when nothing is left open AND
-   the acceptance verdict is READY.
+6. turn every finding still open into a child of the epic: the review minors a
+   fix round left open (one child per task they came from) and each gap
+   confirmed below critical run the way a plan task runs; a Note and a gap
+   nobody could verify are filed with their question and held for you,
+7. when the project's model has portions with anchors, run `conport arch check`
+   in the repository root after the last merge, the finding tasks included, and
+   report its outcome under `anchor_check` — with the command to run by hand
+   when the check could not run,
+8. accept the GOAL by observation — not by counting closed tasks,
+9. write everything back to ConPort: done tasks closed with resolutions, failures
+   marked BLOCKED with reasons, unresolved criticals and escalations filed into a
+   separate "Tails" epic, and the epic itself closed only when nothing is left
+   open AND the acceptance verdict is READY.
 
 ### Anti-sprawl guarantees
 
-- **Findings never grow the running epic — or your backlog.** There is no code
-  path that adds a discovered issue to the epic being executed. Review minors
-  are fixed in the same run; leftovers travel in the run ledger only. Confirmed
-  criticals get one capped fix round; unresolved criticals and escalations are
-  the only findings that always become tasks (priority 1, in a separate tails
-  epic). Pass `fileMinors` to also collect leftover minors into ONE umbrella
-  child there.
+- **An epic is not ready while a finding of it is open.** Review minors are
+  fixed in the same run; in ONE findings round before the acceptance every
+  finding still open becomes a child of the epic. A minor a fix round left open
+  and a gap the verifier confirmed run like any plan task — brief, implementer,
+  review, merge. A Note, which is a question, and a gap nobody could verify are
+  filed with their question and held for you, never run, so the epic stays open
+  until you answer; a later run — without a plan too — runs a held child only
+  once a plan section binds it, and its summary names it as waiting for you. The review of a finding task reports every severity, and all
+  of it — minors included — is fixed in that task's own fix round before it
+  merges: nothing it finds is filed again or dropped, and a minor it cannot fix
+  holds the merge. A finding the creation step could not give a child holds the
+  epic open, is named in the run ledger (`unfiled_findings`, with its brief and
+  question) and is filed at the accounting as a child of the epic, one per
+  finding. Confirmed
+  criticals get one capped fix round; unresolved criticals and escalations
+  always become tasks (priority 1, in a separate tails epic).
 - **Every counter is a literal in the script**, not an agent's judgment: one fix
   round plus one re-review per task, one rebase per merge conflict, one hunt
-  pass, one critical-fix round.
+  pass, one critical-fix round, one findings round.
 - **The epic closes behind a double lock**: zero open children in ConPort AND an
   acceptance verdict reached by observation.
 
@@ -228,7 +260,6 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
 | `gate` | object | no | `{dir, commands}` — as in `/conport:task`. |
 | `allowNoPlan` | boolean | no | Without a plan file the run aborts. Set this to execute the epic's ConPort children from their own descriptions instead — strictly sequentially. |
 | `serialChecks` | boolean | no | As in `/conport:task`. |
-| `fileMinors` | boolean | no | As in `/conport:task`: leftover minors become ONE umbrella child of the tails epic instead of staying ledger-only. |
 
 ### Failure behavior
 

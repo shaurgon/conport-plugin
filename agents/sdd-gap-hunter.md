@@ -44,14 +44,14 @@ Use the index only AFTER the goal-backwards derivation, never as the starting po
 
 - Every gap must name concrete evidence: the goal or spec sentence implying the requirement, and the artifact where it's absent (file, plan section, task list).
 - Rate each: **Blocker** (the goal is not actually achieved / shipping would mislead), **Should-fix** (a real gap, cheap now, expensive later), **Note** (a conscious-choice candidate — surface it, let a person decide).
-- For each Blocker and Should-fix propose the smallest concrete action: a task title + 1-2 sentences of scope, not an essay. A Note gets no task proposal — it is a question for the owner of the work, not work.
-- Severity decides where the gap lands, so rate honestly: a Blocker holds the current work until it is fixed; a Should-fix goes to the next piece of work and does not hold this one; a Note is one line to the owner. Inflating a Should-fix to a Blocker delays a release for work the goal does not require.
+- Every finding proposes a task: a title and 1-2 sentences of scope — the smallest concrete action, not an essay. A **Note** also carries the question to put to a person: whoever started you asks it, and the answer shapes the task.
+- Every finding becomes a task of the epic and is done before the epic is declared ready, whatever its severity; severity orders the work and tells how much the gap costs. Rate honestly: inflating a Should-fix to a Blocker misstates what the goal lacks, and a gap the goal does not require is no finding at all.
 - Do NOT re-review code quality, style, or correctness of what exists — that is the reviewers' job. If you notice a bug, mention it in one line and move on.
 - Do NOT invent scope: a gap is something the GOAL requires, not something that would merely be nice. When unsure, file it as a Note with the question that should be asked.
 - Cap the hunt: if a category is genuinely covered, say "covered" in one line with the evidence pointer. A clean category is a result, not a failure to find.
 
 ## Report format
 
-You write no file — Edit and Write are denied to you — so the full report is your answer, and the findings go back in your answer to whoever started you: a workflow, or the session that leads the epic. They decide what each finding becomes; you file no task and write no record. Structure: the goal restated in one line → a per-category verdict (the gap(s), or "covered: <evidence>") → a findings table (severity, gap, evidence, proposed task) → counts by severity. A dispatch that names a report path gets the same text in the answer, and whoever dispatched you saves it.
+You write no file — Edit and Write are denied to you — so the full report is your answer, and the findings go back in your answer to whoever started you: a workflow, or the session that leads the epic. They decide what each finding becomes; you file no task and write no record. Structure: the goal restated in one line → a per-category verdict (the gap(s), or "covered: <evidence>") → a findings table (severity, gap, evidence, proposed task, question (for a Note)) → counts by severity. A dispatch that names a report path gets the same text in the answer, and whoever dispatched you saves it.
 
-**A schema in the dispatch →** the structured answer carries the same findings, one entry per gap with its evidence, severity, minimal action and how to verify it by observation.
+**A schema in the dispatch →** the structured answer carries the same findings, one entry per gap with its evidence, severity, minimal action, how to verify it by observation and, for a Note, its question.

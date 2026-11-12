@@ -25,8 +25,10 @@ if (A.task === undefined || A.task === null) throw new Error('conport task workf
 const TASK = A.task
 const PROJECT = A.project ?? null
 const SERIAL = !!A.serialChecks
-const FILE_MINORS = !!A.fileMinors // default: minors live in the ledger only — they never become tasks
-const SKELETON_VERSION = 18     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
+// No finding is left as a line: a minor the fix round leaves open is always filed as
+// one follow-up task — under the task's own epic when it has one (the minor is a
+// finding of that epic), under the tails epic otherwise. `fileMinors` is no longer needed.
+const SKELETON_VERSION = 19     // prompt skeleton version; bump on every edit of the PIPE_BASE, PIPE_CYCLE, SCOUT_BASE or ACCOUNT_PIPE region and re-pin test/skeleton-pin.test.mjs (mirror it)
 const retry = async (lbl, mk) => (await mk(lbl)) ?? (await mk(lbl + '-r2'))
 
 // AGENT_TYPES_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
@@ -47,9 +49,39 @@ const AGENT = {
 // untyped straight away, and the ledger names the type once.
 const NO_AGENT_TYPE = /agent type '[^']*' not found/
 const missingTypes = new Set()
+// A problem of the conport service itself that an agent of the run meets — a tool
+// that behaves unlike its description, a refusal that names no action or whose action
+// did not help, a kind or a type the work needs and the service lacks — is never
+// filed from the run: no person is at it. The agent answers the report in
+// service_reports; ask() offers that field to every judgement agent, collects the
+// reports into the ledger as a list of their own, and the run hands them back to
+// the session with the action serviceReportsAction names. The pipes stay mechanical
+// and are never asked: they only pipe the helper's output.
+const S_SERVICE_REPORTS = { type: 'array', items: { type: 'object', required: ['title', 'body'], properties: {
+  title: { type: 'string' }, body: { type: 'string' } } } }
+const SERVICE_REPORT_RULE = `
+A problem of the conport service itself (a tool that behaves unlike its description, a
+refusal that names no action or whose action did not help, a kind or a type the work
+needs and the service lacks) -> file no GitHub issue and post no comment: no person is at
+this run. Return each such report in service_reports as {title, body}, laid out as the
+conport skill's REPORTING TO THE SERVICE DEVELOPERS section lays it out, with no project
+content in it.`
+const ask = async (prompt, opts) => {
+  const r = await agent(prompt + SERVICE_REPORT_RULE, { ...opts, schema: { ...opts.schema,
+    properties: { ...opts.schema.properties, service_reports: S_SERVICE_REPORTS } } })
+  for (const s of (r && Array.isArray(r.service_reports) ? r.service_reports : []))
+    if (s && typeof s.title === 'string' && typeof s.body === 'string' &&
+        !L.service_reports.some(x => x.title === s.title && x.body === s.body))
+      L.service_reports.push({ title: s.title, body: s.body, from: opts.label })
+  return r
+}
+// What the ledger tells the session about the reports it carries: nothing for none.
+const serviceReportsAction = reports => (reports.length
+  ? 'service_reports holds reports for the conport service developers that agents of this run met and did not file, with no person at the run: take each through the steps of REPORTING TO THE SERVICE DEVELOPERS in the conport skill that a session with a person takes after writing a report: ask the user — show its title and body — and only after the user agrees file it or comment, with gh, or without gh by the links.'
+  : null)
 const typed = async (prompt, opts) => {
   if (!missingTypes.has(opts.agentType)) {
-    try { return await agent(prompt, opts) } catch (e) {
+    try { return await ask(prompt, opts) } catch (e) {
       if (!NO_AGENT_TYPE.test(String(e && e.message))) throw e
       if (!missingTypes.has(opts.agentType)) {
         missingTypes.add(opts.agentType)
@@ -58,7 +90,7 @@ const typed = async (prompt, opts) => {
     }
   }
   const { agentType, ...untyped } = opts
-  return agent(prompt, { ...untyped, label: untyped.label + '-untyped' })
+  return ask(prompt, { ...untyped, label: untyped.label + '-untyped' })
 }
 // AGENT_TYPES_END
 
@@ -68,11 +100,15 @@ const L = {
   fail_reason: null, fail_detail: null, branch: null, head_sha: null,
   merge_sha: null, review: null, rereview: null, minors: [],
   accounting: null, pending_table: null, notes: [], journal: [],
+  service_reports: [], service_reports_action: null,
 }
+// Every return of the run goes through finish(): the ledger it hands back says what
+// to do with the service reports it carries.
+const finish = () => { L.service_reports_action = serviceReportsAction(L.service_reports); return L }
 const abort = (reason, detail) => {
   L.outcome = 'ABORTED'; L.abort_reason = reason
   if (detail !== undefined) L.abort_detail = detail
-  return L
+  return finish()
 }
 const fail = (reason, detail) => {
   L.outcome = 'FAILED'; L.fail_reason = reason
@@ -279,10 +315,19 @@ below, byte for byte:${fenced('step.json', JSON.stringify(step))}Below, <tmp> is
 // The branches an earlier run may have left for a task, its latest attempt first.
 const branchPrompt = branch => pipe('branch --names ' + shq(JSON.stringify([branch + '-ctx', branch + '-r2', branch])))
 
-// The verdict the journal gets is the run's own decision: a CRITICAL or IMPORTANT
-// finding sends the work back; minors alone never block, so they are an approval
-// the fixer still polishes.
-const journalVerdict = rev => (hard(rev) ? 'changes_requested' : 'approve')
+// The verdict the journal gets is the run's own decision: any open finding sends
+// the work back, a minor too — the fix round closes it. A minor that round leaves
+// open does not hold a plan task's merge: the run carries it on and says so in the
+// journal, with a fix entry and an approving review of its own (carriedBodies), so
+// the task closes from REVIEW with nothing it found left unsaid.
+const journalVerdict = rev => (rev.findings.length ? 'changes_requested' : 'approve')
+const carriedBodies = (findings, where) => {
+  const list = findings.map(f => '- [' + f.severity + '] ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what).join('\n')
+  return {
+    fix: 'Fix report: the review findings below are left open after the fix round and carried on — ' + where + '\nOpen findings:\n' + list,
+    review: 'Verdict: approve — the run accepts the task with its open review findings carried on: ' + where + '\nOpen findings:\n' + list,
+  }
+}
 const REVIEW_NOTES = {
   resumed: 'Review of the branch an earlier run left',
   rereview: 'Re-review after the fix',
@@ -689,7 +734,14 @@ string or an array -> that is NOT an answer either: discard it and do BRANCH B.
 // ACCOUNT_PIPE_END
 
 const accountantPrompt = table => {
-  const minorsStep = table.minors_umbrella
+  const minorsStep = table.minors_umbrella && Number.isInteger(table.minors_umbrella.parent)
+    ? `3) MINORS (one umbrella, never scattered tasks): it is a finding of the task's own
+   epic, minors_umbrella.parent: list_tasks(parent_task_id=${table.minors_umbrella.parent},
+   status="ALL", include_snoozed=true); a child with the exact title from
+   minors_umbrella.title exists -> skip; else add_task(parent_task_id=${table.minors_umbrella.parent},
+   title=<minors_umbrella.title>, priority=4, description=<minors_umbrella.description,
+   verbatim>). No tails epic is looked up or created.`
+    : table.minors_umbrella
     ? `3) MINORS (one umbrella, never scattered tasks): ensure the epic titled
    'Workflow run tails' exists — search/list_tasks by that EXACT title
    (kind=epic, open); none -> add_task(kind="epic", priority=4,
@@ -698,8 +750,7 @@ const accountantPrompt = table => {
    minors_umbrella.title exists -> skip; else add_task(parent_task_id=<that
    epic>, title=<minors_umbrella.title>, priority=4,
    description=<minors_umbrella.description, verbatim>).`
-    : `3) MINORS: none to file — deferred minors travel in the run ledger and the
-   resolution; do NOT create any task for them.`
+    : `3) MINORS: none to file — no minor was left open; do NOT create any task.`
   return `${accountPipe(table)}
 You are the ConPort accountant (conport MCP tools via ToolSearch, project=${table.project}).
 Execute the table STRICTLY in order, each item behind an idempotency guard.
@@ -749,7 +800,7 @@ if (pre.current_branch !== pre.branch)
 const MAIN = pre.branch
 
 phase('Scout')
-const sc = await retry('scout', l => agent(scoutPrompt(TASK, PROJECT, A.plan), { label: l, schema: S_SCOUT }))
+const sc = await retry('scout', l => ask(scoutPrompt(TASK, PROJECT, A.plan), { label: l, schema: S_SCOUT }))
 if (!sc) return abort('ABORTED_NO_SCOUT')
 L.notes.push('scout via:"' + (sc.via ?? 'unknown') + '"')  // the branch that ran the scout: wf-helper (A) or mcp (B)
 if (sc.task.kind === 'epic') return abort('ABORTED_IS_EPIC', 'this id is an epic — use /conport:epic')
@@ -772,6 +823,18 @@ if (sc.task.status === 'REVIEW') {
 }
 const cycleStep = (label, kind, fields) => cycle(label, { project: sc.project, task_id: sc.task.id, step: kind, ...fields })
 const reviewOf = (label, rev, note) => reviewStep(label, sc.project, sc.task.id, rev, note)
+// Minors the fix round left open stay in the run ledger; the journal records it
+// with a fix entry and an approving review of the run's own, so the task leaves
+// REVIEW with them on record.
+const carry = async findings => {
+  const epic = sc.task.parent_epic_id
+  const where = Number.isInteger(epic)
+    ? 'they become one task of epic task-' + epic + ', filed by this run'
+    : 'they become one follow-up task, filed by this run under the tails epic'
+  const b = carriedBodies(findings, where)
+  if (await cycleStep('j-carry-fix', 'fix', { body: b.fix }))
+    await cycleStep('j-carry-review', 'review', { verdict: 'approve', body: b.review })
+}
 
 phase('Baseline')
 const base = await retry('baseline', l => piped(basePrompt(gate), { label: l, effort: 'low', schema: S_BASE }))
@@ -819,17 +882,19 @@ if (!L.outcome) {
       if (!fx || fx.status !== 'DONE') {
         if (hard(rev) && !fixBrief) fail('BRIEF_NOT_WRITTEN', 'j-brief-fix')
         else if (hard(rev)) fail('FIX_FAILED')
-        else collectMinors(rev)                      // minors alone never block the merge — leftovers go to the ledger
+        else { collectMinors(rev); await carry(rev.findings) }   // minors alone never block the merge — leftovers go to the ledger
       } else {
-        // A returned task goes back to REVIEW with the fix report; after an
-        // approval with minors the task is still in REVIEW and takes none.
-        if (hard(rev)) await cycleStep('j-fix', 'fix', { result: fx })
+        // Any finding returned the task to IN_PROGRESS: the fix report takes it back to REVIEW.
+        await cycleStep('j-fix', 'fix', { result: fx })
         const reBrief = await briefed('j-brief-rereview', TO_RECHECK(rev, fx))
         const r2 = reBrief ? await typed(revPrompt(sc, impl, MAIN, { rereview: true }), { label: 'rev2', agentType: AGENT.reviewer, schema: S_REV }) : null
         if (r2) await reviewOf('j-review2', r2, REVIEW_NOTES.rereview)
         if (!reBrief) fail('BRIEF_NOT_WRITTEN', 'j-brief-rereview')
         else if (!r2 || hard(r2)) fail('RED_AFTER_FIX')
-        else { L.rereview = r2; collectMinors(r2); L.head_sha = fx.head_sha }
+        else {
+          L.rereview = r2; L.head_sha = fx.head_sha
+          if (r2.findings.length) { collectMinors(r2); await carry(r2.findings) }
+        }
       }
     }
   }
@@ -851,7 +916,7 @@ if (!L.outcome) {
   const rbBrief = res && res.status === 'CONFLICT' && await briefed('j-brief-rebase', TO_REBASE(impl.branch, MAIN))
   if (res && res.status === 'CONFLICT' && !rbBrief) { fail('BRIEF_NOT_WRITTEN', 'j-brief-rebase'); res = null }
   if (res && res.status === 'CONFLICT') {
-    const rb = await agent(rebasePrompt(sc, impl, SERIAL, MAIN), { label: 'rebase', schema: S_REB })
+    const rb = await ask(rebasePrompt(sc, impl, SERIAL, MAIN), { label: 'rebase', schema: S_REB })
     adoptWorktree(impl, rb)
     const rbDone = !!rb && rb.status === 'DONE'
     const rrBrief = rbDone && await briefed('j-brief-rb', REBASED(rb.conflict_files))
@@ -861,6 +926,7 @@ if (!L.outcome) {
     else if (!rb || !rr || hard(rr)) { fail('MERGE_CONFLICT'); res = null }
     else {
       L.head_sha = rb.head_sha
+      if (rr.findings.length) { collectMinors(rr); await carry(rr.findings) }
       const m1 = await piped(mergePrompt([{ ...q[0], head_sha: rb.head_sha }], gate),
                              { label: 'merge-rb', effort: 'low', schema: S_MG })
       res = m1 && m1.results[0]
@@ -884,7 +950,8 @@ if (!L.outcome) {
 phase('Accounting')                       // always, once the implementer has started
 if (L.branch || L.outcome === 'FAILED') {
   const minorsNote = L.minors.length
-    ? '; ' + L.minors.length + ' review minor(s) deferred in the run ledger' + (FILE_MINORS ? ' and filed as one umbrella task' : '')
+    ? '; ' + L.minors.length + ' review minor(s) left open, filed as one ' +
+      (Number.isInteger(sc.task.parent_epic_id) ? 'task of epic task-' + sc.task.parent_epic_id : 'follow-up task')
     : ''
   const table = {
     project: sc.project,
@@ -895,13 +962,14 @@ if (L.branch || L.outcome === 'FAILED') {
     block: L.outcome === 'FAILED'
       ? { id: sc.task.id, reason: L.fail_reason + (L.fail_detail ? ': ' + JSON.stringify(L.fail_detail) : '') }
       : null,
-    minors_umbrella: (FILE_MINORS && L.minors.length)
+    minors_umbrella: L.minors.length
       ? { title: 'Review minors: task-' + sc.task.id + ' run',
-          description: ('Deferred review minors from the /conport:task run of task-' + sc.task.id + ':\n' +
-            L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '')).join('\n')).slice(0, 1900) }
+          description: ('Review minors left open by the /conport:task run of task-' + sc.task.id + ':\n' +
+            L.minors.map(f => '- ' + f.file + (f.line ? ':' + f.line : '') + ' — ' + f.what + (f.fix ? ' (fix: ' + f.fix + ')' : '')).join('\n')).slice(0, 1900),
+          ...(Number.isInteger(sc.task.parent_epic_id) ? { parent: sc.task.parent_epic_id } : {}) }
       : null,
   }
-  const acc = await retry('account', l => agent(accountantPrompt(table), { label: l, effort: 'low', schema: S_ACC }))
+  const acc = await retry('account', l => ask(accountantPrompt(table), { label: l, effort: 'low', schema: S_ACC }))
   if (!acc) { L.accounting = 'INCOMPLETE'; L.pending_table = table }
   else {
     L.accounting = acc
@@ -914,4 +982,4 @@ if (L.branch) await cleanup(
   janPrompt(L.outcome === 'MERGED' ? [L.branch] : [], impl && impl.worktree_path ? [impl.worktree_path] : []),
   { label: 'janitor', effort: 'low', schema: S_JAN })
 L.outcome = L.outcome ?? 'UNKNOWN'
-return L
+return finish()
