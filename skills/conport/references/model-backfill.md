@@ -191,6 +191,17 @@ characters".
 
 **The order** — by date of creation, then by number.
 
+**The path of development.** Today's code differs from what the first
+documents discussed: the product grows, documents go out of date, and some
+entities are replaced by others. By the original intent the pass walks the
+project's path from its beginning to its current state: each document is read
+as the project stood on its date, not checked against today's code. A thing an
+early document names that the code no longer has is neither an error of the
+document nor a reason to skip it: submit it as the document states it, and a
+later document or step 4 marks what replaced it. Never rewrite an old
+document's claims to fit the current code, never invent a removal inside an
+old document, and never rename an entity to get past a refusal.
+
 **The review.** Every document portion is reviewed before it is submitted,
 in the order of the part *The review of a document portion* of the skill's
 section *PROJECT MODEL*: the input directory

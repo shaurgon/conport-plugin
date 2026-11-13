@@ -1,5 +1,14 @@
 # conport changelog
 
+## 24.0.2
+
+**The backfill walks the project's path of development.** The pass of
+`references/model-backfill.md` now says that today's code differs from what
+the first documents discussed, and that each document is read as the project
+stood on its date: an early document's thing the code no longer has is
+submitted as the document states it, and a later document or the result marks
+what replaced it — never rewritten to fit the current code.
+
 ## 24.0.1
 
 **The Superpowers overlay reaches the agent again.** Claude Code shows the
