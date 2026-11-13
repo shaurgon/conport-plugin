@@ -79,11 +79,11 @@ other tool), `name` (the short name), `canonical_name`
 `recent_decisions`, `recent_patterns`,
 `summary` opens with `Project <name> (<handle>) loaded`;
 `backlog` (`total_todo`, `total_in_progress`, `total_review`, `top` — up to 5
-items with `effective_priority`, `has_open_bug` and `subtask_count`; built
-over TODO, IN_PROGRESS and REVIEW, with open Bugs and epics with an open
-Bug first, then effective priority <= 2 across milestones, then the current
-milestone, then the rest; within each group, effective priority then most
-recently updated), `stats` (`tasks_todo`, `tasks_in_progress`,
+items with `effective_priority` and `subtask_count`; built over TODO,
+IN_PROGRESS and REVIEW, with effective priority <= 2 across milestones first,
+then the current milestone, then the rest; within each group, effective
+priority then most recently updated; an open Bug goes first among the children
+of its epic and lifts neither itself nor its epic here), `stats` (`tasks_todo`, `tasks_in_progress`,
 `tasks_review` among them), `active_context`
 (`current_focus`, `open_questions`), `recent_progress` (last 5 `log_progress`
 entries), `instructions` and `summary`.
@@ -291,7 +291,8 @@ mcp__conport__sync_decision({
   project: <project>,
   summary: "Use PostgreSQL",
   rationale: "ACID compliance",
-  tags: ["database", "arch"]
+  tags: ["database", "arch"],
+  entities: ["Primary database"]
 })
 ```
 
@@ -301,9 +302,19 @@ mcp__conport__sync_decision({
 | summary | string | yes | Short summary (max 200 chars) |
 | rationale | string/object | no | Rationale (max 2000 chars). JSON string or object. |
 | tags | array | no | Tags |
+| entities | array | no | Names of entities of the project model the decision is about, at most 50 (read them with `arch_names`). Each name or alias, in any case, links the decision to its entity (`decision` → `entity`, `clarifies`) |
 
 **Returns:** a slim echo — `id`, `tags`, `summary`. May include
 `_hint`, `_similar_decisions`, `_hint_message` when a cluster is detected.
+With `entities` the answer adds `linked_entities` (`id`, `name`) and
+`unknown_entities` — the names the model does not have; an unknown name
+refuses nothing. A failed linking keeps the decision and answers
+`entities_error` with its code: `decision_not_found` — the decision was
+deleted before it was linked and nothing is linked: record it again with
+`sync_decision` and the same `entities` if it still holds; any other code —
+call `update_decision` with the same `entities`.
+
+**Refusals:** `too_many_entities` (more than 50 names; nothing is written).
 
 ### update_decision
 
@@ -329,9 +340,17 @@ mcp__conport__update_decision({
 | rationale | string/object | no | New rationale. JSON string or object. |
 | implementation_details | string | no | New implementation details |
 | tags | array | no | New tag list — replaces the existing tags entirely |
+| entities | array | no | Names of entities of the project model to link the decision to, at most 50, as in `sync_decision`. Adds links and never removes one |
 
 **Returns:** a slim echo — `id`, `tags`, `summary`. An unknown decision is
-rejected as not found.
+rejected as not found. With `entities` the answer adds `linked_entities` and
+`unknown_entities`; a failed linking keeps the update and answers
+`entities_error` with its code: `decision_not_found` — the decision was
+deleted before it was linked and nothing is linked: record it again with
+`sync_decision` and the same `entities` if it still holds; any other code —
+call `update_decision` again with the same `entities`.
+
+**Refusals:** `too_many_entities` (more than 50 names; nothing is written).
 
 ### deprecate_decision
 
@@ -730,7 +749,7 @@ mcp__conport__list_tasks({
 | ready | boolean | no | Only tasks with no open blocking dependency — a `blocks`/`requires` dependency on a task in TODO/IN_PROGRESS/BLOCKED/REVIEW excludes it; `suggests` and DONE/CANCELLED targets never block (default: false) |
 | include_snoozed | boolean | no | Include tasks snoozed into the future (`snooze_until` > now). Default false — snoozed tasks stay hidden from the list and the count until their snooze elapses |
 | routine_eligible | boolean | no | Filter by the autonomous-cycle opt-in marker: `true` — only marked tasks, `false` — only unmarked. Omit for no filter |
-| order | string | no | `created_at` (default, newest first) or `priority` — open Bugs and epics with an open Bug first, then rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS/REVIEW direct children; ties broken by newest first). With `priority` each task carries `effective_priority` and `has_open_bug` |
+| order | string | no | `created_at` (default, newest first) or `priority` — rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS/REVIEW direct children; ties broken by newest first). With `parent_task_id` of an epic, an open Bug goes first among the children of its epic; among roots a Bug has no precedence. With `priority` each task carries `effective_priority` |
 | limit | integer | no | Max results (default: 50) |
 | offset | integer | no | Pagination offset — page deeper than the first `limit` tasks (default: 0) |
 | include_description | boolean | no | Include task descriptions (default: false) |
@@ -738,8 +757,8 @@ mcp__conport__list_tasks({
 **Returns:** `tasks` (`id`, `title`, `status`, `priority`, `parent_task_id`,
 `kind`, `estimated_seconds`, `actual_seconds`, `started_at`, `completed_at`,
 `snooze_until`, `claim_expires_at`, `routine_eligible`, `milestone_id`,
-timestamps — plus `effective_priority` and
-`has_open_bug` with `order: "priority"`), `total` and a
+timestamps — plus `effective_priority` with
+`order: "priority"`), `total` and a
 one-line `summary`. Epic rows carry the time sums of their children.
 
 ### get_task
@@ -1651,11 +1670,23 @@ mcp__conport__arch_names({
 
 ### arch_get
 
-Read a slice of the model in one of four views. Each entity carries its
+Read a slice of the model in one of five views. Each entity carries its
 `stage` (planned — no anchor, declared — anchors none of which the last
 anchor check found, built — a `path` or `symbol` anchor found) and `maturity`
 (the number of linked decisions); each relation its `weight` (the share of
 done tasks of the epics of the document that introduced it).
+
+`composition` shows the units, external systems, persons and stores without
+an owner, and the parts of the units in `expand`; `neighbourhood` shows
+`entity` and what is related to it `depth` steps away; `contribution` shows
+what one to three `documents` claim; `data` shows the data entities and their
+references, under `unit` when it is given. `graph` takes no other parameter:
+every active entity, the active relations between them and the current
+decisions bound to them, each decision a node beside its entities; past 500
+nodes (entities and decisions together) the units only, the relations of their
+parts raised onto them and no decisions, with `truncated` true and a `hint`
+(expand a unit in the Architecture section of the dashboard, or read it with
+`composition`).
 
 ```
 mcp__conport__arch_get({
@@ -1669,7 +1700,7 @@ mcp__conport__arch_get({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| view | string | yes | composition \| neighbourhood \| contribution \| data |
+| view | string | yes | composition \| neighbourhood \| contribution \| data \| graph |
 | expand | integer[] | no | composition: the units shown with their parts |
 | entity | integer | no | neighbourhood: the entity in the middle |
 | depth | integer | no | neighbourhood: 1 or 2 (default 1) |
@@ -1679,7 +1710,8 @@ mcp__conport__arch_get({
 **Returns:** `view`, `entities` (`id`, `type`, `name`, `technologies`,
 `state`, `stage`, `maturity`, `parent_id`, `expandable`, `expanded`,
 `documents`), `relations` (`id`, `type`, `source_id`, `target_id`, `label`,
-`state`, `weight`, `lifted`, `count`, `documents`).
+`state`, `weight`, `lifted`, `count`, `documents`); `graph` also
+`decisions` (`id`, `summary`, `entity_ids`), `truncated` and `hint`.
 
 **Refusals:** `entity_not_found`, `unit_not_found`, `invalid_depth`,
 `too_many_documents`, `document_has_no_portion`.
@@ -1758,7 +1790,11 @@ step_without_relation \| scenario_participant_gone, `subject`, `detail`,
 backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,
 `next_after` — the `unlinked_after` of the next page, null on the last one)
 lists the current decisions no entity is bound to (by a `clarifies` link from
-the decision to the entity); in any other state the key is absent.
+the decision to the entity); in any other state the key is absent. `vectors`
+(`entities_missing`, `scenarios_missing`) counts the entities and the
+scenarios of the model still without a search vector: the service fills them
+on its own, within minutes, and until then `search` finds them by their names
+only.
 
 **Refusals:** `invalid_page` (an `unlinked_after` outside 0 to 2147483647).
 
@@ -2155,12 +2191,21 @@ argument is refused: send `target_project` and `link_type`.
 
 ### search
 
-Unified search across all project data with GraphRAG.
+Unified search across all project data with GraphRAG — or, in a project whose
+model is filled, with the branch of the project model in place of GraphRAG
+(hits carry `content.via_arch_entity` or `content.via_arch_scenario`; see live
+docs `projects/architecture-model`).
 
 Automatically combines:
 - **Semantic search** (vector similarity)
 - **Full-text search** (FTS)
 - **GraphRAG** (entity and community traversal)
+- **The project model** — in place of GraphRAG in a project whose model is
+  filled (`backfill.filled` of `arch_status`): the documents, decisions and
+  epics of the entities and scenarios the query matches, and of the entities
+  one and two relations away. Removed and replaced entities give no records
+  unless `include_removed` is true; a failure of this source names `arch` in
+  `failed_sources`
 
 Results are merged via **Reciprocal Rank Fusion (RRF)**.
 
@@ -2180,6 +2225,7 @@ mcp__conport__search({
 | types | array | no | Filter by item type. **Singular vocabulary**: `decision`, `task`, `pattern`, `document`, `progress_entry`, `context`, `custom_data`; the cross-reference short forms `progress` and `doc` are accepted as aliases. Values outside it are dropped, so a typo (`tasks`, `docs`) silently narrows the search to nothing |
 | limit | integer | no | Max results, capped at 100 (default: 20) |
 | team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
+| include_removed | boolean | no | Also find the records of removed or replaced parts of the project model — e.g. "what replaced X" (default: false) |
 
 **Returns:** `results` (ranked) and `total`, plus a rendered `_summary` and
 `team` — the team the search ran in (`pers` for your Private Team, otherwise
@@ -2196,9 +2242,12 @@ Each hit carries:
   none (`null`) and names its entry by `content.category` and `content.key`
 - `project` (the handle) / `project_name` — which project the hit came from
 - `content` — the item blob. GraphRAG hits carry `via_entity` /
-  `via_community` inside it; decision hits are annotated with `currency`
-  (current \| superseded \| deprecated), `superseded_by`,
-  `superseded_by_patterns` and `age_days`, by the rule of `get_decision`
+  `via_community` inside it; a hit reached through the project model carries
+  `via_arch_entity` (`id`, `name`, `stage`) or `via_arch_scenario` (`id`,
+  `name`, `kind`) — the entity or the scenario it came through; decision
+  hits are annotated with `currency` (current \| superseded \| deprecated),
+  `superseded_by`, `superseded_by_patterns` and `age_days`, by the rule of
+  `get_decision`
 - `score` — RRF score, `created_at`
 - `_source` — only on pattern/decision hits related through a `derived_from`
   edge: `aggregated_pattern` (with `_aggregated_from`) or
@@ -2331,6 +2380,18 @@ mcp__conport__assemble_context({
 **Returns:** `recipe`, `recipe_version`, `start_id`, `format`, `content` (the
 rendered markdown, or the structured payload with `format: "json"`) and
 `generated_at`.
+
+`task_briefing` also gives the project model of the epic: when the top of the
+task's parent chain is an epic (an epic is the top of its own chain, so the
+briefing of an epic reads its own documents) and documents linked to the epic
+by `clarifies` (in either direction) have their portions in the model, the
+payload carries `model_entities` (`id`, `name`, `type`, `stage`, `state`,
+`anchors`) — the entities their portions claim, taken together, the active
+ones first, then by name, at most 50 — and the markdown a section *Model
+entities of the epic's source document*. An empty list means their portions
+claim no entity. `model_entities_total` gives how many there are in all, only
+when the list is cut past 50. A task without an epic above it, or an epic
+without such a document, gets neither key.
 
 **Errors:** an unknown `recipe` name, a `start_id` whose declared type does
 not match the recipe (the message names the recipe to use instead), and a

@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 23.0.0
+  version: 23.1.0
 ---
 
 # ConPort — Project Management System
@@ -489,11 +489,11 @@ to a single closing task (e.g. mid-implementation notes, infra changes).
 milestone is the open one with the smallest `sequence`, and `init` / `get_agenda`
 return it in the `roadmap` section.
 
-- **Work the current milestone.** Exception: an open Bug (`kind='bug'`,
-  status TODO, IN_PROGRESS, REVIEW or BLOCKED) from any milestone comes before
-  an ordinary task of the current milestone. Follow `backlog.top`: open Bugs
-  and their epics come first; readiness and review gates still apply.
-  In an interactive session, picking up ordinary work
+- **Work the current milestone.** An open Bug (`kind='bug'`, status TODO,
+  IN_PROGRESS, REVIEW or BLOCKED) goes first among the children of its epic
+  and has no precedence outside it: it lifts neither its epic nor itself over
+  the milestone order, and `backlog.top` ranks it like any other row.
+  In an interactive session, picking up work
   that belongs to a **later** milestone needs an **explicit decision by the
   owner** — say which milestone the work sits in and ask before starting; never
   silently pull work forward because it looked convenient. Work attached to no
@@ -503,7 +503,7 @@ return it in the `roadmap` section.
   attach it by the **conport-roadmap** rules, never leave it aside. (An
   autonomous routine run has no owner to ask: the
   **conport-routine** skill overrides this rule with its own — unattached rows
-  are fair game; later-milestone ordinary rows are not.)
+  are fair game; later-milestone rows are not.)
 - **Closing a milestone always carries `resolution`** — what was delivered
   (DONE) or why it was dropped (CANCELLED). The server logs a progress entry
   from it.
@@ -541,6 +541,7 @@ return it in the `roadmap` section.
 |---------|------|
 | Question about the project | `search` BEFORE answering |
 | "What was decided about Y?" | `search` by topic |
+| "What replaced X?" / a removed or replaced part of the project model | `search` with `include_removed=true` (see *PROJECT MODEL → Search through the model*) |
 | "Which projects do I own?" / bootstrapping without a known project handle | `list_projects` |
 
 ### Sync
@@ -549,6 +550,7 @@ return it in the `roadmap` section.
 |---------|------|
 | Technology choice | `sync_decision` |
 | Trade-off with rationale | `sync_decision` |
+| Decision about the structure of the system | `sync_decision` with `entities` — the names of the model entities it is about (see *PROJECT MODEL → A decision names its entities*) |
 | Read one decision's full body (id → tags + currency) before amending | `get_decision` |
 | Amend / re-tag an existing decision | `update_decision` |
 | Decision no longer holds, NO replacement | `deprecate_decision` (reason required) |
@@ -745,6 +747,7 @@ below.
 | "What is the system made of?" | `arch_get` with `view='composition'` (`expand` opens units) |
 | "What touches X?" / one entity and its neighbours | `arch_get` with `view='neighbourhood'`, then `arch_entity` for the card |
 | "What did these specs bring in?" | `arch_get` with `view='contribution'` (one to three `documents`) |
+| The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; past 500 nodes the units only, with `truncated` true and a `hint`) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
 | Review a document portion before submitting it | `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
@@ -984,6 +987,56 @@ is `review_not_for_code`. `dismissed` of a portion is only for the debt
 `invented` finding there is `dismissal_moved` — dismiss it in
 `review.findings`. A portion without `review` is accepted and owes the debt
 `unchecked_portion` until it is reviewed and submitted again.
+
+### A decision names its entities
+
+When you record a decision about the structure of the system — what a unit,
+a component, an interface, a store or a setting is, does or is made of — call
+`sync_decision` with `entities`: the names of the entities of the model the
+decision is about, read with `arch_names` (every page), at most 50. A name or
+an alias, in any case, links the decision to its entity (`decision` →
+`entity`, `clarifies`), the same link a portion's `decisions` puts; a new
+submission of the portion does not remove it. The answer adds
+`linked_entities` (`id`, `name`) and `unknown_entities`. For a decision written
+earlier, `update_decision` with `entities` adds links and removes none. A
+decision that is not about the structure names no entity, and the model owes
+nothing for it.
+
+- **`unknown_entities`** — names the model does not have. The decision is
+  written: an unknown name refuses nothing. Never invent a name to make it
+  link. Look each one up with `arch_names` (every page), or with `arch_lookup`
+  by the path or the symbol of the thing. When the model holds it under
+  another name, call `update_decision` with the right names. When the model
+  lacks the thing, add the entity to the portion of the document that
+  introduces it (`arch_source`, edit, review and `arch_submit` — *How to
+  submit a portion*), then call `update_decision` with its name. A thing the
+  model does not hold — a library, a principle — is left out.
+- **`too_many_entities`** — more than 50 names: nothing was written. Call again
+  with the 50 the decision is most about, then add the rest with
+  `update_decision`, at most 50 a call.
+- **`entities_error`** — the decision is written and its linking failed; the
+  key names the code. `decision_not_found`: the decision was deleted before
+  it was linked, and nothing is linked — record it again with `sync_decision`
+  and the same `entities` if it still holds. Any other code: call
+  `update_decision` with the same `entities`.
+
+### Search through the model
+
+In a project whose model is filled (`backfill.filled` of `arch_status`),
+`search` also reaches records through the model. A query that names an entity
+or a scenario, or comes close to one, finds the documents that claim the
+entity, the decisions linked to it and the epics of its documents, and the
+records of the entities one and two relations away; a scenario gives the
+block of its source document and the records of its participants. Such a hit
+carries in `content` the part of the model it came through:
+`via_arch_entity` (`id`, `name`, `stage`) or `via_arch_scenario` (`id`,
+`name`, `kind`). The entity and the scenario are never hits themselves: read
+them with `arch_entity` and `arch_scenario`. A failure of this branch names
+`arch` in `failed_sources`.
+
+Entities that were removed or replaced give no records by default. To ask what
+replaced a thing, or what a removed part of the system was, call `search` with
+`include_removed=true`.
 
 ### Scenarios
 
@@ -1449,8 +1502,10 @@ The task tree is **two levels** and the database enforces it:
 - `kind='task'` — ordinary work (the default), a leaf node. May have `parent_task_id` pointing to an epic. Cannot have children.
 - `kind='bug'` — a defect: a review's Critical or Important, a gap hunt's
   Blocker or Should-fix, or a confirmed behaviour defect. It is a leaf with
-  the same parent rules as an ordinary task; it cannot have children and never counts toward
-  the epic's ordinary-task growth ceiling.
+  the same parent rules as an ordinary task, and it cannot have children. It
+  differs from an ordinary task in two ways only: it never counts toward the
+  epic's ordinary-task growth ceiling, and an open Bug goes first among the
+  children of its epic and nowhere else.
 - `kind='epic'` — root container. Always `parent_task_id=NULL`. Other tasks attach under it.
 
 The three kinds are exactly `task | bug | epic`; a leaf has `kind != 'epic'`.

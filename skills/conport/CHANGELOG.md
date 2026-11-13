@@ -1,5 +1,59 @@
 # conport changelog
 
+## 23.1.0
+
+Search reaches records through the project model. In a project whose model is
+filled, a query that names an entity or a scenario finds the documents, the
+decisions and the epics of the entity and of those one and two relations
+away; such a hit carries `content.via_arch_entity` (`id`, `name`, `stage`) or
+`content.via_arch_scenario` (`id`, `name`, `kind`). Removed and replaced
+entities give no records unless `search` passes the new `include_removed=true`.
+The skill's section PROJECT MODEL gains *Search through the model*, and the
+table Search a row for "what replaced X".
+
+A decision about the structure of the system names its entities:
+`sync_decision` and `update_decision` take `entities` (at most 50 names) and
+answer `linked_entities` and `unknown_entities`; more than 50 names are
+refused with `too_many_entities`. The skill's new part *A decision names its
+entities* says what to do with each answer: an unknown name is checked against
+`arch_names` or `arch_lookup` and sent again with `update_decision`, or its
+entity is added to the portion of its document first — never invented.
+
+`arch_get` has a fifth view, `graph`: every active entity and relation and the
+current decisions bound to the entities, past 500 nodes the units only with
+`truncated` and a `hint`. The Graph section of the dashboard draws it.
+`arch_status` gains `vectors` — the entities and scenarios still without a
+search vector. The tool reference and the docs pages of the project model and
+of the tools say the same.
+
+The recipe `task_briefing` of `assemble_context` gives the entities of the
+epic's source documents — those linked to the epic by `clarifies` with their
+portions in the model, taken together — under `model_entities` (`id`, `name`,
+`type`, `stage`, `state`, `anchors`; at most 50), and `model_entities_total`
+when the list is cut. The tool reference and the docs page of context recipes say so.
+
+The `search` texts name the project-model branch that replaces GraphRAG in a
+project whose model is filled.
+
+The briefing of an epic names the model entities of its own source
+documents: `assemble_context` with `task_briefing` on an epic counts the epic
+as the top of its own chain and gives `model_entities` from the documents that
+clarify it, as it does for a task under that epic.
+
+A Bug lives in its epic like an ordinary task: an open Bug goes first among
+the children of its epic and has no precedence outside it. `list_tasks` with
+`parent_task_id` and `order='priority'`, the subtasks of an epic and the
+`open_tasks` of an epic tail list the epic's open Bugs first. Among roots in
+`order='priority'`, in `backlog.top` of `init`, in `ready_top` of the agenda
+and in the order of `epic_tails`, an open Bug lifts neither itself nor its
+epic: they rank by `effective_priority` and the roadmap buckets like any other
+row, and a Bug without an epic ranks by its priority. The field
+`has_open_bug` is gone from every response (`list_tasks`, `backlog.top`,
+`ready_top`, `epic_tails`, the REST task list): it ranked nothing any more.
+The conport-roadmap skill drops the exception that let an open Bug jump the
+milestone order; the conport and conport-routine skills and the tool reference
+say the same. The growth ceiling is unchanged: a Bug still never counts.
+
 ## 23.0.0
 
 **Breaking: a document portion is reviewed on your side before it is

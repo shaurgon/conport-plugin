@@ -2,7 +2,7 @@
 name: conport-roadmap
 description: "Use when about to take a task into work, file an epic or a task, move a task between epics, call a task waiting, close an epic or a milestone, talk about a release, a version bump or a deploy, and before every report to the user with open tasks. The ConPort roadmap rules — milestones, the release point, the make-up of epics, work after a release, waiting on someone else's work. Requires the conport skill for base tool discipline."
 metadata:
-  version: 23.0.0
+  version: 23.1.0
 ---
 
 # ConPort Roadmap
@@ -70,13 +70,13 @@ which release.
 5. **Milestone order.** The release milestone stands before the milestone
    after the release. The current milestone is worked; a task from a later one
    only on the user's explicit decision, naming the milestone. "Finish the
-   rest" does not override the order. Exception: an open Bug (`kind='bug'`,
-   status TODO, IN_PROGRESS, REVIEW or BLOCKED) from any milestone comes
-   before an ordinary task of the current milestone and before the tails epic
-   of the release. Follow `backlog.top`,
-   where open Bugs and their epics come first; readiness and review gates
-   still apply. File confirmed defects with `kind='bug'`, polish and new work
-   with `kind='task'`.
+   rest" does not override the order, and neither does a Bug. An open Bug
+   (`kind='bug'`, status TODO, IN_PROGRESS, REVIEW or BLOCKED) goes first
+   among the children of its epic; outside its epic it has no precedence — it
+   lifts neither its epic nor itself over the milestone order or over other
+   epics, and a Bug without an epic ranks by its priority like an ordinary
+   task. File confirmed defects with `kind='bug'`, polish and new work with
+   `kind='task'`.
 6. **Attachment.** Every epic is attached to a milestone (`milestone_id`), and
    the milestone is chosen by one question: it ships in a release — that
    release's milestone; it is the tails epic of a release — the milestone right
