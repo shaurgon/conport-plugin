@@ -7,10 +7,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
-import { join, dirname, relative } from 'node:path'
+import { join, dirname, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+// A path inside the plugin with `/` between its parts on every platform, as the tests name it.
+const pluginPath = (path) => relative(PLUGIN, path).split(sep).join('/')
 const EXAMPLE_HANDLE = 'k7m2qx9d'
 
 function files(dir, extensions) {
@@ -28,7 +30,7 @@ function read(extensions, skip = () => false) {
   return new Map(
     files(PLUGIN, extensions)
       .filter((path) => !skip(path))
-      .map((path) => [relative(PLUGIN, path), readFileSync(path, 'utf8')]),
+      .map((path) => [pluginPath(path), readFileSync(path, 'utf8')]),
   )
 }
 

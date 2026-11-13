@@ -650,17 +650,36 @@ for (const [what, text, line] of [
 
 // A git that fails other than "not a git repository" reads no settings at all: the
 // answer names the failure, and the variable does not stand in for the files.
-test('scout under a failing git answers no project with the git failed line, the variable unread', withMock({ tasks: TASKS }, async mock => {
-  const bin = isolatedDir({ git: '#!/bin/sh\necho "fatal: detected dubious ownership in repository" >&2\nexit 128\n' })
-  chmodSync(join(bin, 'git'), 0o755)
-  const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: PROJECT, PATH: bin }
+// Windows starts no shell script as git (only a .exe is found on PATH); the real git
+// below fails on every platform.
+test(
+  'scout under a failing git answers no project with the git failed line, the variable unread',
+  { skip: process.platform === 'win32' && 'the fake git is a shell script' },
+  withMock({ tasks: TASKS }, async mock => {
+    const bin = isolatedDir({ git: '#!/bin/sh\necho "fatal: detected dubious ownership in repository" >&2\nexit 128\n' })
+    chmodSync(join(bin, 'git'), 0o755)
+    const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: PROJECT, PATH: bin }
+    const r = await runHelper(env, 'scout', '--task', '901', '--repo-root', isolatedDir({ '.conport.json': SETTINGS(PROJECT) }))
+
+    assert.equal(r.code, 0)
+    assert.deepEqual(JSON.parse(r.stdout), {
+      error: 'no project',
+      lines: ['git failed (fatal: detected dubious ownership in repository): ConPort settings were not read'],
+    })
+    assert.deepEqual(mock.requests, [])
+  }),
+)
+
+test('scout under the real git with a broken config answers no project with the git failed line, the variable unread', withMock({ tasks: TASKS }, async mock => {
+  const config = join(isolatedDir({ gitconfig: '[core\n' }), 'gitconfig')
+  const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: PROJECT, GIT_CONFIG_GLOBAL: config }
   const r = await runHelper(env, 'scout', '--task', '901', '--repo-root', isolatedDir({ '.conport.json': SETTINGS(PROJECT) }))
 
   assert.equal(r.code, 0)
-  assert.deepEqual(JSON.parse(r.stdout), {
-    error: 'no project',
-    lines: ['git failed (fatal: detected dubious ownership in repository): ConPort settings were not read'],
-  })
+  const out = JSON.parse(r.stdout)
+  assert.equal(out.error, 'no project')
+  assert.equal(out.lines.length, 1, `lines: ${out.lines}`)
+  assert.match(out.lines[0], /^git failed \(fatal: bad config line 1 in file .*gitconfig\): ConPort settings were not read$/)
   assert.deepEqual(mock.requests, [])
 }))
 

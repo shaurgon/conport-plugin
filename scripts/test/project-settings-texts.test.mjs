@@ -8,10 +8,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
-import { join, dirname, relative } from 'node:path'
+import { join, dirname, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+// A path inside the plugin with `/` between its parts on every platform, as the tests name it.
+const pluginPath = (path) => relative(PLUGIN, path).split(sep).join('/')
 
 function files(dir, keep) {
   const found = []
@@ -19,7 +21,7 @@ function files(dir, keep) {
     if (entry.name === 'node_modules' || entry.name === '.git') continue
     const path = join(dir, entry.name)
     if (entry.isDirectory()) found.push(...files(path, keep))
-    else if (keep(relative(PLUGIN, path))) found.push(path)
+    else if (keep(pluginPath(path))) found.push(path)
   }
   return found.sort()
 }
@@ -34,7 +36,7 @@ const SHIPPED = files(
   PLUGIN,
   (name) =>
     (name.endsWith('.md') && !name.endsWith('CHANGELOG.md')) || /^workflows\/[^/]+\.js$/.test(name),
-).map((path) => relative(PLUGIN, path))
+).map((path) => pluginPath(path))
 
 const INSTALL_PAGES = [
   'INSTALL.md',

@@ -208,7 +208,7 @@ test(
     const dir = isolatedDir({ '.conport.json': '{"project_name": "loose"}' })
     const got = loadSettings({ cwd: dir, env, home: isolatedDir() })
     assert.deepEqual(got.lines, [])
-    assert.equal(got.root, dir)
+    assert.equal(got.root, normalizePath(dir))
     assert.equal(got.project, 'loose')
   },
 )
@@ -221,7 +221,7 @@ test('loadSettings with the real git under a Russian locale reads a folder outsi
   const dir = isolatedDir({ '.conport.json': '{"project_name": "loose"}' })
   const got = loadSettings({ cwd: dir, env, home: isolatedDir() })
   assert.deepEqual(got.lines, [])
-  assert.equal(got.root, dir)
+  assert.equal(got.root, normalizePath(dir))
   assert.equal(got.project, 'loose')
 })
 
