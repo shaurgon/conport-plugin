@@ -2,16 +2,16 @@
 // SessionStart hook: work out the session's ConPort settings once and keep
 // them for the other hooks, tell the session the project, the lines of its
 // settings and where old settings are still kept, say that CONPORT_PROJECT_ID
-// is no longer read when it is set, inject the Superpowers overlay rules when
-// the overlay is on, then fetch the deny-list from ConPort. Graceful
-// degradation on failure.
+// is no longer read when it is set, tell the agent the Superpowers overlay is
+// on and which file holds its rules when it is, then fetch the deny-list from
+// ConPort. Graceful degradation on failure.
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const {
   CONPORT_URL, parseProject, sessionSettings, retiredProjectIdNotice, denyListPath, authHeader,
-  request, readStdin, overlayFromSettings,
+  request, readStdin, overlaySwitch, overlayNoticeText, startContext,
 } = require('./_common.js');
 const { projectLine } = require('./project-config.js');
 const { findOldPlaces, oldSettingsLine } = require('./old-settings.js');
@@ -29,15 +29,19 @@ function hookInput(raw) {
   }
 }
 
-// The overlay rules, or null when the overlay is off. Read whether or not a
-// ConPort project is configured; an unreadable rules file says nothing.
-function overlayRules(settings) {
-  if (!overlayFromSettings(settings)) return null;
+// The overlay notice (`overlayNoticeText`), or null when the overlay is off.
+// Said whether or not a ConPort project is configured; with the rules file
+// missing or unreadable nothing is said: the notice would send the agent to
+// nothing.
+function overlayNotice(settings) {
+  const overlay = overlaySwitch(settings);
+  if (!overlay.on) return null;
   try {
-    return fs.readFileSync(OVERLAY_RULES, 'utf8');
+    fs.accessSync(OVERLAY_RULES, fs.constants.R_OK);
   } catch (_) {
     return null;
   }
+  return overlayNoticeText(overlay.from, OVERLAY_RULES);
 }
 
 // The line about settings still kept in the old places, or null. Without a
@@ -50,26 +54,31 @@ function oldPlacesLine(settings) {
 }
 
 // What the session start says about its settings: the project and its
-// source, the lines of the settings, then the line about old places.
+// source, then the lines of the settings and the line about old places.
 function settingsLines(settings) {
-  return [projectLine(settings), ...settings.lines, oldPlacesLine(settings)].filter(Boolean);
+  return {
+    project: projectLine(settings),
+    lines: [...settings.lines, oldPlacesLine(settings)].filter(Boolean),
+  };
 }
 
 // The sources on which the hook runs again inside a session already told.
 const REENTRY_SOURCES = new Set(['resume', 'clear', 'compact']);
 
 // What the session is told, as one JSON document. The settings lines and the
-// overlay rules go to the agent on every source: a compacted context needs
-// them again. The user is shown the line about the retired variable and the
+// overlay notice go to the agent on every source: a compacted context needs
+// them again. The agent's part keeps within START_CONTEXT_BUDGET
+// (`startContext`): settings lines past it are counted, not shown, while the
+// user's part carries them all. The user is shown the line about the retired variable and the
 // settings lines, except on a known re-entry — a resumed, cleared or
 // compacted session has been told already. Any other source, none at all or
 // unreadable input still gets them: silence there would hide them for good.
 // Nothing to say prints nothing.
 async function tellSession(input, settings) {
-  const lines = settingsLines(settings);
-  const rules = overlayRules(settings);
-  const user = REENTRY_SOURCES.has(input.source) ? [] : [retiredProjectIdNotice(), ...lines].filter(Boolean);
-  const agent = [lines.join('\n'), rules].filter(Boolean).join('\n\n');
+  const { project, lines } = settingsLines(settings);
+  const notice = overlayNotice(settings);
+  const user = REENTRY_SOURCES.has(input.source) ? [] : [retiredProjectIdNotice(), project, ...lines].filter(Boolean);
+  const agent = startContext({ project, lines, notice });
   if (!user.length && !agent) return;
   const out = JSON.stringify({
     ...(user.length ? { systemMessage: user.join('\n') } : {}),

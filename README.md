@@ -28,7 +28,7 @@ and skills work across many clients.
 
   None of them may start subagents of its own, and none pins a model: each runs on the model of your session. The workflows dispatch the first four; `conport:sdd-final-reviewer` is started by the session that leads an epic with subagent-driven development and hands its findings back in its answer. Dispatch any of them by hand the same way. See [docs/workflows.md](./docs/workflows.md#the-agents).
 - **Hooks** (Claude Code only, Node.js, zero deps)
-  - `SessionStart` — fetches the deny-list (project conventions) from ConPort; with the Superpowers overlay on, passes the overlay rules to the session
+  - `SessionStart` — fetches the deny-list (project conventions) from ConPort; with the Superpowers overlay on, tells the session so and names the file of the overlay rules
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns; with the Superpowers overlay on, refuses a commit that adds a new file under `docs/superpowers/specs/` or `docs/superpowers/plans/`
   - `PostToolUse(add_task / update_task / delete_task)` — records the epics this session changed and drops the cached `[TAILS]` rows, so the next message fetches them again
   - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing, printed only when its composition changed

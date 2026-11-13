@@ -298,30 +298,89 @@ function overlayEnabled(dir) {
 }
 
 // The overlay switch from settings already worked out for `dir`
-// ({root, mainRoot, settings}): plugins.superpowers when it is set. Without it
-// the old flag decides — `.superpowers/config.json` holding
-// {"conport": {"superpowers": true}}, looked up in the root of the current
-// worktree, then in the root of the main one (`.superpowers/` is usually
-// ignored, so a linked worktree has no copy of its own); outside git the root
-// is the folder itself. The first file found decides. When git failed there is
-// no root and nothing is read: off. A missing file, any other value or
-// unreadable JSON is off. Never throws.
-function overlayFromSettings(result) {
+// ({root, mainRoot, settings}) and where it stands: {on, from}, `from` being
+// the tag 'settings' when plugins.superpowers is set and 'old' when the old
+// flag decided — a tag, never a path, so no separator of the OS reaches a text. Without the key the old flag decides — `.superpowers/config.json`
+// holding {"conport": {"superpowers": true}}, looked up in the root of the
+// current worktree, then in the root of the main one (`.superpowers/` is
+// usually ignored, so a linked worktree has no copy of its own); outside git
+// the root is the folder itself. The first file found decides. When git failed
+// there is no root and nothing is read: off. A missing file, any other value
+// or unreadable JSON is off. Never throws.
+function overlaySwitch(result) {
   const flag = result && result.settings && result.settings.plugins && result.settings.plugins.superpowers;
-  if (typeof flag === 'boolean') return flag;
+  if (typeof flag === 'boolean') return { on: flag, from: 'settings' };
+  const off = { on: false, from: null };
   const root = result && result.root;
-  if (!root) return false;
+  if (!root) return off;
   try {
     let raw = readOverlayConfig(root);
     const main = result && result.mainRoot;
     // Asked only when the current worktree has no file of its own.
     if (raw === null && main && main !== root) raw = readOverlayConfig(main);
-    if (raw === null) return false;
+    if (raw === null) return off;
     const config = JSON.parse(raw);
-    return Boolean(config && config.conport && config.conport.superpowers === true);
+    return { on: Boolean(config && config.conport && config.conport.superpowers === true), from: 'old' };
   } catch (_) {
-    return false;
+    return off;
   }
+}
+
+// Whether the overlay is on, by `overlaySwitch`.
+function overlayFromSettings(result) {
+  return overlaySwitch(result).on;
+}
+
+// The switch that turned the overlay on, as the notice names it, by the tag
+// `overlaySwitch` gives.
+const OVERLAY_SOURCES = {
+  settings: '`plugins.superpowers` is `true` in .conport.json or .conport.local.json',
+  old: '`conport.superpowers` is `true` in .superpowers/config.json, an old place of the switch',
+};
+
+// The notice the session start gives the agent when the overlay is on: the
+// switch, the one rule that must hold before the rules are read, the line to
+// print and the rules file to read. Claude Code shows the agent only the first
+// 2 KB of the start context, so the rules themselves stay in their file.
+function overlayNoticeText(from, rulesPath) {
+  return [
+    `ConPort Superpowers overlay: on (${OVERLAY_SOURCES[from]}).`,
+    "The user's preference for this project: specs and plans live in ConPort, not in git. " +
+      'Never create or commit a file under docs/superpowers/specs/ or docs/superpowers/plans/; ' +
+      'wherever a Superpowers skill says to write or commit one, follow the overlay rules instead.',
+    'At the start of the session print one line: `[CONPORT] Superpowers overlay: on`.',
+    `The overlay rules are not in this context: read the whole file \`${rulesPath}\` ` +
+      'before brainstorming, writing a spec or a plan, executing a plan or dispatching a subagent.',
+  ].join('\n');
+}
+
+// The bytes of start context the agent is given at most: Claude Code shows the
+// agent the first 2 KB of a hook's context and saves the rest to a file.
+const START_CONTEXT_BUDGET = 1800;
+
+const utf8Bytes = (text) => Buffer.byteLength(text, 'utf8');
+
+// The line that stands for the settings lines left out of the agent's context.
+function moreLinesLine(count) {
+  return `${count} more ConPort settings line${count === 1 ? '' : 's'} did not fit here: ` +
+    'the user was shown them at the start of the session';
+}
+
+// The agent's start context: the project line first, then the settings lines,
+// then the overlay notice after a blank line. The notice and the project line
+// are always whole; when everything does not fit `budget` bytes, the settings
+// lines from the first one that does not fit on collapse into one line that
+// says how many were left out (the user is shown them all).
+function startContext({ project = null, lines = [], notice = null }, budget = START_CONTEXT_BUDGET) {
+  const head = project ? [project] : [];
+  const compose = (body) => [body.join('\n'), notice].filter(Boolean).join('\n\n');
+  const whole = compose([...head, ...lines]);
+  if (utf8Bytes(whole) <= budget) return whole;
+  for (let kept = lines.length - 1; kept > 0; kept--) {
+    const text = compose([...head, ...lines.slice(0, kept), moreLinesLine(lines.length - kept)]);
+    if (utf8Bytes(text) <= budget) return text;
+  }
+  return compose([...head, moreLinesLine(lines.length)]);
 }
 
 // The overlay config text under `root`, or null when there is no file there.
@@ -351,5 +410,6 @@ module.exports = {
   RETIRED_PROJECT_ID, retiredProjectIdNotice,
   projectRoute, denyListPath, authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
   epicTailsCachePath, dropEpicTailsCaches, fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot,
-  overlayEnabled, overlayFromSettings,
+  overlayEnabled, overlayFromSettings, overlaySwitch, OVERLAY_SOURCES, overlayNoticeText,
+  START_CONTEXT_BUDGET, startContext,
 };

@@ -1,5 +1,23 @@
 # conport changelog
 
+## 24.0.1
+
+**The Superpowers overlay reaches the agent again.** Claude Code shows the
+agent only the first 2 KB of a hook's start context and saves the rest to a
+file, so the overlay rules the session-start hook used to carry (about 13 KB)
+were cut off. The hook now gives a short notice instead: the overlay is on,
+which switch turned it on (`plugins.superpowers` in `.conport.json` or
+`.conport.local.json`, or the old `conport.superpowers` in
+`.superpowers/config.json` — no longer `.conport.json` when there is none),
+that specs and plans never go under `docs/superpowers/`, the line to print,
+and the full path of `skills/conport/references/superpowers-overlay.md`, which
+the agent reads before any spec or plan work. The rules themselves are
+unchanged and stay in that file; the project line and the settings lines still
+come first, and the agent's start context stays within 1800 bytes: when the
+settings lines do not fit, those past the budget are replaced by one line that
+counts them, while the user is still shown them all. The rules file names both
+switches too.
+
 ## 24.0.0
 
 **Breaking: the project's settings live in `.conport.json`.** The ConPort

@@ -1,8 +1,10 @@
 # ConPort Superpowers overlay
 
-This project has the ConPort Superpowers overlay switched on
-(`plugins.superpowers` is `true` in `.conport.json`, and `.conport.local.json`
-does not turn it off).
+This project has the ConPort Superpowers overlay switched on:
+`plugins.superpowers` is `true` in `.conport.json` (or in `.conport.local.json`,
+which can also turn it off) — or, while neither file sets that key, the old
+switch `conport.superpowers` in `.superpowers/config.json` is `true`. Where the
+plugin's session-start hook runs, it names the switch it found.
 
 **The user's preference for this project:** specs and plans live in ConPort,
 not in git. A spec is a ConPort document of type `spec`, a plan is a ConPort

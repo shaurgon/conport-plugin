@@ -14,15 +14,13 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, 
 import { delimiter, join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isolatedDir, isolatedEnv, REPO_ROOT } from './support/isolated.mjs'
+import { overlayNotice } from './support/overlay-notice.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
 const TESTS = join(SCRIPTS, 'test')
-const RULES = join(SCRIPTS, '..', 'skills', 'conport', 'references', 'superpowers-overlay.md')
 const MOVE_DOC = 'https://conport.app/docs/projects/project-settings.md'
 const { findOldPlaces, oldSettingsLine } = createRequire(import.meta.url)('../old-settings.js')
 const { RETIRED_PROJECT_ID } = createRequire(import.meta.url)('../_common.js')
-
-const rulesText = () => readFileSync(RULES, 'utf8')
 
 // A path as a word of a command and of a refusal: the hook reads commands by
 // shell rules, where `\` escapes, and quotes a refusal path that holds one —
@@ -231,33 +229,41 @@ test('the overlay follows plugins.superpowers and the local file can turn it off
     '.conport.json': '{"plugins": {"superpowers": true}}',
     '.gitignore': '.conport.local.json\n',
   })
-  assert.deepEqual(told(await start(ctx, dir)), { user: null, agent: rulesText() })
+  assert.deepEqual(told(await start(ctx, dir)), { user: null, agent: overlayNotice('settings') })
 
   put(dir, '.conport.local.json', { plugins: { superpowers: false } })
   assert.deepEqual(told(await start(ctx, dir)), { user: null, agent: null })
 
+  // The local file alone can turn it on; the notice names both files.
+  put(dir, '.conport.json', {})
+  put(dir, '.conport.local.json', { plugins: { superpowers: true } })
+  assert.deepEqual(told(await start(ctx, dir)), { user: null, agent: overlayNotice('settings') })
+
   // The key decides over the old place.
+  put(dir, '.conport.local.json', { plugins: { superpowers: false } })
   put(dir, '.superpowers/config.json', { conport: { superpowers: true } })
-  assert.ok(!(told(await start(ctx, dir)).agent || '').includes(rulesText()))
+  assert.ok(!(told(await start(ctx, dir)).agent || '').includes('Superpowers overlay'))
 }))
 
 test('the overlay falls back to .superpowers/config.json', () => withSession(async (ctx) => {
   const main = repo({ '.superpowers/config.json': '{"conport": {"superpowers": true}}', 'README.md': 'x\n' })
   git(main, 'add', 'README.md')
   git(main, '-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'init')
+  // Without .conport.json the notice names the old place, never .conport.json.
   const agent = told(await start(ctx, main)).agent
-  assert.ok(agent.endsWith(`\n\n${rulesText()}`), agent.slice(0, 300))
+  assert.ok(agent.endsWith(`\n\n${overlayNotice('old')}`), agent.slice(0, 300))
+  assert.doesNotMatch(overlayNotice('old'), /\.conport\.json/)
 
   // A linked worktree reads the old place of the main worktree.
   const wt = join(isolatedDir(), 'linked')
   git(main, 'worktree', 'add', '-q', '-b', 'linked', wt)
-  assert.ok(told(await start(ctx, wt, { session: 's2' })).agent.endsWith(rulesText()))
+  assert.ok(told(await start(ctx, wt, { session: 's2' })).agent.endsWith(overlayNotice('old')))
 
   // With .conport.json and no plugins.superpowers the old place still decides.
   put(wt, '.conport.json', '{"project_name": "prk7m2qx9d"}')
-  assert.ok(told(await start(ctx, wt, { session: 's3' })).agent.endsWith(rulesText()))
+  assert.ok(told(await start(ctx, wt, { session: 's3' })).agent.endsWith(overlayNotice('old')))
   put(main, '.superpowers/config.json', { conport: { superpowers: false } })
-  assert.ok(!told(await start(ctx, wt, { session: 's4' })).agent.includes(rulesText()))
+  assert.ok(!told(await start(ctx, wt, { session: 's4' })).agent.includes('Superpowers overlay'))
 }))
 
 test("the commit guard reads the settings of the command's folder", () => withSession(async (ctx) => {

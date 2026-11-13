@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 24.0.0
+  version: 24.0.1
 ---
 
 # ConPort — Project Management System
@@ -512,9 +512,12 @@ project turns it on.
   the team, in `.conport.local.json` for one user; the `plan` documents stay in
   ConPort.
 - **The rules** are `references/superpowers-overlay.md` of this skill — the
-  only text of them. Claude Code's session-start hook injects them. An agent
-  without hooks checks the switch at the start of the session and, when it is
-  on, reads that file before any spec or plan work.
+  only text of them. Claude Code's session-start hook says the overlay is on,
+  names the switch it found and gives the full path of that file; it does not
+  carry the rules (Claude Code shows the agent only the first 2 KB of a hook's
+  context). Read the file before any spec or plan work. An agent without hooks
+  checks the switch at the start of the session and, when it is on, reads that
+  file before any spec or plan work.
 - **SDD's subagents** are the plugin's agent types in Claude Code:
   `conport:sdd-implementer`, `conport:sdd-task-reviewer`, `conport:sdd-fixer`
   and `conport:sdd-gap-hunter` — the same ones `/conport:task` and

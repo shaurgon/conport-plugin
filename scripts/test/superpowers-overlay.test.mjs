@@ -1,9 +1,10 @@
-// The Superpowers overlay switch and the SessionStart injection of its rules.
+// The Superpowers overlay switch and the SessionStart notice that names its rules.
 // Without plugins.superpowers in .conport.json, overlayEnabled() reads the old
 // flag in `.superpowers/config.json` in the current worktree root, then in the
 // main worktree root, and outside git in the directory itself; the
-// SessionStart hook adds the rules file to additionalContext when the overlay
-// is on, whether or not a ConPort project is configured. Every git repository
+// SessionStart hook adds a short notice naming the rules file to
+// additionalContext when the overlay is on, whether or not a ConPort project is
+// configured. Every git repository
 // is built under the OS temp dir, outside this repository.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -15,14 +16,18 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname, resolve } from 'node:path'
+import { join, dirname, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isolatedEnv } from './support/isolated.mjs'
+import { overlayNotice, SHOWN_BYTES, START_CONTEXT_BUDGET } from './support/overlay-notice.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
 const RULES = join(SCRIPTS, '..', 'skills', 'conport', 'references', 'superpowers-overlay.md')
 const require = createRequire(import.meta.url)
-const { overlayEnabled, worktreeRoot, mainWorktreeRoot } = require(join(SCRIPTS, '_common.js'))
+const {
+  overlayEnabled, worktreeRoot, mainWorktreeRoot, overlaySwitch, OVERLAY_SOURCES, overlayNoticeText,
+  START_CONTEXT_BUDGET: HOOK_BUDGET, startContext,
+} = require(join(SCRIPTS, '_common.js'))
 
 const ON = { conport: { superpowers: true } }
 
@@ -241,15 +246,15 @@ const rulesText = () => readFileSync(RULES, 'utf8')
 const MOVE_LINE = 'ConPort settings are in the old places (conport in .superpowers/config.json): ' +
   'move them to .conport.json — https://conport.app/docs/projects/project-settings.md'
 
-// The rules close the agent's context, after the line that asks to move the
-// old flag to .conport.json.
+// The overlay notice closes the agent's context, after the line that asks to
+// move the old flag to .conport.json, and names the old flag as its source.
 function assertInjected(out) {
   const parsed = JSON.parse(out)
   assert.equal(parsed.hookSpecificOutput.hookEventName, 'SessionStart')
-  assert.equal(parsed.hookSpecificOutput.additionalContext, `${MOVE_LINE}\n\n${rulesText()}`)
+  assert.equal(parsed.hookSpecificOutput.additionalContext, `${MOVE_LINE}\n\n${overlayNotice('old')}`)
 }
 
-const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.additionalContext ?? '').includes(rulesText())
+const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.additionalContext ?? '').includes('Superpowers overlay')
 
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
@@ -396,7 +401,7 @@ test('every journal tool call of the rules names its project', () => {
   for (const call of calls) assert.match(call, /\(project=<project>, /, call)
 })
 
-test('with the overlay on and no project configured, the hook injects the rules from the stdin cwd', () => withRepo(async ({ tmp, main }) => {
+test('with the overlay on and no project configured, the hook names the rules from the stdin cwd', () => withRepo(async ({ tmp, main }) => {
   writeConfig(main, ON)
   const { code, out } = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp })
   assert.equal(code, 0)
@@ -420,7 +425,7 @@ test('a linked worktree session gets the rules from the main worktree switch', (
   assertInjected(out)
 }))
 
-test('with the overlay off the hook injects no rules', () => withRepo(async ({ tmp, main }) => {
+test('with the overlay off the hook says nothing of the overlay', () => withRepo(async ({ tmp, main }) => {
   for (const config of [undefined, '{broken', { conport: { superpowers: 'yes' } }]) {
     if (config !== undefined) writeConfig(main, config)
     const { code, out } = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp })
@@ -449,7 +454,7 @@ test('the deny-list fetch runs as before, with the overlay on and off', () => wi
     writeConfig(main, ON)
     res = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, env })
     assert.equal(res.code, 0)
-    assert.ok(JSON.parse(res.out).hookSpecificOutput.additionalContext.endsWith(`\n\n${rulesText()}`))
+    assert.ok(JSON.parse(res.out).hookSpecificOutput.additionalContext.endsWith(`\n\n${overlayNotice('old')}`))
     assert.equal(api.requests.length, 2)
     assert.ok(existsSync(join(dataDir, 'deny-list_prk7m2qx9d.json')))
   } finally {
@@ -492,3 +497,131 @@ test('a missing rules file leaves the rules out and the session starting', () =>
   assert.equal(code, 0)
   assert.equal(JSON.parse(out).hookSpecificOutput.additionalContext, MOVE_LINE)
 }))
+
+// Claude Code shows the agent the first 2 KB of a hook's context and saves the
+// rest to a file the agent is not shown: the rules would never reach it. The
+// start context carries the notice, which names the rules file, and not the
+// rules; with the project line, a settings line and the move line it still
+// fits the budget.
+test('the start context with the overlay on fits what Claude Code shows the agent', () => withRepo(async ({ tmp, main }) => {
+  writeConfig(main, ON)
+  writeFileSync(join(main, '.conport.local.json'), '{"project_name": "prk7m2qx9d", "units": []}')
+  const { code, out } = await runSessionStart({
+    stdin: JSON.stringify({ cwd: main }), cwd: tmp, env: { CONPORT_PROJECT_NAME: 'prk7m2qx9d' },
+  })
+  assert.equal(code, 0)
+  const context = JSON.parse(out).hookSpecificOutput.additionalContext
+  const lines = context.split('\n')
+  assert.match(lines[0], /^ConPort project: prk7m2qx9d \(from \.conport\.local\.json\)$/)
+  assert.ok(lines.includes('units is read from .conport.json only'), context)
+  assert.ok(lines.some((l) => l.startsWith('ConPort settings are in the old places (')), context)
+  assert.ok(context.endsWith(`\n\n${overlayNotice('old')}`), context)
+  assert.ok(!context.includes(rulesText()), 'the rules stay in their file')
+  const bytes = Buffer.byteLength(context, 'utf8')
+  assert.ok(bytes <= START_CONTEXT_BUDGET, `the start context is ${bytes} bytes, over ${START_CONTEXT_BUDGET}`)
+  assert.ok(START_CONTEXT_BUDGET < SHOWN_BYTES)
+}))
+
+// The notice sends the agent to a file it can read: the rules, with every
+// step the flow had when the hook carried them.
+test('the notice names the rules file the plugin ships', () => {
+  const named = overlayNotice('old').match(/read the whole file `([^`]+)` before/)
+  assert.ok(named, 'the notice names no file')
+  assert.equal(named[1], RULES)
+  assert.ok(existsSync(named[1]))
+  assert.match(rulesText(), /^# ConPort Superpowers overlay\n/)
+  assert.match(rulesText(), /\n## The flow\n[\s\S]*\n## When the CLI fails\n/)
+})
+
+// The source of the switch is a tag, never a path: on Windows a joined path
+// has `\` and would name no source, and the notice would say "on (undefined)".
+test('the overlay switch names its source by a tag, so no path of the OS reaches the notice', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'conport-overlay-tag-'))
+  try {
+    writeConfig(tmp, ON)
+    const old = overlaySwitch({ root: tmp, mainRoot: null, settings: { plugins: {} } })
+    assert.deepEqual(old, { on: true, from: 'old' })
+    assert.deepEqual(overlaySwitch({ root: tmp, mainRoot: null, settings: { plugins: { superpowers: true } } }),
+      { on: true, from: 'settings' })
+    assert.deepEqual(overlaySwitch({ root: join(tmp, 'absent'), mainRoot: null, settings: {} }), { on: false, from: null })
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+  assert.deepEqual(Object.keys(OVERLAY_SOURCES).sort(), ['old', 'settings'])
+  // A Windows path of the rules file goes into the notice as it is, in backticks.
+  const rules = win32.join('C:\\Users\\some one', '.claude', 'plugins', 'conport', 'skills', 'conport', 'references', 'superpowers-overlay.md')
+  for (const from of ['old', 'settings']) {
+    const notice = overlayNoticeText(from, rules)
+    assert.equal(notice, overlayNotice(from, rules))
+    assert.doesNotMatch(notice, /undefined/)
+    assert.ok(notice.includes(`read the whole file \`${rules}\` before`), notice)
+  }
+  assert.match(overlayNoticeText('old', rules), /in \.superpowers\/config\.json, an old place/)
+})
+
+// The budget is the hook's: the notice and the project line stay whole, and
+// settings lines past the budget collapse into one line that counts them.
+test('the start context keeps the project line and the notice whole and counts the lines past the budget', () => {
+  assert.equal(HOOK_BUDGET, START_CONTEXT_BUDGET)
+  const project = 'ConPort project: prk7m2qx9d (from .conport.json)'
+  const notice = overlayNotice('old')
+  const lines = Array.from({ length: 12 }, (_, i) => `.conport.json: setting ${i} must be true or false — fix it`)
+  const whole = `${project}\n${lines.join('\n')}\n\n${notice}`
+  const bytes = Buffer.byteLength(whole)
+
+  // Exactly at the budget everything is kept; one byte under it collapses.
+  assert.equal(startContext({ project, lines, notice }, bytes), whole)
+  const cut = startContext({ project, lines, notice }, bytes - 1)
+  assert.ok(Buffer.byteLength(cut) <= bytes - 1)
+  const shown = cut.split('\n\n')[0].split('\n')
+  assert.equal(shown[0], project)
+  assert.ok(cut.endsWith(`\n\n${notice}`))
+  const more = shown[shown.length - 1].match(/^(\d+) more ConPort settings lines? did not fit here: the user was shown them at the start of the session$/)
+  assert.ok(more, shown[shown.length - 1])
+  assert.deepEqual(shown.slice(1, -1), lines.slice(0, lines.length - Number(more[1])))
+
+  // A budget too small for anything but the project line and the notice still gives both whole.
+  const least = startContext({ project, lines, notice }, 10)
+  assert.equal(least, `${project}\n12 more ConPort settings lines did not fit here: the user was shown them at the start of the session\n\n${notice}`)
+  assert.equal(startContext({ project, lines: [lines[0]], notice }, 10), `${project}\n1 more ConPort settings line did not fit here: the user was shown them at the start of the session\n\n${notice}`)
+  // Nothing to say is nothing.
+  assert.equal(startContext({}), '')
+})
+
+// A pile of settings lines with the overlay on: the agent's context keeps
+// within the budget with the project line first and the notice whole, and the
+// user is shown every line.
+test('a pile of settings lines does not push the overlay notice past the budget', () => withRepo(async ({ tmp, main }) => {
+  const key = 'cport_live_' + 'x'.repeat(40)
+  writeConfig(main, ON)
+  writeFileSync(join(main, '.conport.json'), JSON.stringify({
+    project_name: 'prk7m2qx9d', api_key: key, plugins: { superpowers: 'yes', codegraph: 1 },
+    arch: { ignore: 5, git: 'x' }, units: {},
+  }))
+  writeFileSync(join(main, '.conport.local.json'), JSON.stringify({
+    project_name: 'some-long-project-name-of-a-team', api_key: key, plugins: { codegraph: 'y' }, arch: {}, units: [],
+  }))
+  mkdirSync(join(main, '.claude'))
+  writeFileSync(join(main, '.claude', 'settings.local.json'), '{"env": {"CONPORT_PROJECT_NAME": "another-project-name"}}')
+  writeFileSync(join(main, '.claude', 'settings.json'), '{"env": {"CONPORT_PROJECT_NAME": "another-project-name"}}')
+  const { code, out } = await runSessionStart({
+    stdin: JSON.stringify({ cwd: main, source: 'startup' }), cwd: tmp, env: { CONPORT_PROJECT_NAME: 'another-project-name' },
+  })
+  assert.equal(code, 0)
+  const parsed = JSON.parse(out)
+  const context = parsed.hookSpecificOutput.additionalContext
+  const user = parsed.systemMessage.split('\n')
+  assert.ok(Buffer.byteLength(context) <= START_CONTEXT_BUDGET, `${Buffer.byteLength(context)} bytes`)
+  assert.ok(context.endsWith(`\n\n${overlayNotice('old')}`), context)
+  assert.ok(!context.includes(key) && !parsed.systemMessage.includes(key))
+  const shown = context.split('\n\n')[0].split('\n')
+  assert.equal(shown[0], 'ConPort project: some-long-project-name-of-a-team (from .conport.local.json)')
+  assert.equal(user[0], shown[0])
+  const more = shown[shown.length - 1].match(/^(\d+) more ConPort settings lines? did not fit here/)
+  assert.ok(more, `the pile was expected to overflow the budget:\n${context}`)
+  assert.deepEqual(shown.slice(0, -1), user.slice(0, shown.length - 1))
+  assert.equal(user.length, shown.length - 1 + Number(more[1]))
+  // Without the budget the same lines would push the notice past what Claude Code shows.
+  assert.ok(Buffer.byteLength(`${user.join('\n')}\n\n${overlayNotice('old')}`) > START_CONTEXT_BUDGET)
+}))
+
