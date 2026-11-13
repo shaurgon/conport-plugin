@@ -814,7 +814,7 @@ for (const [file, run, impl] of [['task.js', taskRun, 'impl'], ['epic.js', epicR
     const { calls, steps, prompt } = await go(file, run())
     const scout = calls.find(c => c.label === 'scout').opts.schema
     assert.deepEqual(scout.properties.project, { type: 'string' })
-    assert.ok(scout.required.includes('project') && !('project_id' in scout.properties))
+    assert.ok(!('project_id' in scout.properties))
     assert.ok(steps.length > 0 && steps.every(s => s.project === 'prk7m2qx9d'))
     const table = accountTable(prompt('account'))
     assert.equal(table.project, 'prk7m2qx9d')

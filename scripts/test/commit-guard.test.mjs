@@ -1,8 +1,11 @@
 // The commit guard of the PreToolUse(Bash) hook: with the Superpowers overlay
 // on, a git commit that adds a new file under docs/superpowers/specs or
 // docs/superpowers/plans is refused with the command that moves it to ConPort.
-// Every repository is built under the OS temp dir, and the hook runs with a
-// logging `git` first on PATH, so a test sees which git calls a command led to.
+// Every repository is built under the OS temp dir, outside this repository,
+// and the hook runs with a logging `git` first on PATH, so a test sees which
+// git calls a command led to. The logging git is a shell script, which Windows
+// does not start as `git` without a shell: there the hook runs the real git,
+// and only the assertions on the logged calls are left out (LOGGING_GIT).
 import { describe, test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
@@ -10,11 +13,19 @@ import {
   chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, existsSync, rmSync, writeFileSync, unlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname, resolve } from 'node:path'
+import { delimiter, join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isolatedEnv } from './support/isolated.mjs'
+import { realGit } from './support/real-git.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
-const REAL_GIT = execFileSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim()
+const REAL_GIT = realGit()
+const WINDOWS = process.platform === 'win32'
+const LOGGING_GIT = !WINDOWS
+// A path as a word of a command and of a refusal: the hook reads commands by
+// shell rules, where `\` escapes, and quotes a refusal path that holds one —
+// so a Windows path is single-quoted, a POSIX temp path stays as it is.
+const word = (p) => (WINDOWS ? `'${p}'` : p)
 const ON = { conport: { superpowers: true } }
 const SPECS = 'docs/superpowers/specs'
 const PLANS = 'docs/superpowers/plans'
@@ -38,12 +49,17 @@ writeFileSync(join(SHARED, 'failstatus', 'git'),
 chmodSync(join(SHARED, 'failstatus', 'git'), 0o755)
 
 // An environment free of git and ConPort variables a calling shell may have
-// exported, with no global or system git config, so every git command reads
-// only the repository it is pointed at.
+// exported, with this repository forbidden as a settings root and no global or
+// system git config, so every git command reads only the repository it is
+// pointed at. A PATH in `extra` replaces the inherited one under any spelling
+// (`Path` on Windows), so only one reaches git.
+const BASE_ENV = isolatedEnv()
 function cleanEnv(tmp, extra = {}) {
   const env = {}
-  for (const [k, v] of Object.entries(process.env)) {
-    if (!k.startsWith('GIT_') && !k.startsWith('CONPORT_') && k !== 'CLAUDE_PLUGIN_OPTION_API_KEY') env[k] = v
+  for (const [k, v] of Object.entries(BASE_ENV)) {
+    if (k.toUpperCase() === 'PATH' && 'PATH' in extra) continue
+    if (k.startsWith('CONPORT_') && k !== 'CONPORT_SETTINGS_FORBID_ROOT') continue
+    if (k !== 'CLAUDE_PLUGIN_OPTION_API_KEY') env[k] = v
   }
   return {
     ...env,
@@ -105,7 +121,8 @@ function runHook(tmp, { command, cwd, stdin, procCwd, env = {} }) {
     const child = spawn(process.execPath, [join(SCRIPTS, 'check-command.js')], {
       cwd: procCwd || tmp,
       env: cleanEnv(tmp, {
-        PATH: `${join(SHARED, 'bin')}:${process.env.PATH}`, GUARD_TEST_GIT_LOG: join(tmp, 'git-calls'), ...env,
+        PATH: LOGGING_GIT ? `${join(SHARED, 'bin')}${delimiter}${process.env.PATH}` : process.env.PATH,
+        GUARD_TEST_GIT_LOG: join(tmp, 'git-calls'), ...env,
       }),
     })
     let err = ''
@@ -120,20 +137,25 @@ const gitCalls = (log) => (existsSync(log) ? readFileSync(log, 'utf8').split('\n
 const statusCalls = (log) => gitCalls(log)
   .filter((l) => /^--no-optional-locks -C .+ status --porcelain -z --untracked-files=all -- /.test(l))
 
-function assertRefusedSpec(res, file) {
+// `file` is a path, or a word the test already quoted itself.
+const shown = (file) => (file.startsWith("'") || file.startsWith("$'") ? file : word(file))
+
+function assertRefusedSpec(res, path) {
+  const file = shown(path)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err.trimEnd().split('\n').length, 1, 'the reason is one line')
-  assert.ok(res.err.includes(`npx -y conport@^0.8.0 documents upload ${file} --doc-type spec`), res.err)
+  assert.ok(res.err.includes(`npx -y conport@^0.11.0 documents upload ${file} --doc-type spec`), res.err)
   assert.match(res.err, /remove the file/)
 }
 
 // The refusal names the spec and its epic, so the import neither leaves the
 // plan without a spec nor starts a second epic; `doc-N` and `<id>` are left
 // for the agent to fill.
-function assertRefusedPlan(res, file) {
+function assertRefusedPlan(res, path) {
+  const file = shown(path)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on ` +
-    `plans live in ConPort: run \`npx -y conport@^0.8.0 plan import ${file} --spec doc-N --epic <id>\` ` +
+    `plans live in ConPort: run \`npx -y conport@^0.11.0 plan import ${file} --spec doc-N --epic <id>\` ` +
     "with doc-N the plan's spec and <id> the spec's epic, then remove the file.\n")
 }
 
@@ -150,7 +172,7 @@ describe('commit guard', { concurrency: true }, () => {
     git(tmp, repo, 'add', `${SPECS}/new-design.md`)
     const res = await runHook(tmp, { command: 'git commit -m "add spec"', cwd: repo })
     assertRefusedSpec(res, join(repo, SPECS, 'new-design.md'))
-    assert.equal(statusCalls(log).length, 1)
+    if (LOGGING_GIT) assert.equal(statusCalls(log).length, 1)
   }))
 
   test('a staged new plan is refused with the plan import command', () => withRepo(async ({ tmp, repo }) => {
@@ -173,7 +195,7 @@ describe('commit guard', { concurrency: true }, () => {
     put(repo, `${SPECS}/draft.md`)
     const res = await runHook(tmp, { command: 'git commit -am x', cwd: repo })
     assertAllowed(res)
-    assert.equal(statusCalls(log).length, 1, 'the commit was checked')
+    if (LOGGING_GIT) assert.equal(statusCalls(log).length, 1, 'the commit was checked')
   }))
 
   test('cd into a subdirectory sees the paths from the worktree root', () => withRepo(async ({ tmp, repo }) => {
@@ -189,7 +211,7 @@ describe('commit guard', { concurrency: true }, () => {
     git(tmp, repo, 'add', `${SPECS}/new.md`)
     for (const command of [
       'git -c core.x=y commit -m x',
-      `git --git-dir=${join(repo, '.git')} --work-tree=${repo} commit -m x`,
+      `git --git-dir=${word(join(repo, '.git'))} --work-tree=${word(repo)} commit -m x`,
       'git --no-pager -c user.name=t commit -m x',
       'GIT_AUTHOR_NAME=t git commit -m x',
       'echo start; git commit -m x | cat',
@@ -204,7 +226,7 @@ describe('commit guard', { concurrency: true }, () => {
     git(tmp, repo, 'add', `${SPECS}/new.md`)
     const outside = join(tmp, 'outside')
     mkdirSync(outside)
-    const abs = await runHook(tmp, { command: `git -C ${repo} commit -m x`, cwd: outside })
+    const abs = await runHook(tmp, { command: `git -C ${word(repo)} commit -m x`, cwd: outside })
     assertRefusedSpec(abs, join(repo, SPECS, 'new.md'))
     const rel = await runHook(tmp, { command: 'git -C repo/backend commit -m x', cwd: tmp })
     assertRefusedSpec(rel, join(repo, SPECS, 'new.md'))
@@ -217,7 +239,7 @@ describe('commit guard', { concurrency: true }, () => {
     // The session runs in another repository that has no overlay of its own.
     const other = initRepo(join(tmp, 'other'))
     assertAllowed(await runHook(tmp, { command: 'git commit -m x', cwd: other }))
-    const res = await runHook(tmp, { command: `cd ${repo} && git commit -m x`, cwd: other })
+    const res = await runHook(tmp, { command: `cd ${word(repo)} && git commit -m x`, cwd: other })
     assertRefusedSpec(res, join(repo, SPECS, 'new.md'))
   }))
 
@@ -285,7 +307,7 @@ describe('commit guard', { concurrency: true }, () => {
     // From backend/ git names the head `../.git/MERGE_HEAD`: it is found only
     // when resolved against the directory the commit runs in.
     assert.equal(git(tmp, join(repo, 'backend'), 'rev-parse', '--git-path', 'MERGE_HEAD').trim(),
-      join('..', '.git', 'MERGE_HEAD'))
+      '../.git/MERGE_HEAD')  // git prints forward slashes on Windows too
     assertAllowed(await runHook(tmp, { command: 'cd backend && git commit --no-edit', cwd: repo }))
   }))
 
@@ -337,7 +359,7 @@ describe('commit guard', { concurrency: true }, () => {
     git(tmp, repo, 'rm', '-q', `${PLANS}/gone.md`)
     const res = await runHook(tmp, { command: 'git add -A && git commit -m archive', cwd: repo })
     assertAllowed(res)
-    assert.equal(statusCalls(log).length, 1, 'the commit was checked')
+    if (LOGGING_GIT) assert.equal(statusCalls(log).length, 1, 'the commit was checked')
   }))
 
   test('with the overlay off a new spec passes and git status is never asked', () => withRepo(async ({ tmp, repo, log }) => {
@@ -347,7 +369,7 @@ describe('commit guard', { concurrency: true }, () => {
       if (config !== undefined) put(repo, '.superpowers/config.json', typeof config === 'string' ? config : JSON.stringify(config))
       assertAllowed(await runHook(tmp, { command: 'git add . && git commit -m x', cwd: repo }))
     }
-    assert.deepEqual(statusCalls(log), [])
+    if (LOGGING_GIT) assert.deepEqual(statusCalls(log), [])
   }))
 
   test('the guard runs with an empty deny-list and with no project configured', () => withRepo(async ({ tmp, repo }) => {
@@ -391,7 +413,7 @@ describe('commit guard', { concurrency: true }, () => {
     ]) {
       assertAllowed(await runHook(tmp, { command, cwd: repo }))
     }
-    assert.deepEqual(gitCalls(log), [])
+    if (LOGGING_GIT) assert.deepEqual(gitCalls(log), [])
   }))
 
   test('bad input never crashes the hook', () => withRepo(async ({ tmp, repo }) => {
@@ -427,7 +449,9 @@ describe('commit guard', { concurrency: true }, () => {
       `'${join(repo, PLANS, 'my plan.md')}'`)
   }))
 
-  test('a file name with a newline keeps the refusal on one line', () => withRepo(async ({ tmp, repo }) => {
+  test('a file name with a newline keeps the refusal on one line', {
+    skip: WINDOWS && 'a Windows file name cannot hold a line break',
+  }, () => withRepo(async ({ tmp, repo }) => {
     overlayOn(repo)
     put(repo, `${SPECS}/a\nb's.md`)
     git(tmp, repo, 'add', '-A', SPECS)
@@ -461,7 +485,7 @@ describe('commit guard', { concurrency: true }, () => {
     ]) {
       assertAllowed(await runHook(tmp, { command, cwd: repo }))
     }
-    assert.deepEqual(gitCalls(log), [])
+    if (LOGGING_GIT) assert.deepEqual(gitCalls(log), [])
     // A commit after the body is still seen.
     assertRefusedSpec(await runHook(tmp, { command: 'cat <<X\ntext\nX\ngit commit -m x', cwd: repo }),
       join(repo, SPECS, 'new.md'))
@@ -501,7 +525,8 @@ describe('commit guard', { concurrency: true }, () => {
     overlayOn(repo)
     put(repo, `${SPECS}/new.md`)
     git(tmp, repo, 'add', `${SPECS}/new.md`)
-    for (const bin of ['nogit', 'failstatus']) {
+    // The git whose status fails is a shell script: on Windows only the PATH without git is tried.
+    for (const bin of LOGGING_GIT ? ['nogit', 'failstatus'] : ['nogit']) {
       const res = await runHook(tmp, { command: 'git commit -m x', cwd: repo, env: { PATH: join(SHARED, bin) } })
       assertAllowed(res)
     }

@@ -1,13 +1,15 @@
-// The unit manifest of a repository and the comparison of two trees by it. An epic
-// does not raise a unit version: the release step raises each changed unit once,
-// after every epic of the release milestone has merged. Both workflows hold that
-// before READY with the helper's `versions` command, which reads the manifest and the
-// two trees out of git and asks this module what differs. Which units a project has
-// and where each carries its version are the project's data, never this plugin's: they
-// live in the project's own manifest, MANIFEST_PATH at its repository root. Pure: no
-// git, no I/O — a tree is { read(path) -> text | null, list(dir) -> paths under dir }.
+// The units of a repository and the comparison of two trees by them. An epic does not
+// raise a unit version: the release step raises each changed unit once, after every
+// epic of the release milestone has merged. Both workflows hold that before READY with
+// the helper's `versions` command, which reads the units and the two trees out of git
+// and asks this module what differs. Which units a project has and where each carries
+// its version are the project's data, never this plugin's: `units` of its settings file
+// SETTINGS_PATH at its repository root, or, while that file names none, the old
+// manifest LEGACY_MANIFEST_PATH. Pure: no git, no I/O — a tree is
+// { read(path) -> text | null, list(dir) -> paths under dir }.
 
-export const MANIFEST_PATH = '.conport/units.json'
+export const SETTINGS_PATH = '.conport.json'
+export const LEGACY_MANIFEST_PATH = '.conport/units.json'
 
 // The ways a carrier's version is read, by the one key of its `read` object:
 //   {"json": "<path>"}   a field of a JSON file — dot-separated, "name[]" maps over an
@@ -57,16 +59,14 @@ const readerOf = (read, where) => {
   return where + ': unknown read "' + kind + '" — use json, regex or skill'
 }
 
-// The manifest's text -> { units: [{unit, carriers: [{path | dir+file, read(text)}]}] }
-// or { error } naming the first thing that is wrong. A carrier is one file (`path`) or
-// every file of one name under a directory (`dir` + `file`).
-export const parseUnitManifest = text => {
-  let doc
-  try { doc = JSON.parse(text) } catch (e) { return { error: MANIFEST_PATH + ' is not JSON: ' + e.message } }
-  if (!doc || !Array.isArray(doc.units) || !doc.units.length) return { error: MANIFEST_PATH + ': units must be a non-empty list' }
+// The list of units read from `file` -> { units: [{unit, carriers: [{path | dir+file,
+// read(text)}]}] } or { error } naming the file and the first thing that is wrong. A
+// carrier is one file (`path`) or every file of one name under a directory (`dir` + `file`).
+export const parseUnits = (list, file) => {
+  if (!Array.isArray(list) || !list.length) return { error: file + ': units must be a non-empty list' }
   const units = []
-  for (const [i, u] of doc.units.entries()) {
-    const at = MANIFEST_PATH + ' units[' + i + ']'
+  for (const [i, u] of list.entries()) {
+    const at = file + ' units[' + i + ']'
     if (!u || !isText(u.unit)) return { error: at + ': unit must name the unit' }
     if (!Array.isArray(u.carriers) || !u.carriers.length) return { error: at + ': carriers must be a non-empty list' }
     const carriers = []
@@ -82,6 +82,13 @@ export const parseUnitManifest = text => {
     units.push({ unit: u.unit, carriers })
   }
   return { units }
+}
+
+// The text of the old manifest ({"units": [...]}) -> what parseUnits gives for its list.
+export const parseUnitManifest = (text, file = LEGACY_MANIFEST_PATH) => {
+  let doc
+  try { doc = JSON.parse(text) } catch (e) { return { error: file + ' is not JSON: ' + e.message } }
+  return parseUnits(doc ? doc.units : undefined, file)
 }
 
 const pathsOf = (carrier, tree) => (carrier.path ? [carrier.path]

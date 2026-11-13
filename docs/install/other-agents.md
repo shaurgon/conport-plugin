@@ -2,7 +2,7 @@
 
 Shell-capable harnesses — Codex, Copilot, Gemini, and others — use ConPort
 through two pieces: the portable **`conport` skill** (the always-on discipline)
-plus the **`npx conport` CLI** (the ConPort tools themselves). No MCP server is
+plus the **`conport` CLI** (the ConPort tools themselves). No MCP server is
 required for this tier; the CLI talks straight to the live API.
 
 ## 1. Install the skill
@@ -42,50 +42,65 @@ nothing else.
 ## Project name (required)
 
 ```text
-Set CONPORT_PROJECT_NAME.
+Set project_name in .conport.json at the root of the repository and commit the file.
 Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
-CONPORT_PROJECT_ID is no longer read.
+Never put the API key into the file: it is committed.
 ```
 
-The agent reads it from the environment of its own process — export it next to
-the key:
+The file `.conport.json`:
 
-```bash
-export CONPORT_PROJECT_NAME=<project>
+```json
+{
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>"
+}
 ```
+
+These agents have no session-start hook: the agent reads the file itself, by
+*Step 1* of the `conport` skill — the root of the repository from
+`git rev-parse --show-toplevel`, `project_name` of `.conport.json` there, and a
+personal override from `.conport.local.json` beside it (kept out of git; a
+linked worktree without one reads the main worktree's). `CONPORT_PROJECT_NAME`
+of the agent's environment is read only when no file names the project; in
+`~/.config/conport/.env` it is never read. A repository that still keeps its
+ConPort settings in the old places (`CONPORT_PROJECT_NAME` in the environment,
+`.superpowers/config.json`) moves them by
+<https://conport.app/docs/projects/project-settings.md>.
 
 A client with no environment variables (Claude.ai, for one) has the user name
 the project in the chat, in the same form.
 
 A project that does not exist yet is not created by reading it: ask the
 user, and only when they say so run
-`npx -y conport api projects create --name <project>` — for a team's project
+`npx -y conport@^0.11.0 api projects create --name <project>` — for a team's project
 add `--team-id k7m2qx9d`; the name itself never contains `/`.
 
 ## 3. Use the CLI
 
-The skill drives the agent; the `npx conport` CLI is how the agent actually
+The skill drives the agent; the `conport` CLI is how the agent actually
 reads and writes ConPort.
 
 ```bash
 # Browse the live docs (keyless — also verifies connectivity)
-npx conport docs
+npx -y conport@^0.11.0 docs
 
 # Discover every resource and operation from the live OpenAPI spec
-npx conport api __schema
+npx -y conport@^0.11.0 api __schema
 
 # Call any operation: conport api <resource> <operation> [--flags]
-npx conport api tasks list --project "$CONPORT_PROJECT_NAME"
-npx conport api search create --query "auth flow"
+npx -y conport@^0.11.0 api tasks list --project <project_name from .conport.json>
+npx -y conport@^0.11.0 api search create --query "auth flow"
 ```
 
-`npx conport docs` works without a key and confirms the CLI can reach the API.
-Everything under `npx conport api …` is generated from the live OpenAPI spec, so
-`__schema` is the source of truth for resources, operations, and flags — run
-`npx conport api <resource> --help` for the exact options of any one operation.
+`npx -y conport@^0.11.0 docs` works without a key and confirms the CLI can
+reach the API. Everything under `conport api …` is generated from the live
+OpenAPI spec, so `__schema` is the source of truth for resources, operations,
+and flags — run `npx -y conport@^0.11.0 api <resource> --help` for the exact
+options of any one operation. `conport api …` takes the project only from
+`--project`: pass `project_name` of `.conport.json` as the file has it.
 
 ## Optional: MCP
 
@@ -99,18 +114,21 @@ auth: Bearer ${CONPORT_API_KEY}
 
 The exact config shape depends on your harness — see its MCP docs. The Cursor
 guide ([cursor.md](./cursor.md)) is a concrete worked example of the
-server + skill combination. For most CLI-tier agents the `npx conport` path
+server + skill combination. For most CLI-tier agents the `conport` CLI path
 above is simpler and needs no extra configuration.
 
 ## Optional: Superpowers overlay
 
 If the project works with the Superpowers skills, specs and plans can live in
 ConPort instead of `docs/superpowers/`. Turn it on with
-`.superpowers/config.json` at the root of the repository holding
-`{"conport": {"superpowers": true}}`. These agents have no session-start hook:
-the agent gets the overlay rules from the **Superpowers overlay** block of the
-`conport` skill. There is no commit guard either, so nothing refuses a commit
-of a new file under `docs/superpowers/` — the rules alone keep specs and plans
-out of git. The rules call the `conport` CLI (`npx -y conport@^0.8.0`), which
-needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env` (the
-key from step 2). See the [README](../../README.md#superpowers-overlay).
+`"plugins": { "superpowers": true }` in `.conport.json`; while neither
+`.conport.json` nor `.conport.local.json` sets `plugins.superpowers`, the old
+switch `.superpowers/config.json` holding `{"conport": {"superpowers": true}}`
+is still read. These agents have no session-start hook: the agent gets the
+overlay rules from the **Superpowers overlay** block of the `conport` skill.
+There is no commit guard either, so nothing refuses a commit of a new file
+under `docs/superpowers/` — the rules alone keep specs and plans out of git. The
+rules call the `conport` CLI, which takes the project from `.conport.json` from
+0.11 on (`npx -y conport@^0.11.0`) and needs `CONPORT_API_KEY` in the
+environment or in `~/.config/conport/.env` (the key from step 2). See the
+[README](../../README.md#superpowers-overlay).

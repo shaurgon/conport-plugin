@@ -106,9 +106,19 @@ it leaves the machine.
 - A ConPort API key: `CONPORT_API_KEY`, or the api key option of the plugin.
   Without one the run refuses at its start with `ABORTED_NO_API_KEY` — the
   agents work from the task journal, which lives in ConPort.
-- A resolvable ConPort project: pass `project`, or set `CONPORT_PROJECT_NAME`
+- A resolvable ConPort project: pass `project`, or set `project_name` in
+  `.conport.json` at the root of the repository (`.conport.local.json` over it)
   — the project's handle (`prk7m2qx9d`) or its name (`k7m2qx9d/<project>` for
-  a team's project). There is no other source of the name.
+  a team's project). `CONPORT_PROJECT_NAME` of the environment is read only when
+  no file names a project. There is no other source of the name.
+- Settings that can be read. A settings file that cannot be read, is not valid
+  JSON, holds no JSON object or carries a wrong `project_name`, or a git that
+  fails (other than "not a git repository"), names no project, and
+  `CONPORT_PROJECT_NAME` does not stand in for it: the run refuses at its start
+  with `ABORTED_NO_PROJECT` and the lines of the settings that say what is
+  wrong — fix what those lines name and run again. With no project anywhere the
+  same refusal says
+  `no ConPort project: set project_name in .conport.json`.
 - A gate — the commands that must be green before a merge. Pass it as `gate`, or
   let the run read it from the Global Constraints section of the plan that
   carries the task.
@@ -122,7 +132,7 @@ it leaves the machine.
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
 | `task` | integer | yes | Id of the ConPort task to execute. |
-| `project` | string | no | ConPort project: its handle or name. Omitted → taken from `CONPORT_PROJECT_NAME`. |
+| `project` | string | no | ConPort project: its handle or name. Omitted → `project_name` of `.conport.json` (`.conport.local.json` over it), else `CONPORT_PROJECT_NAME`. |
 | `plan` | string | no | Path to the plan file holding the task's section. Omitted → the plan is looked up by the task's anchor comment, but only across `docs/superpowers/plans/*.md` — if your plans live anywhere else, `plan` is effectively required. A plan kept in ConPort is pulled first — see [A plan kept in ConPort](#a-plan-kept-in-conport). |
 | `gate` | object | no | `{dir, commands}` — the directory to run in and the list of gate commands. Omitted → taken from the plan's Global Constraints. |
 | `serialChecks` | boolean | no | Worktree agents run static checks only — all tests are deferred to the merge gate, which runs alone. For projects whose gate shares one test database. |
@@ -190,8 +200,8 @@ Example:
   then close it.
 - **A task that changes a unit version is not merged.** An epic does not raise
   a version; the release step does. Before the merge the run compares every
-  version carrier of the units your project's manifest `.conport/units.json`
-  lists (see *The unit manifest* below) in the reviewed head with the base
+  version carrier of the units your project lists under `units` in
+  `.conport.json` (see *The unit manifest* below) in the reviewed head with the base
   branch — `origin/<default branch>` when the repository has it, else the commit
   the run started from. A
   difference fails the task with `VERSION_RAISED` and one action: "Restore the
@@ -206,9 +216,10 @@ Example:
   `BRANCH_BEHIND_ORIGIN` and "Update the default branch from origin/<branch>
   first, then run again." A check that does not answer, or a carrier whose
   version neither side can read, fails it with `VERSIONS_UNCHECKED`; so does a
-  manifest that cannot be read, with "Fix .conport/units.json, then run again:
-  …". A project without the manifest has no comparison: the run passes and
-  says so in one line of its notes.
+  list of units that cannot be read, with "Fix <file>, then run again: …",
+  where `<file>` is the file the units came from — `.conport.json`, or the old
+  `.conport/units.json`. A project that names no units has no comparison: the
+  run passes and says so in one line of its notes.
 - **Nothing is ever pushed.** Merges are local, on your default branch.
 
 ### Resuming an interrupted run
@@ -247,8 +258,9 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
    branch an earlier run left (`epic<epic id>/t<task id>`) instead of being
    implemented again; without that branch it fails with
    `ABORTED_IN_REVIEW_NO_BRANCH` while the rest of the epic runs,
-4. merge the approved branches strictly one at a time, the full gate after every
-   merge — a red gate aborts that merge cleanly and fails the task,
+4. merge the approved branches strictly one at a time, each as a merge commit
+   (`--no-ff`, never a fast-forward), the full gate after every merge — a red
+   gate aborts that merge cleanly and fails the task,
 5. run ONE gap-hunt pass over the whole change — what the task reviewers could
    not verify from their diffs is handed to it, and it settles each item as a gap
    or as covered; an item it does not settle is asked of you — verify every
@@ -260,21 +272,23 @@ Deterministic execution of one ConPort epic from its plan, start to closure:
    came from) are ordinary work and run within the ceiling of work added after
    the plan (see below); a Note and a gap nobody could verify are filed with
    their question and held for you,
-7. when the project's model has portions with anchors, run `npx -y conport@^0.8.0 arch check`
-   in the repository root after the last merge, the finding tasks included, and
-   report its outcome under `anchor_check` — with the command to run by hand
-   when the check could not run,
+7. when the project's model has portions with anchors, run
+   `npx -y conport@^0.11.0 arch check -p <project>`, `<project>` the project of
+   the run, in the repository root after the last merge, the finding tasks included, and
+   report its outcome under `anchor_check` — every line the check printed, its
+   git facts on the main branch included, joined with `; ` — with the command to
+   run by hand when the check could not run,
 8. accept the GOAL by observation — not by counting closed tasks — and never as
    READY while a unit version differs from the base branch: after the last merge
-   the run compares every version carrier of the units the project's manifest
-   `.conport/units.json` lists with the base, as `/conport:task` does before its
+   the run compares every version carrier of the units the project lists under
+   `units` in `.conport.json` with the base, as `/conport:task` does before its
    merge (recorded under `versions` in the run ledger); a difference is a
    criterion left unmet, "Restore the version of <unit> as <base> has it; units
    are raised only at the release step.", filed as a child of the epic; a
    release step not pushed yet ("Push the release step first, then run again:
-   …"), a default branch behind the published one, a manifest that cannot be
+   …"), a default branch behind the published one, units that cannot be
    read and a check that does not answer are ones the acceptance could not
-   observe, asked of you. Without the manifest nothing is compared, and one line
+   observe, asked of you. Without units nothing is compared, and one line
    of the notes says so. The release step itself is not run through this
    workflow: run it only after the release is pushed,
 9. write everything back to ConPort: done tasks closed with resolutions, failures
@@ -383,7 +397,7 @@ first, then pass that file's path as the `plan` argument — the run hands it to
 the helper as `--plan .superpowers/plans/doc-M.md`:
 
 ```
-npx -y conport@^0.8.0 plan pull <epic id>
+npx -y conport@^0.11.0 plan pull <epic id>
 /conport:epic {"epic": <epic id>, "plan": ".superpowers/plans/doc-M.md"}
 /conport:task {"task": <task id>, "plan": ".superpowers/plans/doc-M.md"}
 ```
@@ -418,7 +432,7 @@ judging a change, hunting for gaps, deciding whether the goal was reached.
 | `merge` | Merges the queued branches one at a time, the full gate after each; a conflict or a red gate aborts that merge cleanly and the batch reports it per branch. |
 | `cleanup` | Deletes the merged branches and removes the run's worktrees; anything not merged is kept for forensics, and the run's own unmerged branches are named in `kept`. The checkout the helper runs in is never removed, even when listed: it is named in `skipped` (a `cleanup skipped: …` note in the run ledger). |
 | `branch` | Names the first of the given local branches that exists, with its head commit — how a run finds the branch of a task it found in REVIEW. |
-| `versions` | Compares the unit version carriers of a commit with the base branch (`origin/<branch>` when it exists, else the short sha of the commit the run started from) and lists every carrier that differs, with its unit and both values (`differs`), every carrier whose version neither side can read (`unreadable`) and every carrier in which a start of the run ahead of `origin/<branch>` already differs from it (`start_differs`: a release step not pushed yet), and whether the start is behind `origin/<branch>` or diverged from it (`start_behind`). The units and their carriers come from the project's manifest `.conport/units.json` as of the start of the run (`units`: `manifest`, `none` when there is none and nothing is compared, `invalid` with `manifest_error`); a carrier present on one side only is not compared. |
+| `versions` | Compares the unit version carriers of a commit with the base branch (`origin/<branch>` when it exists, else the short sha of the commit the run started from) and lists every carrier that differs, with its unit and both values (`differs`), every carrier whose version neither side can read (`unreadable`) and every carrier in which a start of the run ahead of `origin/<branch>` already differs from it (`start_differs`: a release step not pushed yet), and whether the start is behind `origin/<branch>` or diverged from it (`start_behind`). The units and their carriers come from `units` of `.conport.json` as of the start of the run, or, when it names none, from the old manifest `.conport/units.json` of the same tree (`manifest`: the file they came from, `null` when there is none; `units`: `manifest`, `none` when there are none and nothing is compared, `invalid` with `manifest_error`); a carrier present on one side only is not compared. |
 | `cycle` | Writes one step of a task's review cycle to ConPort: the journal entry (`brief`, `report`, `fix` or `review` with its verdict) and the status change that goes with it — REVIEW after a report or a fix, IN_PROGRESS after `changes_requested`. The authors are fixed here, and an entry longer than the server takes is cut with a marker. A refusal by the review rules is reported as the task's state, not as a failed call. |
 | `account` | Writes the run's outcome back to ConPort: closes done tasks with their resolutions, blocks failures, files deferred findings, logs the run summary, closes the epic when the run says it may. Every item is guarded by a read, so re-running the same table changes nothing. |
 | `scout` | Collects the raw material of one task: the task itself, its slice of the plan, the files it names, the Global Constraints, the gate object and the spec reference. It compresses and judges nothing. |
@@ -427,14 +441,19 @@ judging a change, hunting for gaps, deciding whether the goal was reached.
 ### The unit manifest
 
 Which units your project versions, and where each carries its version, is your
-project's data: a manifest `.conport/units.json` at the repository root. Both
+project's data: the key `units` of `.conport.json` at the repository root. Both
 workflows read it as of the start of the run, so a branch under check cannot
-change what it is checked by. Without it nothing is compared. The manifest is
-read from git, so it must be committed: an uncommitted or ignored file counts as
-no manifest (`units: none`).
+change what it is checked by. Without it nothing is compared. The file is read
+from git, so it must be committed: an uncommitted or ignored file counts as no
+units (`units: none`). `units` is read from `.conport.json` only — in
+`.conport.local.json` it is not read. While `.conport.json` names no units, the
+old manifest `.conport/units.json` of the same tree, holding the same
+`{"units": [...]}`, is read instead.
 
 ```json
 {
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>",
   "units": [
     { "unit": "the web app", "carriers": [
       { "path": "web/package.json", "read": { "json": "version" } },
@@ -486,8 +505,11 @@ without one cannot run it at all; nothing older than Node 22 is tested.
   `/api/v1` suffix, as in `https://api.conport.app/api/v1`. Defaults to the
   hosted API.
 - `CONPORT_PROJECT_NAME` — the project `scout` reads when the call carries no
-  `--project` flag: the project's handle, `<project>` for a personal project, `k7m2qx9d/<project>`
-  for a team's one. Without either, `scout` hands the work back.
+  `--project` flag and no `.conport.json` or `.conport.local.json` at the
+  repository root (`--repo-root`, else the current folder) names one in
+  `project_name`: the project's handle, `<project>` for a personal project,
+  `k7m2qx9d/<project>` for a team's one. Without any of them, `scout` hands the
+  work back.
 - `CONPORT_TIMEOUT_MS` — the deadline of a single REST call, 10000 by default. A
   silent server ends the call with an error the run falls back on, never a hang.
 
@@ -602,6 +624,10 @@ whenever the helper prints either of these:
   none) are the ones a run meets most often, but a scrubbed API failure comes
   back the same way, in an `error` key with the reason inside. The agent reads
   the key, not the text.
+  One answer is not handed back: `{"error": "no project", "lines": [...]}`
+  says the settings name no project (a broken settings file or a failing git),
+  so the fallback branch returns those lines instead of resolving the project
+  another way, and the run stops with `ABORTED_NO_PROJECT`.
 - **anything on stdout that is not a JSON object** — empty output, a crash
   trace, a bare string. The helper did not run as expected, so nothing it
   printed is treated as an answer.

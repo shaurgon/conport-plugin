@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 23.1.0
+  version: 24.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -72,9 +72,13 @@ the same for all of them. See *TEAMS* in the **conport** skill.
 - **One key of the user runs the routine.** A scheduled run authenticates with
   one of the user's own named keys (dashboard or `POST /api/v1/me/api-keys`).
   Name the key after the routine, so it can be revoked on its own.
-- **The project is set by `CONPORT_PROJECT_NAME`, team ID included.** A team's
-  project is `k7m2qx9d/<project>`; a bare `<project>` is a project of the
-  user's own `Private Team`. A run without the variable does not start.
+- **The project is `project_name` of `.conport.json`, team ID included** — the
+  file at the root of the repository the run works in, `.conport.local.json`
+  over it, read as *Step 1* of the **conport** skill says (a run with hooks
+  takes it from the `ConPort project:` line of session start);
+  `CONPORT_PROJECT_NAME` of the environment only when no file names a project.
+  A team's project is `k7m2qx9d/<project>`; a bare `<project>` is a project of
+  the user's own `Private Team`. A run without a project does not start.
 - **A run never changes team.** It does not look the project up under another
   name, does not create projects, does not create or administer teams (there
   are no MCP tools for that), and does not move projects.
@@ -84,7 +88,7 @@ the same for all of them. See *TEAMS* in the **conport** skill.
   user left the team, or the key was revoked. **Stop:** do not call
   `create_project`, do not start or finish a run, and report the refusal as it
   came — for `project_name_in_other_team` together with its `candidates`, so the
-  user can put the right name into `CONPORT_PROJECT_NAME`.
+  user can put the right name into `project_name` of `.conport.json`.
 
 ---
 

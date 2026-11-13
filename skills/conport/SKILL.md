@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 23.1.0
+  version: 24.0.0
 ---
 
 # ConPort — Project Management System
@@ -30,33 +30,100 @@ page before acting on one of those topics; don't act from memory.
 
 ### Step 1: Determine the project name
 
-The project name comes from the env var `CONPORT_PROJECT_NAME` and from nowhere
-else. Never derive it from the repository, the working directory or a guess.
+The project name is written down explicitly, in this order and nowhere else:
 
-**Claude Code CLI** — the variable is set in `.claude/settings.local.json`.
-**If it is not set — stop.** Do not call `init`. Show the user the line to add
-to `.claude/settings.local.json` and ask them to restart the session:
+1. a project the user names for this work;
+2. `project_name` of the project's settings files — `.conport.local.json` over
+   `.conport.json`, both at the root of the project;
+3. `CONPORT_PROJECT_NAME` of the agent's process — only when neither file sets
+   `project_name`.
+
+Never derive the name from the repository, the working directory or a guess.
+`CONPORT_PROJECT_NAME` in `~/.config/conport/.env` is never read: that file
+belongs to every repository of the user.
+
+`.conport.json` is committed and shared by the team; `.conport.local.json` is
+the personal override, kept in `.gitignore`:
 
 ```json
-"env": { "CONPORT_PROJECT_NAME": "<project>" }
+{
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>"
+}
 ```
 
-For a repository that a team works on, the value carries the team ID:
+For a repository that a team works on, `project_name` carries the team ID:
 `k7m2qx9d/<project>` (the team ID is on the team's settings page). A bare
 `<project>` is a project of the user's own `Private Team` — see *TEAMS* below.
-The project's handle (`prk7m2qx9d`) works as the value too, in any team.
+The project's handle (`prk7m2qx9d`) works in any team and survives renames and
+moves — prefer it.
+
+**Claude Code CLI** — the session-start hook reads the files and prints the
+line `ConPort project: <X> (from <.conport.json | .conport.local.json | CONPORT_PROJECT_NAME>)`.
+Take the name and its source from that line; pass the name to `init` exactly
+as printed. **No such line — stop.** Do not call `init`. If the hook printed a
+line about the settings (`… — fix it`, `git failed (…)`), show it to the user;
+otherwise ask the user to write `project_name` into `.conport.json` at the root
+of the project (the block above) and to restart the session. Every line the
+hook prints about the settings names one action; tell the user the line and do
+the action only with their consent:
+
+- `project_name from .conport.local.json (<Y>) overrides .conport.json (<X>)` —
+  the personal file wins; nothing to do unless the user did not mean it.
+- `CONPORT_PROJECT_NAME is ignored: <file> names <X> — remove the variable` —
+  the file wins over the variable.
+- `ConPort settings are in the old places (<list>): move them to .conport.json — https://conport.app/docs/projects/project-settings.md`
+  or `Old ConPort settings left (<list>): remove them — https://conport.app/docs/projects/project-settings.md` —
+  fetch that document and carry out the document with the user before the
+  user's task.
 
 `CONPORT_PROJECT_ID` is no longer read. While it is set, the session-start hook
 shows the user the line
-`CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name`
-itself; do not repeat it. If the user asks, the fix is: the project's handle or
-name goes into `CONPORT_PROJECT_NAME` and `CONPORT_PROJECT_ID` is removed.
+`CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project's handle or name`
+itself; do not repeat it. If the user asks, the fix is: the project's handle
+goes into `project_name` of `.conport.json` and `CONPORT_PROJECT_ID` is
+removed.
 
-**Cursor, Codex and other agents with a shell** — the variable is an environment
-variable of the agent's process. If it is not set — stop, do not call `init`,
-and ask the user to export `CONPORT_PROJECT_NAME` and restart the agent.
+**Cursor, Codex and other agents without hooks** — apply the whole rule
+yourself before `init`:
 
-**Claude.ai Chat** — there are no environment variables; the user names the
+1. **The root.** Ask git in English, with `LC_ALL=C` before every git command
+   of this rule, so its answers read the same under any locale. Run
+   `LC_ALL=C git rev-parse --show-toplevel` in the working directory; its answer
+   is the root. When git answers `not a git repository`, the root is the
+   working directory itself. Any other failure of git — stop: no project is
+   set, tell the user what git said. The root of the main worktree is the
+   parent of `LC_ALL=C git rev-parse --git-common-dir` when the last part of
+   that path is `.git`; otherwise there is none.
+2. **The files.** Read `.conport.json` at the root. Read `.conport.local.json`
+   at the root; when the root has none, read `.conport.local.json` at the root
+   of the main worktree. Look nowhere above the root.
+3. **A broken file.** A file that cannot be read, is not valid JSON, holds
+   no JSON object, or whose `project_name` is set but is not a non-empty
+   string (or carries an API key) means no project: stop, tell the user which
+   file to fix — the variable is not read either.
+4. **No API key from the files.** A key named `api_key`, `apiKey` or
+   `CONPORT_API_KEY` (any case, any level) and any string starting with
+   `cport_` are never read and never printed. Tell the user
+   `<file> holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env`.
+5. **The name.** `project_name` of `.conport.local.json` over `.conport.json`,
+   trimmed. `CONPORT_PROJECT_NAME` of your process (trimmed; blank is unset) is
+   read only when neither file sets `project_name`; `CONPORT_PROJECT_NAME` in
+   `~/.config/conport/.env` is never read. From the personal file only
+   `project_name`, `plugins.superpowers` and `plugins.codegraph` are read;
+   `arch` and `units` are read from `.conport.json` only.
+6. **Old places.** Look at the root for `env.CONPORT_PROJECT_NAME` in
+   `.claude/settings.local.json` or `.claude/settings.json`, the key `conport`
+   in `.superpowers/config.json` (also at the root of the main worktree) and
+   `.conport/units.json`. Without `.conport.json` and with any of them or with
+   `CONPORT_PROJECT_NAME` in your environment — or with `.conport.json` and a
+   personal one of them left (`.conport/units.json` does not count then) — fetch
+   `https://conport.app/docs/projects/project-settings.md` and carry out the
+   document with the user before the user's task.
+7. **No name** — stop, do not call `init`, and ask the user to write
+   `project_name` into `.conport.json` (the block above) and restart the agent.
+
+**Claude.ai Chat** — there are no settings files; the user names the
 project (its handle, `<project>`, or `k7m2qx9d/<project>` for a team's project).
 Ask for it.
 
@@ -64,7 +131,7 @@ Ask for it.
 
 ```
 mcp__conport__init({
-  name: "<CONPORT_PROJECT_NAME>",  // exactly as set, team ID included
+  name: "<project_name>",  // the name of step 1 exactly as set, team ID included
   skill_id: "conport",
   skill_version: "<metadata.version from this SKILL.md frontmatter>",  // substitute the real value; never send this placeholder
   client_type: "claude-code"  // or claude-ai / cursor / codex
@@ -191,7 +258,7 @@ project: it answers like a project that does not exist.
 The team ID is the eight-character identifier shown on the team's settings
 page. `pers` is always the caller's own `Private Team`, so `pers/<project>` is
 a different project for every user — a team's repository must carry the team ID
-in `CONPORT_PROJECT_NAME`.
+(or the project's handle) in `project_name` of `.conport.json`.
 
 **The team of a call comes from the project, or from the `team` argument.**
 
@@ -213,10 +280,10 @@ in `CONPORT_PROJECT_NAME`.
 | Refusal | What it means | Do exactly this |
 |---|---|---|
 | `project_not_found` | No project of that name in the team the name points at. `init` created nothing. | Tell the user. Call `create_project` **only when the user says so**, then repeat `init`. Never create a project on your own after this refusal. |
-| `project_name_in_other_team` | The name has no project in the `Private Team`, but one or more of the user's shared teams hold a project of that name. The answer lists them in `candidates` — the full names and the name of each team. | Show `candidates` to the user and ask them to put the chosen name into `CONPORT_PROJECT_NAME`. Do not pick one yourself, do not create a second project. |
+| `project_name_in_other_team` | The name has no project in the `Private Team`, but one or more of the user's shared teams hold a project of that name. The answer lists them in `candidates` — the full names and the name of each team. | Show `candidates` to the user and ask them to put the chosen name into `project_name` of `.conport.json`. Do not pick one yourself, do not create a second project. |
 | `team_not_found` | The team ID in the name or in `team` is not a team the user is a member of (a team that does not exist answers the same). | Ask the user to check the team ID on the team's settings page and their membership in that team. |
-| `invalid_project_name` | The name is malformed: more than one `/`, an empty part, a project part made of digits only after a team prefix (`pers/11`), or a prefix that is neither `pers` nor a team ID (the prefix is case-sensitive). | Show the user the name as it is set and ask them to correct `CONPORT_PROJECT_NAME` to the project's handle, `<project>`, `pers/<project>` or `k7m2qx9d/<project>`. Do not retry with a name of your own. |
-| `invalid_team_id` | The team was named by something that is not a team ID: a team's display name, a wrong-case `PERS`, or any other string in the name prefix or in `team`. | Use the short team ID from the team's settings page (for example `k7m2qx9d`) or `pers`. If it came from `CONPORT_PROJECT_NAME`, ask the user to correct it. Do not retry with a name of your own. |
+| `invalid_project_name` | The name is malformed: more than one `/`, an empty part, a project part made of digits only after a team prefix (`pers/11`), or a prefix that is neither `pers` nor a team ID (the prefix is case-sensitive). | Show the user the name as it is set and ask them to correct `project_name` of `.conport.json` to the project's handle, `<project>`, `pers/<project>` or `k7m2qx9d/<project>`. Do not retry with a name of your own. |
+| `invalid_team_id` | The team was named by something that is not a team ID: a team's display name, a wrong-case `PERS`, or any other string in the name prefix or in `team`. | Use the short team ID from the team's settings page (for example `k7m2qx9d`) or `pers`. If it came from `project_name` of `.conport.json` (or `CONPORT_PROJECT_NAME`), ask the user to correct it there. Do not retry with a name of your own. |
 | `team_context_conflict` | Two parts of one call name two different teams of the user (for example the name prefix and the `team` argument). | Name the team once and repeat the call. |
 | `cross_team_link_not_supported` | A link or a linked task was requested between projects of two different teams. | Tell the user it is not supported. Do not retry. |
 
@@ -271,8 +338,8 @@ without a team ID (`<project>` or `pers/<project>`) answers
 that carried the source team's ID answers `project_not_found` — do not create
 the project again: the new name is `<target team ID>/<project>`, and the
 transfer receipt carries the target's team ID as `target_team_handle`. Either
-way ask the user to put the new name into `CONPORT_PROJECT_NAME`. The handle
-moves with the project: a `CONPORT_PROJECT_NAME` holding the handle needs no
+way ask the user to put the new name into `project_name` of `.conport.json`. The
+handle moves with the project: a `project_name` holding the handle needs no
 change.
 
 ---
@@ -407,7 +474,9 @@ that worktree, not in the main checkout.
 - **A task** gets its own branch from the epic branch and merges back into the
   epic branch only after its review is approved and its checks pass.
 - **Release:** merge the local main into the epic branch, run the checks there,
-  leave for the main checkout, merge the epic branch into main, push main.
+  leave for the main checkout, merge the epic branch into main with
+  `git merge --no-ff` (the facts of git of the project model date a change by
+  its merge: *The anchor check*), push main.
 - **Database migrations** are applied before that push, on the owner's
   command.
 - **No workarounds:** never push from a worktree into main, never override
@@ -422,23 +491,26 @@ document, the plan a `plan` document, and each task of the epic is tied to its
 section of the plan. Files on disk are drafts and caches only. Off unless the
 project turns it on.
 
-- **The switch** is `.superpowers/config.json` holding
-  `{ "conport": { "superpowers": true } }`. It is looked up at the root of the
-  current worktree (`git rev-parse --show-toplevel`); only when that worktree
-  has no such file, at the root of the main worktree (the parent of
-  `git rev-parse --git-common-dir`); outside git, in the current directory
-  only. A file in the current worktree decides on its own: `false` or
-  unreadable JSON there means off even if the main worktree says `true`. A
-  missing file, any other value or unreadable JSON means the overlay is off —
-  say nothing about it.
-- **Turning it on takes two writes, each only with the user's consent:** write
-  that file at the root of the main worktree (the parent of
-  `git rev-parse --git-common-dir`), and add one line to the project's
-  instructions (`CLAUDE.md` or `AGENTS.md`):
+- **The switch** is `plugins.superpowers` in the project's settings files of
+  step 1: `.conport.json` at the root of the current worktree, with
+  `.conport.local.json` over it (at the root of the current worktree, else of
+  the main worktree). `true` means on; `false`, a missing key or a file that
+  cannot be read means off — say nothing about it. The switch is a rule of the
+  project for the whole team; the personal file can turn it off for one user.
+  The old switch, `.superpowers/config.json` holding
+  `{ "conport": { "superpowers": true } }` at the root of the current worktree
+  (else of the main worktree), is read only while neither file sets `plugins.superpowers`;
+  it is one of the old places of step 1.
+- **Turning it on takes two writes, each only with the user's consent:** set
+  `"plugins": { "superpowers": true }` in `.conport.json` at the root of the
+  project, and add one line to the project's instructions (`CLAUDE.md` or
+  `AGENTS.md`):
   `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
   The line is needed because Superpowers ranks the user's instructions above
   its own skills, and text injected by a plugin hook is not one of them.
-  Turning it off: remove the key; the `plan` documents stay in ConPort.
+  Turning it off: set `plugins.superpowers` to `false` — in `.conport.json` for
+  the team, in `.conport.local.json` for one user; the `plan` documents stay in
+  ConPort.
 - **The rules** are `references/superpowers-overlay.md` of this skill — the
   only text of them. Claude Code's session-start hook injects them. An agent
   without hooks checks the switch at the start of the session and, when it is
@@ -747,17 +819,19 @@ below.
 | "What is the system made of?" | `arch_get` with `view='composition'` (`expand` opens units) |
 | "What touches X?" / one entity and its neighbours | `arch_get` with `view='neighbourhood'`, then `arch_entity` for the card |
 | "What did these specs bring in?" | `arch_get` with `view='contribution'` (one to three `documents`) |
-| The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; past 500 nodes the units only, with `truncated` true and a `hint`) |
+| The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; past 1000 nodes the decisions are left out, with `decisions_omitted` true and a `hint`; past 1000 entities the units only, with `truncated` true) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
-| Review a document portion before submitting it | `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
-| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.9.0 arch submit <file.json>`) |
-| Change a portion | `arch_source` (or `npx -y conport@^0.9.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
-| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.8.0 arch withdraw <source>`) |
+| Review a document portion before submitting it | `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
+| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.11.0 arch submit <file.json>`) |
+| Change a portion | `arch_source` (or `npx -y conport@^0.11.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
+| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.11.0 arch withdraw <source>`) |
 | "Which behaviour scenarios does the project have?" | `arch_scenarios` |
 | One scenario with its participants, states or nodes and steps | `arch_scenario` |
 | "What does the model owe?" | `arch_status` |
-| Check the anchors against the code | `npx -y conport@^0.8.0 arch check` in the repository root |
+| Check the anchors against the code | `npx -y conport@^0.11.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*) |
+| Check the anchors and send no facts of git | `npx -y conport@^0.11.0 arch check --no-git` |
+| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.11.0 arch suggest --json` (any branch; it submits nothing) |
 | Fill the model of a project that lived before it | the procedure `references/model-backfill.md` |
 | Start, complete or decline the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`, `declined` |
 | The role of a document in the model | `update_document` with `model_role` — `structure`, `history`, `none` |
@@ -830,9 +904,16 @@ with the block that states it.
 - **An `architecture` document** has no plan: review and submit its portion
   whenever it is written or changed.
 - **The code.** Write the skeleton yourself, reading the code through
-  `codegraph` or the files: one unit per source `code:<label>`. Submitting one
-  label leaves the others as they are; to add to a skeleton, read its portion,
-  edit it and submit it again. Then run `npx -y conport@^0.8.0 arch check`.
+  `codegraph` or the files: one unit per source `code:<label>`.
+  `npx -y conport@^0.11.0 arch suggest --json` proposes the units with their
+  labels and their parts from git history and, with a `codegraph` index, the
+  imports between the parts; it
+  submits nothing, and what goes into the portion is yours to decide.
+  Submitting one label leaves the others as they are; to add to a skeleton,
+  read its portion, edit it and submit it again. Then run
+  `npx -y conport@^0.11.0 arch check`. A debt `code_portion_stale` asks for a
+  `code` portion again once files under its anchors were added, deleted or
+  renamed.
 
 The model is on in a project once it has one portion, or while its backfill
 runs or after it is completed; before that it owes nothing.
@@ -859,7 +940,7 @@ runs or after it is completed; before that it owes nothing.
    below. A `code:` portion is not reviewed: the anchor check checks it.
 5. **Submit it** with `arch_submit(project, portion)`, the report of the
    reviewer in `review` of the portion, or write it to a file and run
-   `npx -y conport@^0.9.0 arch submit <file.json>`. The answer carries
+   `npx -y conport@^0.11.0 arch submit <file.json>`. The answer carries
    `review_id`, the number of the stored report (null without one).
 6. **A refusal** is `portion_rejected` with every error at once, each with its
    `code`, `subject` and `action`; nothing was written. Take the action of each
@@ -883,18 +964,18 @@ it: no check of a portion runs on the server.
 
 1. **Write the draft** of the portion to a file.
 2. **Build the input directory**:
-   `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`,
+   `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`,
    with `<dir>` outside the working tree. It holds `document.md`,
    `blocks.json`, `portion.json`, `names.json`, `scenarios.json`, `meta.json`
    and, when the document has a report, `previous-review.json`.
 3. **Run the reviewer** on `<dir>`. In Claude Code dispatch the subagent
    `conport:model-reviewer` with the path of `<dir>`. A client without
    subagents starts a separate process whose prompt is the output of
-   `npx -y conport@^0.9.0 agent model-reviewer` followed by the path of
+   `npx -y conport@^0.11.0 agent model-reviewer` followed by the path of
    `<dir>`, and writes its answer to a file:
 
    ```
-   PROMPT="$(npx -y conport@^0.9.0 agent model-reviewer)
+   PROMPT="$(npx -y conport@^0.11.0 agent model-reviewer)
 
    Input directory: <dir>"
    claude -p --add-dir <dir> "$PROMPT" > <answer.json>
@@ -923,7 +1004,7 @@ it: no check of a portion runs on the server.
    reader; it keeps no other finding away.
 5. **Recheck once when something was fixed.** Write the findings with their
    resolutions to a file, build the directory again with the new draft —
-   `npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
+   `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
    — and run the reviewer once more. It checks only the fixed findings: did the
    fix close the finding and break no neighbouring entity, relation or
    scenario. Resolve its findings the same way; they go into the same report,
@@ -956,7 +1037,7 @@ goes through the review again, or the portion owes `unchecked_portion`.
 the portion: it carries `id` and `at`, and a portion sent back with it is
 refused as `review_reused` — run the reviewer again, or submit the portion
 without `review`. Never strip `id` and `at` to send the old report as new.
-`npx -y conport@^0.9.0 arch source <source>` prints `review` the same way, but
+`npx -y conport@^0.11.0 arch source <source>` prints `review` the same way, but
 with `-o <file>` it writes the portion without `review`: that file submitted
 back without a new review is accepted, and the portion owes `unchecked_portion`.
 
@@ -1342,7 +1423,7 @@ finding for that reason:
 | `scenario_malformed` | A rule of the scenario's kind is broken; the message names the rule and the place | Correct the scenario at the place its message names so that it keeps the rule. |
 | `scenario_name_taken` | The name is the name of a scenario of another source | Submit the scenario with `takes_over` naming it when this source changes that behaviour, or leave it out when the source repeats it. |
 | `scenario_too_large` | A limit of the scenario is passed | Split the scenario into parts within the limit, linked by an `action` whose `scenario` names the next part or by the name of the next part ending in (part 2). |
-| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.8.0 arch check`. |
+| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.11.0 arch check`. |
 | `dismissal_moved` | `dismissed` holds a finding of the kind `missing` or `invented` | Move the dismissal into `review.findings` with `resolution: dismissed` and its `reason`. |
 | `review_reused` | `review` is the report `arch_source` gave back: it carries `id` or `at` | Run the reviewer on the portion again and submit it with the new report, or submit it without `review`. |
 | `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
@@ -1413,25 +1494,96 @@ For a `code:` portion `portion_too_large` prescribes instead: Split the portion 
 
 A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
-`npx -y conport@^0.9.0 arch submit <file.json>`, then
-`npx -y conport@^0.8.0 arch check`.
+`npx -y conport@^0.11.0 arch submit <file.json>`, then
+`npx -y conport@^0.11.0 arch check`.
 
 ### The anchor check
 
-`npx -y conport@^0.8.0 arch check` in the repository root reads the anchors of
-the model — of its entities and of the scenarios of `code:` portions — checks
-`path` anchors on the file system and `symbol` anchors through the `codegraph`
-index when the repository has one (without it they are left unchecked, as are
-the other kinds), and sends the outcome with the commit
-it checked. The code never leaves the machine. Run it **after an epic is
-merged into the main branch** and **after submitting a `code` portion**.
-`/conport:epic` runs it itself after its merges and reports it under
-`anchor_check`; run it by hand otherwise, or when that report carries an
-`action`.
+`npx -y conport@^0.11.0 arch check` in the repository root reads the anchors
+of the model — of its entities and of the scenarios of `code:` portions —
+checks `path` anchors on the file system and `symbol` anchors through the
+`codegraph` index when the repository has one (without it they are left
+unchecked, as are the other kinds), and sends the outcome with the commit it
+checked. Run it **on the main branch after an epic is merged into it** and
+**after submitting a `code` portion**. `/conport:epic` runs it itself after
+its merges and reports its lines under `anchor_check`; run it by hand
+otherwise, or when that report carries an `action`.
 
 The check decides what an entity looks like: **planned** — no anchors;
 **declared** — anchors, none of them found by the latest check, or no check
 yet; **built** — the latest check found a `path` or `symbol` anchor.
+
+**The facts of git.** On the branch `main` or `master` the same command also
+reads the history of git and the `codegraph` index, and sends the facts of the
+model with the outcome: for each entity with a `path` or `symbol` anchor the
+date of its last commit, its commits of the last 90 days and its recent files;
+the files added, deleted and renamed under the anchors since the oldest `code`
+portion was submitted; the hot directories of each unit. Its output gains the
+line `git: N commits read, N entities with activity, N changes, N areas`.
+
+- On another branch or a detached `HEAD` it sends no facts and prints
+  `git facts are taken on main or master only`: the facts come from the main
+  branch alone, so parallel work does not make the debts jump.
+- A repository with neither `main` nor `master` prints
+  `git facts need a main or master branch`.
+- A shallow clone prints
+  `shallow clone: run git fetch --unshallow and run arch check again` — do
+  exactly that.
+- A change is dated by the commit that brought it onto the first-parent line
+  of the main branch, a merge by the date of the merge. Merge a branch with
+  `git merge --no-ff`: a fast-forward lays the branch's own commits on that
+  line with their earlier dates, and a portion submitted between them owes
+  nothing.
+
+**What leaves the machine.** No code, no commit message and no author. Besides
+the outcome of the anchors and the commit: the name of the branch; the dates
+of commits; the paths of files and directories under the anchors of the model
+(`recent_files`, `changes`, `symbol_files`); the paths of the hot directories
+and of the units; the patterns of `arch.ignore`; the numbers of commits and of
+index nodes. `npx -y conport@^0.11.0 arch check --no-git`, or the key
+`arch.git: false` in `.conport.json`, sends none of the facts: the server then
+knows no facts will come and owes nothing by them.
+
+**The keys of `.conport.json`** the check reads:
+
+| Key | What it does |
+|---|---|
+| `plugins.codegraph` | `true` — the data of the `codegraph` index is used; `false` — it is not, the `symbol` anchors stay unchecked and leave the facts, and the output names how many; absent — used when the repository has an index |
+| `arch.ignore` | Paths the facts leave out, beside the built-in noise (dependencies, builds, tests, lock files): a pattern, or `{"path": "<pattern>", "reason": "<why>"}` — the reason stays in the file for people. `*` within one segment, `**` any number of segments, `?` one character, a trailing `/` a directory; paths from the root of the check (the repository root, or `--root` when it is given) |
+| `arch.git` | `false` — no facts of git are sent, from any branch |
+
+**What the facts owe.** The server judges the facts, the CLI only collects
+them:
+
+- `code_portion_stale` — under an anchor of an entity of a `code:` portion a
+  file was added, deleted or renamed after the portion was submitted; `detail`
+  names the paths. Read them, bring the portion in line with the code and
+  submit it again — as it is when the model does not change: the new
+  submission clears the debt.
+- `area_uncovered` — a hot directory of a unit that no active entity is
+  anchored at or above, or inside within the same unit (an anchor in a unit
+  nested in the directory does not count, and the `path` anchor of a `unit`
+  entity on the root of its unit covers nothing); at most 12 such debts.
+  Describe the directory in the portion of its unit with an anchor `path`, or
+  add it to `arch.ignore` with its reason. No pattern of `arch.ignore` reaches
+  the root of the repository: the debt of the root `.` asks only for an anchor
+  `path` on a directory or file of the root unit, outside every nested unit.
+- `check_stale` also comes when the model has `code` portions and no check
+  from the main branch has sent its facts yet, and when the latest check with
+  facts is older than 7 days and a portion was submitted or a task closed
+  after it.
+- A check that sends its git block without facts — a refusal (`--no-git`,
+  `arch.git: false`, no main branch) or a shallow clone — replaces the
+  earlier facts and clears their debts: `code_portion_stale` and
+  `area_uncovered` go until a check sends the facts again; a check off the
+  main branch sends no block and changes nothing. A refusal counts as a
+  check with facts for `check_stale` — the refusal is the user's word. A check from a
+  shallow clone owes `check_stale` at once, whatever its age, with its own
+  action: run `git fetch --unshallow`, then the check on main or master.
+
+`arch_status` carries `git_pass`: `checked_at`, `commit`, `branch`, `head_at`,
+`history_truncated`, `shallow`, `codegraph` and `disabled` of the latest check
+with facts, or null when there is none.
 
 ### Debts of the model in init
 
@@ -1454,10 +1606,12 @@ one. When `total` is above five, `arch_status` lists them all.
 |---|---|---|
 | `no_portion` | A `spec` whose plan was imported after the model was on has no portion; while the backfill runs or after it is completed, also a document with the role `structure` or `history` and no portion, whatever its type | Extract the portion of the document and submit it with `arch_submit`. |
 | `portion_stale` | The document changed after its portion was submitted | Read the portion with `arch_source`, bring it in line with the document and submit it again. |
+| `code_portion_stale` | The latest check with git facts saw a file added, deleted or renamed under an anchor of an entity of the `code:` portion after it was submitted; `detail` names the paths | Read the changed paths, bring the portion code:<label> in line with the code and submit it again; if the model does not change, submit it as it is. |
 | `unchecked_portion` | The document's portion was submitted without the reviewer's report (`review`) | Run the reviewer on the portion and submit it again with `review`. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
-| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none | Run `npx -y conport@^0.8.0 arch check` in the repository root. |
-| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.8.0 arch check`. |
+| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.11.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.11.0 arch check` in the repository root on main or master. |
+| `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
+| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.11.0 arch check`. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names was removed or replaced, or the scenario an action runs was deleted | Resubmit the scenario: drop the removed entity or name the one that replaced it. |
 
@@ -1796,7 +1950,8 @@ claim it was posted.
 
 - [ ] Has `init` been run — with `questions=false` in a subagent or any run with no person at it?
 - [ ] `init` returned `questions` → asked the user one at a time before the work, answered each with `answer_question`, and made no call for a question left unanswered?
-- [ ] `CONPORT_PROJECT_NAME` not set → stopped and showed the `settings.local.json` line instead of guessing a name?
+- [ ] No project (no `ConPort project:` line, no `project_name` in `.conport.json` or `.conport.local.json`, no `CONPORT_PROJECT_NAME`) → stopped and asked for `project_name` in `.conport.json` instead of guessing a name?
+- [ ] Settings in the old places → carried out the move document before the user's task?
 - [ ] `init` answered `project_not_found` → told the user and waited for their word before `create_project`? Answered `project_name_in_other_team` → showed `candidates` instead of creating a second project?
 - [ ] Question about the project → has `search` been done?
 - [ ] Starting work on a task → moved to IN_PROGRESS before the first write?
@@ -1808,7 +1963,7 @@ claim it was posted.
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
-- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch or a `code` portion submitted → `npx -y conport@^0.8.0 arch check` run (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
+- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.11.0 arch check` run on the main branch (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] A problem of the service itself → showed the user the title and body and posted only after they agreed (a run with no person: the report in its summary, nothing posted), searched the open `[agent-report]` issues first, no project content, and told the user the URL — or gave the search and form links and said the report is not sent until they submit it?

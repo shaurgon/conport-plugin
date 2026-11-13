@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { loadSettings } = require('./project-config.js');
 
 const CONPORT_URL = process.env.CONPORT_URL || 'https://api.conport.app';
 
@@ -28,20 +29,101 @@ function parseProject(value) {
     : { raw, team: parts[0], project: parts[1] };
 }
 
-// The project this session works in, or null when the environment names
-// none. CONPORT_PROJECT_NAME is the only source — a handle carries no team
-// (the server finds the project's own), a `team/project` name is split — and
-// nothing is guessed from the repository or the working directory: with no
-// project the hooks stay silent. CONPORT_PROJECT_ID is not read.
-function detectProject() {
-  return parseProject(process.env.CONPORT_PROJECT_NAME);
+// --- session settings ---------------------------------------------------------
+
+// The folder the session's settings are read from: the project directory the
+// harness names, else the `cwd` of the hook input, else the process's own.
+function sessionRoot(input) {
+  const dir = (process.env.CLAUDE_PROJECT_DIR || '').trim();
+  if (dir) return dir;
+  if (input && typeof input.cwd === 'string' && input.cwd) return input.cwd;
+  return process.cwd();
+}
+
+function sessionId(input) {
+  return input && typeof input.session_id === 'string' && input.session_id ? input.session_id : null;
+}
+
+function settingsCachePath(id) {
+  return path.join(dataDir(), 'hook_state', `settings_${encodeURIComponent(id)}.json`);
+}
+
+const isStringOrNull = (v) => v === null || typeof v === 'string';
+
+// The cached settings of a session, or null when there is none or it is not
+// a whole record (a write torn by a crash): the caller works them out again.
+function readSettingsCache(id) {
+  try {
+    const value = JSON.parse(fs.readFileSync(settingsCachePath(id), 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (!isStringOrNull(value.root) || !isStringOrNull(value.mainRoot) ||
+      !isStringOrNull(value.project) || !isStringOrNull(value.source)) return null;
+    if (!value.settings || typeof value.settings !== 'object' || Array.isArray(value.settings)) return null;
+    if (!Array.isArray(value.lines) || !value.lines.every((l) => typeof l === 'string')) return null;
+    return value;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Written to a file of its own and renamed over the cache, so a hook of the
+// same session reading at that moment sees the old record or the new one,
+// never half of one. Best-effort.
+function writeSettingsCache(id, value) {
+  let tmp = null;
+  try {
+    const target = settingsCachePath(id);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(value));
+    fs.renameSync(tmp, target);
+  } catch (_) {
+    if (tmp) try { fs.unlinkSync(tmp); } catch (__) {}
+  }
+}
+
+// The settings of this session: {root, mainRoot, project, source, settings,
+// lines}. Worked out from the session root (`loadSettings`) at the session
+// start (`fresh`) and kept by session id; every other hook reads the record,
+// so a `cd` in a command does not move the session to another project. A hook
+// with no record works the settings out and keeps them; without a session id
+// nothing is kept. A root inside CONPORT_SETTINGS_FORBID_ROOT throws.
+function sessionSettings(input, { fresh = false } = {}) {
+  const id = sessionId(input);
+  if (id && !fresh) {
+    const cached = readSettingsCache(id);
+    if (cached) return cached;
+  }
+  const result = loadSettings({ cwd: sessionRoot(input), env: process.env, home: os.homedir() });
+  const value = {
+    root: result.root, mainRoot: result.mainRoot, project: result.project,
+    source: result.source, settings: result.settings, lines: result.lines,
+  };
+  if (id) writeSettingsCache(id, value);
+  return value;
+}
+
+// The project this session works in, or null: project_name of .conport.json
+// (.conport.local.json over it), else CONPORT_PROJECT_NAME — a handle carries
+// no team (the server finds the project's own), a `team/project` name is
+// split. Nothing is guessed from the repository or the working directory:
+// with no project the hooks stay silent. CONPORT_PROJECT_ID is not read.
+function detectProject(input) {
+  return parseProject(sessionSettings(input || {}).project);
+}
+
+// Whether `err` is the refusal of a settings root inside
+// CONPORT_SETTINGS_FORBID_ROOT. It stops the hook: only a test sets the
+// variable, and a test reading this repository's settings must fail loudly.
+function isForbiddenRoot(err) {
+  return Boolean(err && typeof err.message === 'string' && err.message.includes('inside CONPORT_SETTINGS_FORBID_ROOT'));
 }
 
 // The one line said at session start while CONPORT_PROJECT_ID still holds a
 // value, or null. The variable addresses nothing any more, so a stale number
 // left in the environment must not pass in silence.
 const RETIRED_PROJECT_ID =
-  "CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name";
+  "CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project's handle or name";
 function retiredProjectIdNotice() {
   return (process.env.CONPORT_PROJECT_ID || '').trim() ? RETIRED_PROJECT_ID : null;
 }
@@ -200,21 +282,40 @@ function mainWorktreeRoot(dir) {
 
 const OVERLAY_CONFIG = path.join('.superpowers', 'config.json');
 
-// Whether the Superpowers overlay is switched on for `dir`: the file
-// `.superpowers/config.json` holding {"conport": {"superpowers": true}}. The
-// file is looked up in the current worktree root, then in the main worktree
-// root — `.superpowers/` is usually ignored, so a linked worktree has no copy
-// of its own — and outside git in `dir` only. The first file found decides.
-// A missing file, any other value or unreadable JSON is off. Never throws.
+// Whether the Superpowers overlay is switched on for `dir`: plugins.superpowers
+// of its settings (.conport.local.json over .conport.json), and without that
+// key the old flag (`overlayFromSettings`). Never throws, except for a root
+// inside CONPORT_SETTINGS_FORBID_ROOT.
 function overlayEnabled(dir) {
+  let result;
   try {
-    const root = worktreeRoot(dir);
-    let raw = readOverlayConfig(root || dir);
-    if (raw === null && root) {
-      // Asked only when the current worktree has no file of its own.
-      const main = mainWorktreeRoot(dir);
-      if (main && path.resolve(main) !== path.resolve(root)) raw = readOverlayConfig(main);
-    }
+    result = loadSettings({ cwd: dir, env: process.env, home: os.homedir() });
+  } catch (err) {
+    if (isForbiddenRoot(err)) throw err;
+    return false;
+  }
+  return overlayFromSettings(result);
+}
+
+// The overlay switch from settings already worked out for `dir`
+// ({root, mainRoot, settings}): plugins.superpowers when it is set. Without it
+// the old flag decides — `.superpowers/config.json` holding
+// {"conport": {"superpowers": true}}, looked up in the root of the current
+// worktree, then in the root of the main one (`.superpowers/` is usually
+// ignored, so a linked worktree has no copy of its own); outside git the root
+// is the folder itself. The first file found decides. When git failed there is
+// no root and nothing is read: off. A missing file, any other value or
+// unreadable JSON is off. Never throws.
+function overlayFromSettings(result) {
+  const flag = result && result.settings && result.settings.plugins && result.settings.plugins.superpowers;
+  if (typeof flag === 'boolean') return flag;
+  const root = result && result.root;
+  if (!root) return false;
+  try {
+    let raw = readOverlayConfig(root);
+    const main = result && result.mainRoot;
+    // Asked only when the current worktree has no file of its own.
+    if (raw === null && main && main !== root) raw = readOverlayConfig(main);
     if (raw === null) return false;
     const config = JSON.parse(raw);
     return Boolean(config && config.conport && config.conport.superpowers === true);
@@ -246,7 +347,9 @@ function readStdin() {
 }
 
 module.exports = {
-  CONPORT_URL, dataDir, parseProject, detectProject, retiredProjectIdNotice, projectRoute, denyListPath,
-  authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
-  epicTailsCachePath, dropEpicTailsCaches, fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot, overlayEnabled,
+  CONPORT_URL, dataDir, parseProject, sessionSettings, detectProject, isForbiddenRoot,
+  RETIRED_PROJECT_ID, retiredProjectIdNotice,
+  projectRoute, denyListPath, authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
+  epicTailsCachePath, dropEpicTailsCaches, fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot,
+  overlayEnabled, overlayFromSettings,
 };

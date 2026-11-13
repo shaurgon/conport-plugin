@@ -4,8 +4,8 @@
 // the turn once and hand the agent the list — once per composition of those
 // tails: a later turn on the same list ends freely. Only the epics the nearest
 // release milestone waits for are listed; a roadmap with no release point
-// lists them all and says to create one. No project in the environment or no
-// session epics → no output, no request. Any failure → silent: an outage
+// lists them all and says to create one. No project in the session's settings
+// or no session epics → no output, no request. Any failure → silent: an outage
 // must never trap a turn.
 'use strict';
 
@@ -180,7 +180,7 @@ async function main() {
   // Already held once in this stop cycle: let the turn end, or the hook
   // would loop the agent forever on a tail it cannot close right now.
   if (input.stop_hook_active) process.exit(0);
-  if (!detectProject()) process.exit(0);
+  if (!detectProject(input)) process.exit(0);
 
   const epics = loadSessionEpics(input.session_id || 'unknown');
   if (!epics.length) process.exit(0);

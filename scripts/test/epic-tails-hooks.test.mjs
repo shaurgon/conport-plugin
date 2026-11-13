@@ -2,16 +2,16 @@
 // changed, Stop holds the turn while their children are open, and
 // UserPromptSubmit prints the [TAILS] block only when its composition changed
 // and never on a session's first prompt, where init prints the same tails.
-// Every hook runs as the real script in a child process against a local
-// stand-in for the ConPort REST API.
+// Every hook runs as the real script in a child process, in a temporary folder
+// outside this repository, against a local stand-in for the ConPort REST API.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { chmodSync, existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isolatedDir, isolatedEnv } from './support/isolated.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
 const TOOL_ADD = 'mcp__plugin_conport_conport__add_task'
@@ -58,18 +58,18 @@ async function startApi() {
   return api
 }
 
-function runHook(script, payload, { api, dataDir }) {
-  const env = { ...process.env }
-  delete env.CLAUDE_PLUGIN_OPTION_API_KEY
-  delete env.CONPORT_PROJECT_ID
-  Object.assign(env, {
+// The project comes from CONPORT_PROJECT_NAME: the folder the hook runs in
+// holds no settings.
+function runHook(script, payload, { api, dataDir, cwd }) {
+  const env = isolatedEnv({
     CLAUDE_PLUGIN_DATA: dataDir,
     CONPORT_URL: api.url,
     CONPORT_API_KEY: 'cport_test_key',
     CONPORT_PROJECT_NAME: 'prk7m2qx9d',
   })
+  delete env.CLAUDE_PLUGIN_OPTION_API_KEY
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [join(SCRIPTS, script)], { env })
+    const child = spawn(process.execPath, [join(SCRIPTS, script)], { env, cwd })
     let out = ''
     child.stdout.on('data', (d) => { out += d })
     child.on('error', reject)
@@ -88,12 +88,10 @@ const child = (id, parent, status, extra = {}) => ({
 
 async function withEnv(fn) {
   const api = await startApi()
-  const dataDir = mkdtempSync(join(tmpdir(), 'conport-hooks-'))
   try {
-    await fn({ api, dataDir })
+    await fn({ api, dataDir: isolatedDir(), cwd: isolatedDir() })
   } finally {
     await api.close()
-    rmSync(dataDir, { recursive: true, force: true })
   }
 }
 
@@ -328,7 +326,10 @@ test('a failed Stop fetch neither holds nor resets the held composition', () => 
   assert.equal(await held(ctx, 's1'), false)                      // back, unchanged: still quiet
 }))
 
-test('an unwritable Stop memory still holds the turn rather than losing it', () => withEnv(async (ctx) => {
+// chmod makes a folder unwritable only under POSIX permissions: on Windows the
+// memory stays writable and the test would pass without its subject.
+const NO_POSIX_MODES = process.platform === 'win32' && 'chmod does not make a folder unwritable on windows'
+test('an unwritable Stop memory still holds the turn rather than losing it', { skip: NO_POSIX_MODES }, () => withEnv(async (ctx) => {
   await addUnderEpic(ctx, 's1', 50, 51)
   ctx.api.children = [child(51, 50, 'TODO')]
   const state = join(ctx.dataDir, 'hook_state')

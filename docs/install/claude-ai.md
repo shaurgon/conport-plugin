@@ -42,7 +42,8 @@ Claude.ai skills are per-user — every teammate uploads their own copy.
 
 ## Project name (required)
 
-Claude.ai has no environment variables, so you name the project in the chat.
+Claude.ai has no repository, so it reads no `.conport.json`: you name the
+project in the chat.
 Personal project: `<project>`. Team project: `k7m2qx9d/<project>` — the team ID
 is on the team's settings page. A bare name always means a project of your own
 `Private Team`. The project's handle (`prk7m2qx9d`, shown by `init`,
@@ -51,8 +52,8 @@ is on the team's settings page. A bare name always means a project of your own
 ## Superpowers overlay
 
 The Superpowers overlay keeps a project's specs and plans in ConPort instead
-of `docs/superpowers/`. Its switch is `.superpowers/config.json` at the root of
-a repository holding `{"conport": {"superpowers": true}}`; the agent gets its
+of `docs/superpowers/`. Its switch is `plugins.superpowers` in `.conport.json`
+at the root of a repository; the agent gets its
 rules from the **Superpowers overlay** block of the `conport` skill, with no
 session-start hook and no commit guard, and the rules call the `conport` CLI,
 which needs `CONPORT_API_KEY` in the environment or in

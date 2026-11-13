@@ -1,15 +1,20 @@
 #!/usr/bin/env node
-// SessionStart hook: say that CONPORT_PROJECT_ID is no longer read when it is
-// set, inject the Superpowers overlay rules when the overlay is on, then fetch
-// the deny-list from ConPort. Graceful degradation on failure.
+// SessionStart hook: work out the session's ConPort settings once and keep
+// them for the other hooks, tell the session the project, the lines of its
+// settings and where old settings are still kept, say that CONPORT_PROJECT_ID
+// is no longer read when it is set, inject the Superpowers overlay rules when
+// the overlay is on, then fetch the deny-list from ConPort. Graceful
+// degradation on failure.
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const {
-  CONPORT_URL, detectProject, retiredProjectIdNotice, denyListPath, authHeader,
-  request, readStdin, overlayEnabled,
+  CONPORT_URL, parseProject, sessionSettings, retiredProjectIdNotice, denyListPath, authHeader,
+  request, readStdin, overlayFromSettings,
 } = require('./_common.js');
+const { projectLine } = require('./project-config.js');
+const { findOldPlaces, oldSettingsLine } = require('./old-settings.js');
 
 const OVERLAY_RULES = path.join(
   __dirname, '..', 'skills', 'conport', 'references', 'superpowers-overlay.md');
@@ -18,22 +23,16 @@ const OVERLAY_RULES = path.join(
 function hookInput(raw) {
   try {
     const input = JSON.parse(raw);
-    return input && typeof input === 'object' ? input : {};
+    return input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   } catch (_) {
     return {};
   }
 }
 
-// The session's directory: `cwd` from the hook input when present, else the
-// process's own.
-function sessionDir(input) {
-  return typeof input.cwd === 'string' && input.cwd ? input.cwd : process.cwd();
-}
-
 // The overlay rules, or null when the overlay is off. Read whether or not a
 // ConPort project is configured; an unreadable rules file says nothing.
-function overlayRules(dir) {
-  if (!overlayEnabled(dir)) return null;
+function overlayRules(settings) {
+  if (!overlayFromSettings(settings)) return null;
   try {
     return fs.readFileSync(OVERLAY_RULES, 'utf8');
   } catch (_) {
@@ -41,22 +40,40 @@ function overlayRules(dir) {
   }
 }
 
+// The line about settings still kept in the old places, or null. Without a
+// root (git failed) there is no place to look at.
+function oldPlacesLine(settings) {
+  if (!settings.root) return null;
+  const places = findOldPlaces({ root: settings.root, mainRoot: settings.mainRoot, env: process.env });
+  const hasShared = fs.existsSync(path.join(settings.root, '.conport.json'));
+  return oldSettingsLine({ hasShared, places });
+}
+
+// What the session start says about its settings: the project and its
+// source, the lines of the settings, then the line about old places.
+function settingsLines(settings) {
+  return [projectLine(settings), ...settings.lines, oldPlacesLine(settings)].filter(Boolean);
+}
+
 // The sources on which the hook runs again inside a session already told.
 const REENTRY_SOURCES = new Set(['resume', 'clear', 'compact']);
 
-// What the session is told, as one JSON document: the line about the retired
-// variable goes to the user, except on a known re-entry — a resumed, cleared or
+// What the session is told, as one JSON document. The settings lines and the
+// overlay rules go to the agent on every source: a compacted context needs
+// them again. The user is shown the line about the retired variable and the
+// settings lines, except on a known re-entry — a resumed, cleared or
 // compacted session has been told already. Any other source, none at all or
-// unreadable input still gets it: silence there would hide the line for good.
-// The overlay rules go to the agent on every source: a compacted context needs
-// them again. Nothing to say prints nothing.
-async function tellSession(input) {
-  const notice = REENTRY_SOURCES.has(input.source) ? null : retiredProjectIdNotice();
-  const rules = overlayRules(sessionDir(input));
-  if (!notice && !rules) return;
+// unreadable input still gets them: silence there would hide them for good.
+// Nothing to say prints nothing.
+async function tellSession(input, settings) {
+  const lines = settingsLines(settings);
+  const rules = overlayRules(settings);
+  const user = REENTRY_SOURCES.has(input.source) ? [] : [retiredProjectIdNotice(), ...lines].filter(Boolean);
+  const agent = [lines.join('\n'), rules].filter(Boolean).join('\n\n');
+  if (!user.length && !agent) return;
   const out = JSON.stringify({
-    ...(notice ? { systemMessage: notice } : {}),
-    ...(rules ? { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: rules } } : {}),
+    ...(user.length ? { systemMessage: user.join('\n') } : {}),
+    ...(agent ? { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: agent } } : {}),
   });
   // Wait for the write: on a pipe stdout is asynchronous, and the exit below
   // would cut it short.
@@ -64,9 +81,11 @@ async function tellSession(input) {
 }
 
 async function main() {
-  await tellSession(hookInput(await readStdin()));
+  const input = hookInput(await readStdin());
+  const settings = sessionSettings(input, { fresh: true });
+  await tellSession(input, settings);
 
-  const project = detectProject();
+  const project = parseProject(settings.project);
   if (!project) process.exit(0);
 
   const target = denyListPath(project);

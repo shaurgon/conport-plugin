@@ -1,8 +1,8 @@
 # Claude.ai — advisor / researcher mode
 
-Claude.ai has no environment variables, so the `conport` skill cannot read the
-project name from `CONPORT_PROJECT_NAME` the way Claude Code / Cursor do — the
-user names the project.
+Claude.ai has no repository, so the `conport` skill cannot read the project
+name from `project_name` of `.conport.json` the way Claude Code / Cursor do —
+the user names the project.
 The workaround: create a **Claude.ai project** dedicated to planning, give
 Claude a short system prompt that tells it how to find the right ConPort
 project, and rely on the user to name it at the start of each chat.

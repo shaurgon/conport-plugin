@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import { runWorkflow, epicRun } from './run-workflow.mjs'
 
 // After the merges of an epic run the code on the default branch changed, so the
-// run checks the anchors of the project model itself: `npx -y conport@^0.8.0 arch check` in the
+// run checks the anchors of the project model itself: `npx -y conport@^0.11.0 arch check` in the
 // repository root, when the project has portions with anchors. The outcome is part
 // of the run's report (the ledger); a check that did not run never fails the epic,
 // and it names the one command that does it by hand.
-const CHECK_BY_HAND = 'run npx -y conport@^0.8.0 arch check -p prk7m2qx9d in the repository root on main'
+const CHECK_BY_HAND = 'run npx -y conport@^0.11.0 arch check -p prk7m2qx9d in the repository root on main'
 const CHECKED = { status: 'CHECKED', line: 'found 3, missing 1, unchecked 2' }
 const labelsOf = calls => calls.map(c => c.label)
 
@@ -46,11 +46,24 @@ test('epic.js: the anchor check prompt runs the CLI in the repository root only 
   const text = prompt('anchors')
   assert.match(text, /arch_sources/, 'it reads the portions of the project')
   assert.match(text, /arch_source\b/, 'and a document portion, for its anchors')
-  assert.match(text, /npx -y conport@\^0\.8\.0 arch check -p prk7m2qx9d/, 'the one command, for the run project')
+  assert.match(text, /npx -y conport@\^0\.11\.0 arch check -p prk7m2qx9d/, 'the one command, for the run project')
   assert.match(text, /repository root/)
   assert.match(text, /NO_ANCHORS/, 'a project without anchors answers without running the CLI')
   assert.ok(text.includes('arch_sources is not among your tools -> return {"status": "FAILED", ' +
     '"line": "the connection has no tool group arch"}'), 'a connection narrowed below arch answers one line, no improvising')
+})
+
+// The CLI prints its counts, then the line of its git pass and whatever the pass has to
+// say (a feature branch, a shallow clone, a truncated history): the report keeps them all.
+const MANY_LINES = 'found 3, missing 1, unchecked 2; git: 120 commits read, 4 entities with activity, 2 changes, 3 areas'
+
+test('epic.js: the anchor check returns every stdout line joined', async () => {
+  const { prompt, ledger } = await go({ anchors: { status: 'CHECKED', line: MANY_LINES } })
+  const text = prompt('anchors')
+  assert.ok(text.includes('Exit code 0 -> return {"status": "CHECKED", "line": ' +
+    '"<its stdout, every line, joined with \\"; \\">"}'), 'every line of stdout, joined')
+  assert.doesNotMatch(text, /its stdout line, verbatim/, 'not the first line alone')
+  assert.deepEqual(ledger.anchor_check, { status: 'CHECKED', line: MANY_LINES })
 })
 
 test('epic.js: the outcome of the anchor check is in the report', async () => {

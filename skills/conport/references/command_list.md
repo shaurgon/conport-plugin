@@ -128,7 +128,7 @@ out twice without an answer is settled by its default.
   name that is not in your Private Team but is the name of a project in your
   shared teams. Each candidate carries `canonical_name` (`<team id>/<project>`)
   and `team_name`. Ask the user which of them they mean and to set its
-  `canonical_name` as `CONPORT_PROJECT_NAME`; do not retry `init` with
+  `canonical_name` as `project_name` of `.conport.json`; do not retry `init` with
   another name yourself.
 
 A string of digits addresses no project: it is answered `project_not_found`,
@@ -1428,7 +1428,7 @@ document from `list_blocks`. To change a portion, read it (`arch_source`),
 edit it and submit it again.
 
 A document portion is reviewed before every submission: the reviewer
-(`conport:model-reviewer`, or the prompt `npx -y conport@^0.9.0 agent model-reviewer`
+(`conport:model-reviewer`, or the prompt `npx -y conport@^0.11.0 agent model-reviewer`
 in a separate process) compares the draft with the document, the author
 resolves each finding as `fixed` or `dismissed`, and the report goes with the
 portion in `review`. The server stores the report, trusts it and runs no check
@@ -1439,17 +1439,25 @@ A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.9.0 arch submit <file.json>`,
-`npx -y conport@^0.8.0 arch withdraw <source>`,
-`npx -y conport@^0.9.0 arch source <source> [-o <file>]` (printed, the portion
+`npx -y conport@^0.11.0 arch submit <file.json>`,
+`npx -y conport@^0.11.0 arch withdraw <source>`,
+`npx -y conport@^0.11.0 arch source <source> [-o <file>]` (printed, the portion
 comes with `review` as from `arch_source`; the file of `-o` holds it without
-`review`) — and two things no tool
-does: `npx -y conport@^0.8.0 arch check` in the repository root checks the
-anchors of the model against the code there and sends only the outcome, and
-`npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
+`review`) — and three things no tool
+does: `npx -y conport@^0.11.0 arch check` in the repository root checks the
+anchors of the model against the code there and sends the outcome, and on
+`main` or `master` the facts of git as well (`--no-git` sends none of them);
+`npx -y conport@^0.11.0 arch suggest --json` proposes the units and their
+parts from git history and, with a `codegraph` index, the imports between the
+parts, and submits nothing; and
+`npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
 writes the reviewer's input directory — the document, its blocks, the draft,
 the names and scenarios of the model, the previous report — outside the
-working tree. When to submit a portion, how to review it, which type a thing
+working tree. No code, no commit message and no author leaves the machine;
+the facts of git are the name of the branch, the dates of commits, the paths
+under the anchors of the model, the paths of the hot directories and of the
+units, the patterns of `arch.ignore` and the numbers of commits and of index
+nodes. When to submit a portion, how to review it, which type a thing
 takes and what each refusal asks for: the section *PROJECT MODEL* of the
 conport skill.
 
@@ -1461,7 +1469,7 @@ portions. The procedure gives every document its role with `update_document`
 (`in_progress`, `completed`, `declined`), and reads the active decisions
 without an entity from `arch_status` while the backfill runs
 (`unlinked_decisions`, page by page with `unlinked_after`).
-`npx -y conport@^0.8.0 arch withdraw --all` reports every source of the project
+`npx -y conport@^0.11.0 arch withdraw --all` reports every source of the project
 and removes nothing; with `--apply` it withdraws them all, documents and code,
 and returns the backfill to its start. It runs only on the user's word.
 
@@ -1682,11 +1690,13 @@ an owner, and the parts of the units in `expand`; `neighbourhood` shows
 what one to three `documents` claim; `data` shows the data entities and their
 references, under `unit` when it is given. `graph` takes no other parameter:
 every active entity, the active relations between them and the current
-decisions bound to them, each decision a node beside its entities; past 500
-nodes (entities and decisions together) the units only, the relations of their
-parts raised onto them and no decisions, with `truncated` true and a `hint`
-(expand a unit in the Architecture section of the dashboard, or read it with
-`composition`).
+decisions bound to them, each decision a node beside its entities. Past 1000
+nodes (entities and decisions together) the decisions go first: every entity
+and relation stays, `decisions` is empty, `decisions_omitted` true and a
+`hint` says the card of an entity lists them. Past 1000 entities the units
+only, the relations of their parts raised onto them, with `truncated` and
+`decisions_omitted` true and a `hint` (expand a unit in the Architecture
+section of the dashboard, or read it with `composition`).
 
 ```
 mcp__conport__arch_get({
@@ -1711,7 +1721,17 @@ mcp__conport__arch_get({
 `state`, `stage`, `maturity`, `parent_id`, `expandable`, `expanded`,
 `documents`), `relations` (`id`, `type`, `source_id`, `target_id`, `label`,
 `state`, `weight`, `lifted`, `count`, `documents`); `graph` also
-`decisions` (`id`, `summary`, `entity_ids`), `truncated` and `hint`.
+`decisions` (`id`, `summary`, `entity_ids`), `truncated`,
+`decisions_omitted`, `hint` and `activity_as_of` (the `head_at` of the latest
+anchor check with facts of git, or null), each of its entities `activity`
+(`last_commit_at`, `commits_90d`, `recent_files` — up to 10 paths with the
+date of their last commit, newest first) from that check, or null for an
+entity it has no row for, and each unit `progress`: `epics` — the open epics
+the documents of the unit clarify (a document whose portion claims the unit,
+one of its parts or a `contains` inside it), `done`, `in_progress` (with
+REVIEW), `blocked`, `waiting` (TODO and PARKED) and `live` (done, in
+progress, blocked and TODO) over their tasks and bugs; null without an open
+epic. The other views carry neither `activity` nor `progress`.
 
 **Refusals:** `entity_not_found`, `unit_not_found`, `invalid_depth`,
 `too_many_documents`, `document_has_no_portion`.
@@ -1739,7 +1759,9 @@ that supersede it, `superseded_by_patterns` — the patterns it was absorbed
 into; each null when there is none), `maturity`, `tasks` (the epics of its
 documents and their children), `incoming`, `outgoing`, `stage`, `state`, `scenarios` (`id`,
 `name`, `kind`, `role` — participant \| subject \| performer \| via: one row
-per scenario and role the entity plays in it).
+per scenario and role the entity plays in it), `activity` (`last_commit_at`,
+`commits_90d`, `recent_files`) from the latest anchor check with facts of git,
+or null.
 
 **Refusals:** `entity_not_found`.
 
@@ -1781,10 +1803,19 @@ mcp__conport__arch_status({
 | unlinked_after | integer | no | While the backfill runs: the page of `unlinked_decisions` starts after this decision number, 0 to 2147483647 |
 
 **Returns:** `total`, `debts` (`kind` — no_portion \| portion_stale \|
-unchecked_portion \| anchor_missing \| check_stale \| removed_but_present \|
-step_without_relation \| scenario_participant_gone, `subject`, `detail`,
-`action`, a `no_portion` debt its `role`, and for a debt of a scenario its
-`scenario_id`), `backfill` (`state`, `completed_at`,
+code_portion_stale \| unchecked_portion \| anchor_missing \| check_stale \|
+area_uncovered \| removed_but_present \| step_without_relation \|
+scenario_participant_gone, `subject`, `detail`, `action`, a `no_portion` debt
+its `role`, an `area_uncovered` debt its `area` (`unit` — `""` for the root,
+`path`, `commits`, `share`, `nodes` — null without codegraph,
+`unit_entity_id` — the smallest number of an active `unit` entity anchored on
+the root of the unit, or null), and for a debt of a scenario its
+`scenario_id`), `git_pass` (`checked_at`, `commit`, `branch`, `head_at`,
+`history_truncated`, `shallow`, `codegraph`, `disabled` of the latest anchor
+check that sent a block of git facts — the facts from the main branch, a
+shallow clone, or a refusal (`disabled`: `--no-git` or `arch.git: false`
+from any branch, or no main branch) — or null when there is none),
+`backfill` (`state`, `completed_at`,
 `documents` — the documents with the role structure or history, `submitted`
 — those of them with a portion, `code_sources`, `filled`, `offer`). While the
 backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,

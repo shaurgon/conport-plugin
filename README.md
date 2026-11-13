@@ -11,7 +11,7 @@ and skills work across many clients.
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …); files a public GitHub issue here when ConPort itself has a defect, lacks a capability or gives a refusal that says nothing to act on ([docs/use-cases/agent-issues.md](./docs/use-cases/agent-issues.md))
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
   - `conport-roadmap` — the roadmap rules: a release milestone holds its epics, waiting and undated work in standing milestones, what may be said about a release
-  - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict. With the Superpowers overlay on, `import` writes nothing and names `plan import`; `finish` audits a pulled plan through its `.conport.json`, with the overlay on or off.
+  - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict. With the Superpowers overlay on, `import` writes nothing and names `plan import`; `finish` audits a pulled plan through its `<file>.conport.json`, with the overlay on or off.
 - **Workflows** (Claude Code, paid plan)
   - `/conport:task` — deterministic execution of one ConPort task (worktree, independent review through REVIEW and the task journal, gated merge, close with resolution)
   - `/conport:epic` — the same for a whole epic: the plan is sliced into tasks, they run in waves, and the epic closes on the run's verdict
@@ -61,34 +61,52 @@ Pick your client and follow the per-harness guide:
 
 ## Configuration (Claude Code)
 
-| Variable | Where | Purpose |
+| Setting | Where | Purpose |
 |---|---|---|
 | `user_config.api_key` | Plugin userConfig (prompted on install) | Auth for MCP + hooks |
-| `CONPORT_PROJECT_NAME` | `.claude/settings.local.json` env (**required**) | The project's handle (`prk7m2qx9d` — shown by `init`, `list_projects` and the projects page of the dashboard), or its name: `<project>` for a personal repository, `k7m2qx9d/<project>` for a team's one (the team ID is on the team's settings page) |
+| `project_name` | `.conport.json` at the root of the repository, committed (**required**) | The project's handle (`prk7m2qx9d` — shown by `init`, `list_projects` and the projects page of the dashboard), or its name: `<project>` for a personal repository, `k7m2qx9d/<project>` for a team's one (the team ID is on the team's settings page) |
+| `plugins.superpowers` | `.conport.json` | The Superpowers overlay (below) |
+
+```json
+{
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>"
+}
+```
+
+A personal override of `project_name` or `plugins` goes into
+`.conport.local.json` beside it, kept out of git. Session start prints the
+project and its source, `ConPort project: <project> (from .conport.json)`.
+`CONPORT_PROJECT_NAME` of the environment is read only when no file names the
+project; in `~/.config/conport/.env` it is never read. Settings still in the
+old places (`env.CONPORT_PROJECT_NAME` in `.claude/settings.local.json`,
+`.superpowers/config.json`) are named by a line at session start; move them by
+<https://conport.app/docs/projects/project-settings.md>.
 
 `CONPORT_PROJECT_ID` is no longer read. While it is set, every session starts
-with one line saying so; move the project's handle or name into
-`CONPORT_PROJECT_NAME` and remove it.
+with one line saying so; move the project's handle or name into `project_name`
+of `.conport.json` and remove it.
 
 ## Superpowers overlay
 
 In a project that works with the Superpowers skills, the overlay keeps specs
 and plans in ConPort instead of git: the spec is a `spec` document, the plan a
 `plan` document, and the epic's tasks are tied to the plan's sections. Turn it
-on with `.superpowers/config.json` at the root of the repository:
+on with `plugins.superpowers` in `.conport.json`:
 
 ```json
-{ "conport": { "superpowers": true } }
+{ "plugins": { "superpowers": true } }
 ```
 
-The file at the root of the current worktree decides on its own; the main
-worktree's file is read only when the current worktree has none. Add one line
+`.conport.local.json` can turn it off for one person. While neither file sets
+`plugins.superpowers`, the old switch `.superpowers/config.json` holding
+`{"conport": {"superpowers": true}}` is still read. Add one line
 to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
-they call the `conport` CLI as `npx -y conport@^0.8.0`. The CLI does not see the
-plugin's `api_key`: it needs `CONPORT_API_KEY` in the environment or in
-`~/.config/conport/.env`.
+they call the `conport` CLI, which takes the project from `.conport.json` from
+0.11 on: `npx -y conport@^0.11.0`. The CLI does not see the plugin's `api_key`:
+it needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`.
 
 | Command | Does |
 |---|---|

@@ -50,29 +50,48 @@ ever sees what that user is a member of — one key works in the user's
 ## Project name (required)
 
 ```text
-Set CONPORT_PROJECT_NAME.
+Set project_name in .conport.json at the root of the repository and commit the file.
 Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
-CONPORT_PROJECT_ID is no longer read.
+Never put the API key into the file: it is committed.
 ```
 
-Where the variable goes:
+The file `.conport.json`:
 
-- **Claude Code** — `.claude/settings.local.json` of the repository:
+```json
+{
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>"
+}
+```
 
-  ```json
-  "env": { "CONPORT_PROJECT_NAME": "<project>" }
-  ```
+It is shared by the team: whoever clones the repository works with the same
+project, whatever agent they use. It is read at the root of the current git
+worktree (outside git, in the current folder), never above it. A personal
+override goes into `.conport.local.json` beside it, which must stay out of git
+(add it to `.gitignore`); a linked worktree without one reads the main
+worktree's. `CONPORT_PROJECT_NAME` of the agent's environment is read only when
+no file names the project; in `~/.config/conport/.env` it is never read.
 
-- **Cursor and other agents** — an environment variable of the agent's
-  process (export it in the shell the agent inherits).
-- **No environment variables (Claude.ai)** — the user names the project in
-  the chat, in the same form.
+Who reads it:
 
-The name is never taken from anywhere else. If the variable is missing, stop
-and ask the user to set it — do not make a name up.
+- **Claude Code** — the plugin's hooks at session start, which print
+  `ConPort project: <project> (from .conport.json)`.
+- **Cursor and other agents** — the agent itself, by *Step 1* of the `conport`
+  skill.
+- **The `conport` CLI** (from 0.11) — for the commands that work in a project;
+  `conport api …` takes the project only from `--project`.
+- **No repository (Claude.ai)** — the user names the project in the chat, in
+  the same form.
+
+The name is never taken from anywhere else. If no file names the project, ask
+the user which project it is — do not make a name up — write `.conport.json`
+with it and offer the user a commit. A repository that still keeps its
+ConPort settings in the old places (`env.CONPORT_PROJECT_NAME` in
+`.claude/settings.local.json`, `.superpowers/config.json`) moves them by
+<https://conport.app/docs/projects/project-settings.md>.
 
 ---
 
@@ -89,7 +108,7 @@ This works immediately, **no harness restart needed**.
 1. Verify connectivity with the public docs command (no key required):
 
    ```bash
-   npx -y conport docs
+   npx -y conport@^0.11.0 docs
    ```
 
    You should see a docs index (a `docs_version:` line and a list of pages). If
@@ -100,22 +119,22 @@ This works immediately, **no harness restart needed**.
    the full surface yourself:
 
    ```bash
-   npx -y conport api __schema        # every resource + operation
-   npx -y conport api tasks --help    # operations under one resource
-   npx -y conport api tasks list --help   # flags for one operation
+   npx -y conport@^0.11.0 api __schema            # every resource + operation
+   npx -y conport@^0.11.0 api tasks --help        # operations under one resource
+   npx -y conport@^0.11.0 api tasks list --help   # flags for one operation
    ```
 
    Common operations (all read `CONPORT_API_KEY` from the env):
 
    ```bash
-   npx -y conport api projects list
-   npx -y conport api tasks list --project <project>
-   npx -y conport api decisions list --project <project>
-   npx -y conport api search ...      # see: conport api search --help
+   npx -y conport@^0.11.0 api projects list
+   npx -y conport@^0.11.0 api tasks list --project <project_name from .conport.json>
+   npx -y conport@^0.11.0 api decisions list --project <project_name from .conport.json>
+   npx -y conport@^0.11.0 api search ...      # see: conport api search --help
    ```
 
-   Browse deep reference any time with `npx -y conport docs <topic>` or
-   `npx -y conport docs --search <query>`.
+   Browse deep reference any time with `npx -y conport@^0.11.0 docs <topic>` or
+   `npx -y conport@^0.11.0 docs --search <query>`.
 
 3. (Agent-framework runtimes only — Hermes, Pi, and similar multi-agent
    harnesses with persistent agent identity.) The agent-memory line is a
@@ -183,19 +202,19 @@ Notes:
 ## Step 4 — verify and report
 
 1. Bootstrap ConPort and confirm it works:
-   - **MCP host:** call the `init` tool with the value of
-     `CONPORT_PROJECT_NAME` (`mcp__conport__init` in Claude Code, or the
+   - **MCP host:** call the `init` tool with `project_name` of
+     `.conport.json` (`mcp__conport__init` in Claude Code, or the
      equivalent MCP tool name). `init` only finds a project, it never creates
      one: for a project that does not exist yet it answers
      `project_not_found`. Ask the user, and only when they say so call
      `create_project` with the same name, then call `init` again.
-   - **CLI host:** run `npx -y conport api projects list`, then list this
+   - **CLI host:** run `npx -y conport@^0.11.0 api projects list`, then list this
      project's tasks with
-     `npx -y conport api tasks list --project "$CONPORT_PROJECT_NAME" --status TODO,IN_PROGRESS,REVIEW`
-     — the flag takes the name as it is set, `k7m2qx9d/<project>` included.
+     `npx -y conport@^0.11.0 api tasks list --project <project_name from .conport.json> --status TODO,IN_PROGRESS,REVIEW`
+     — the flag takes the name as the file has it, `k7m2qx9d/<project>` included.
      A project that does not exist yet is not created by reading it: ask the
      user, and only when they say so run
-     `npx -y conport api projects create --name <project>` — for a team's project
+     `npx -y conport@^0.11.0 api projects create --name <project>` — for a team's project
      add `--team-id k7m2qx9d`; the name itself never contains `/`.
 
 2. Report the result to the user in plain language: confirm the connection
@@ -203,7 +222,7 @@ Notes:
    backlog (open tasks, recent decisions). If the project is new and empty, say
    so and offer to start capturing decisions and tasks as you work. If `init`
    answered `project_name_in_other_team`, show the user its `candidates` and
-   ask them to put the chosen name into `CONPORT_PROJECT_NAME`.
+   ask them to put the chosen name into `project_name` of `.conport.json`.
 
 If `init` (or the first CLI call) returns auth errors, the key isn't reaching
 the process — recheck that `CONPORT_API_KEY` is set in the environment you run

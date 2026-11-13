@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 23.1.0
+  version: 24.0.0
 ---
 
 # superpowers-conport — Bridge
@@ -45,13 +45,19 @@ hands it the block and nothing else, and this table is not read at that moment.
 
 A project may keep its specs and plans in ConPort instead of in git — the ConPort
 Superpowers overlay (see the **Superpowers overlay** block of the **conport** skill). Check
-it before anything else, in either mode. The overlay is on when `.superpowers/config.json`
-holds `{"conport": {"superpowers": true}}`, looked up as the conport skill says: first in the
-root of the current worktree (`git rev-parse --show-toplevel`), then in the root of the main
-worktree (the parent of `git rev-parse --git-common-dir`); outside git, in the current
-directory only. A file in the current worktree decides alone, whatever it holds; the main
-worktree's file is read only when the current worktree has none. A missing file, any other
-value or unreadable JSON means the overlay is off, silently — and with the overlay off every
+it before anything else, in either mode. The overlay is on when `plugins.superpowers` is
+`true` in the project's settings, read as the conport skill says: `.conport.json` at the root
+of the current worktree (`git rev-parse --show-toplevel`; outside git, the current directory),
+with `.conport.local.json` over it — that one from the root of the current worktree, else from
+the root of the main worktree (the parent of `git rev-parse --git-common-dir`). When neither
+file sets `plugins.superpowers` — an unreadable `.conport.json` or `.conport.local.json` sets
+none — the old switch is read: `.superpowers/config.json` holding
+`{"conport": {"superpowers": true}}`, first in the root of the current worktree, then in the
+root of the main worktree — a file in the current worktree decides alone, the main worktree's
+is read only when the current worktree has none. Anything else — `false`, no switch in any of
+these files, another value, unreadable JSON in `.superpowers/config.json` — means the overlay
+is off, silently — and with
+the overlay off every
 section of this skill applies exactly as written, untouched by this one, with one
 exception: `finish` picks its route by the input file whatever the switch says (below). The
 switch never picks `finish`'s route; it decides what `import` does and, for `finish`, which
@@ -65,7 +71,7 @@ with that single action and stops:
 ```
 [superpowers-conport]
   Superpowers overlay: on — nothing written
-  Do now: npx -y conport@^0.8.0 plan import <plan> --spec doc-N --epic <id>
+  Do now: npx -y conport@^0.11.0 plan import <plan> --spec doc-N --epic <id>
 ```
 
 `<plan>` is the plan draft the bridge was invoked on (`<plan_path>`); `doc-N` is the
@@ -89,7 +95,7 @@ pulled plan's epic exists, and the bridge, finding no anchors, would start a sec
 is never the answer on the anchor route with the overlay on either, because it writes
 nothing then. On the anchor route the overlay changes only the prescriptions that would name
 it: the missing-tasks item (last bullet below), and the no-epic-anchor report and the
-no-project case, which both prescribe `npx -y conport@^0.8.0 plan import <plan_path> --spec doc-N --epic <id>`
+no-project case, which both prescribe `npx -y conport@^0.11.0 plan import <plan_path> --spec doc-N --epic <id>`
 directly, then re-run `finish` on the file `plan pull` writes (see `### Sources` and
 `### Output — no epic anchor`). On the anchor route with the overlay off, the bridge's
 `import` stays the answer, as written in `## Mode: finish`.
@@ -104,14 +110,14 @@ inputs only, taken in this order:
 
 - **The sidecar is read first** — it is local, so it is read before any ConPort call. A
   sidecar that is missing, unreadable or carries no `epic_id` leaves the audit with no
-  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.8.0 plan pull …`, reported
+  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.11.0 plan pull …`, reported
   by `### Output — no sidecar`, and nothing else is checked. It is never read as "nothing left
   to close".
 - **Then the project.** `project` is resolved as in step 1. When `init` finds no project,
   or finds one whose handle is not the sidecar's `project`, the plan came from another
   project: RELEASE BLOCKED naming both (see the no-project case in `### Sources`). A sidecar
   whose `project` is a string of digits was written by an earlier CLI: RELEASE BLOCKED with
-  the single action `npx -y conport@^0.8.0 plan pull <epic_id> -o <plan_path>`.
+  the single action `npx -y conport@^0.11.0 plan pull <epic_id> -o <plan_path>`.
 - **Epic and spec come from the sidecar.** `epic_id` replaces the `conport-epic` anchor and
   `spec_doc_id` replaces the `conport-spec` anchor of the paired design file; no design file
   is read. A sidecar whose `spec_doc_id` is absent or null omits the spec header line,
@@ -125,8 +131,8 @@ inputs only, taken in this order:
 - **Missing tasks are answered by the CLI, not by the bridge's import** — on the pulled
   route always, and on the anchor route when the overlay is on.
   Wherever the audit would prescribe the bridge's import for plan tasks absent from the epic
-  `<M>`, it prescribes instead: `npx -y conport@^0.8.0 plan import <plan_path> --epic <M>`, then
-  `npx -y conport@^0.8.0 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
+  `<M>`, it prescribes instead: `npx -y conport@^0.11.0 plan import <plan_path> --epic <M>`, then
+  `npx -y conport@^0.11.0 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
   the tasks on the epic being audited; without it a plan never imported through the CLI
   would start a new epic.
 
@@ -149,9 +155,9 @@ is the audit of `## Mode: finish` unchanged.
 
 ### 1. Resolve ConPort project
 
-Call `mcp__conport__init({name: <CONPORT_PROJECT_NAME>})` — the value of the env var `CONPORT_PROJECT_NAME`, exactly as set, team ID included. If the variable is not set, stop and ask the user to set it (see *Step 1* of the **conport** skill); never derive the name from the repository or the working directory.
+Take the project name from the project's settings, as *Step 1* of the **conport** skill does: with hooks, the `ConPort project: <name> (from <source>)` line of session start; without them, `project_name` of `.conport.json` at the root of the repository, `.conport.local.json` over it, else the env var `CONPORT_PROJECT_NAME` — exactly as written, team ID included. Remember where it came from (`<source>`: `.conport.json`, `.conport.local.json` or `CONPORT_PROJECT_NAME`). Call `mcp__conport__init({name: <name>})`. If nothing names a project, stop and ask the user to set `project_name` in `.conport.json` (see *Step 1* of the **conport** skill); never derive the name from the repository or the working directory.
 
-If `init` answers `project_not_found`, tell the user and call `create_project` only when they say so. If it answers `project_name_in_other_team`, show its `candidates` and ask the user to put the chosen name into `CONPORT_PROJECT_NAME`.
+If `init` answers `project_not_found`, tell the user and call `create_project` only when they say so. If it answers `project_name_in_other_team`, show its `candidates` and ask the user to put the chosen name into `project_name` of `.conport.json`.
 
 Record the `project` it returns — the project's handle — and pass it as `project` in all subsequent calls.
 
@@ -525,8 +531,8 @@ the worst kind of disagreement.
 
 The inputs are the ones named in `## Inputs` — `<plan_path>` and the paired `*-design.md`
 it derives from; with the input on the pulled route, the overlay on or off, the pulled plan
-file and its sidecar instead (see `## Overlay mode`). `project` is resolved exactly as in step 1: `init` on the name from
-`CONPORT_PROJECT_NAME`, which here is a lookup only — `finish` never creates a project, and never asks to.
+file and its sidecar instead (see `## Overlay mode`). `project` is resolved exactly as in step 1: `init` on the name of
+the project's settings, which here is a lookup only — `finish` never creates a project, and never asks to.
 
 **No such project.** When `init` reports the project does not exist there is no
 `project`, so there is no listing, no children and no subject to audit. That is RELEASE
@@ -544,7 +550,7 @@ and the input on the anchor route, the bridge's import writes nothing and asks n
 the prescription is the CLI command itself:
 
 ```
-  Сделай сейчас: npx -y conport@^0.8.0 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.11.0 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
 ```
 
 On the pulled route the order is fixed: the sidecar is read first, and with no usable
@@ -552,17 +558,21 @@ sidecar the no-sidecar report is printed and no project is looked up. With a usa
 the pulled file already came from a project — the one the sidecar names in `project` — so
 the import is not the answer. When `init` finds no project, or finds one whose handle is
 not the sidecar's `project`, the audit would list the epic in the
-wrong place; the report names both in place of the anchor line —
+wrong place. The sidecar's project is compared with the project of the settings — the name
+step 1 took from `project_name` of `.conport.json`, `.conport.local.json` or the variable —
+never with the variable alone. The report names both in place of the anchor line —
 
 ```
-  проект в .conport.json: <sidecar project>; CONPORT_PROJECT_NAME: <name> — <не найден | другой проект>
+  проект в <plan_path>.conport.json: <sidecar project>; проект настроек: <name> (<source>) — <не найден | другой проект>
 ```
 
-— and its single prescription is to put the sidecar's `project` into `CONPORT_PROJECT_NAME`
-and re-run `finish`:
+— where `<name>` and `<source>` are the name and its source from step 1, and its single
+prescription is to make the sidecar's `project` the project of the settings and re-run
+`finish`. `<settings file>` is `.conport.local.json` when the name came from it, else
+`.conport.json`:
 
 ```
-  Сделай сейчас: укажи <sidecar project> в CONPORT_PROJECT_NAME, затем повтори finish.
+  Сделай сейчас: укажи <sidecar project> в project_name файла <settings file>, затем повтори finish.
 ```
 
 1. `<plan_path>` anchors → `epic_id` (`conport-epic`), the per-task ids (`conport-task`),
@@ -715,8 +725,8 @@ route whatever the switch, and on the anchor route with the overlay on, the miss
 item names the CLI instead of the bridge's import (see `## Overlay mode`):
 
 ```
-    1. npx -y conport@^0.8.0 plan import <plan_path> --epic <M>, затем
-       npx -y conport@^0.8.0 plan pull <M>, затем повтори finish на выгруженном файле
+    1. npx -y conport@^0.11.0 plan import <plan_path> --epic <M>, затем
+       npx -y conport@^0.11.0 plan pull <M>, затем повтори finish на выгруженном файле
 ```
 
 **The fix-round item prescribes finishing the round and nothing else.** An item that also
@@ -754,7 +764,7 @@ With the overlay on, the prescription line is the CLI command instead of the bri
 which writes nothing then:
 
 ```
-  Сделай сейчас: npx -y conport@^0.8.0 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.11.0 plan import <plan_path> --spec doc-N --epic <id>, затем повтори finish на выгруженном файле.
 ```
 
 `doc-N` is the spec's document — the plan's paired design file's `conport-spec` anchor when it
@@ -772,7 +782,7 @@ header line is omitted. The reason line names the case actually found, one of th
 [superpowers-conport finish]
   план: <plan_path> — RELEASE BLOCKED
   файл <plan_path>.conport.json <не найден | не читается | без epic_id> — план не выгружен из ConPort
-  Сделай сейчас: npx -y conport@^0.8.0 plan pull <target>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.11.0 plan pull <target>, затем повтори finish на выгруженном файле.
 ```
 
 `<target>` is filled from the first source that has it:

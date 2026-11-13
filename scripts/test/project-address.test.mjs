@@ -1,25 +1,26 @@
-// How the hooks address a project: the only source is CONPORT_PROJECT_NAME (a
-// handle or a name), a `team/project` name is split into the team header and the
-// short path segment, CONPORT_PROJECT_ID is no longer read — the session start
-// says so in one line — and without a name no hook reaches the server. Every
-// hook runs as the real script in a child process against a local stand-in for
-// the ConPort REST API.
+// How the hooks address a project: here the settings name none, so the source
+// is CONPORT_PROJECT_NAME (a handle or a name); a `team/project` name is split
+// into the team header and the short path segment, CONPORT_PROJECT_ID is no
+// longer read — the session start says so in one line — and without a name no
+// hook reaches the server. Every hook runs as the real script in a child
+// process, in a repository in a temporary folder outside this one, against a
+// local stand-in for the ConPort REST API.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
-import {
-  chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { projectAddress } from '../../workflows/wf-helper.mjs'
+import { isolatedDir, isolatedEnv } from './support/isolated.mjs'
+import { realGit } from './support/real-git.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
 const TEAM_HEADER = 'x-conport-team-id'
 const { parseProject } = createRequire(import.meta.url)('../_common.js')
+const REAL_GIT = realGit()
 
 // Records the raw request line and headers of every call, and answers the
 // routes the hooks read; `conventions` is the deny-list served next.
@@ -42,60 +43,65 @@ async function startApi() {
   return api
 }
 
-// A working directory that is a git repository with an origin remote, and a
-// stand-in `git` first on PATH: it answers with a repository URL and logs its
-// arguments. A hook that falls back to the repository name is caught by the
-// request the name would produce, and — unless it reads the name through one
-// of the overlay's `rev-parse` queries, which the log allows — by the log too.
+// A working directory that is a git repository with an origin remote and no
+// ConPort settings, and a `git` first on PATH that logs its arguments and runs
+// the real one. A hook that falls back to the repository name is caught by the
+// request the name would produce, and — unless it is the one query of the
+// settings for the root, which the log allows — by the log too. The logging
+// git is a shell script, which Windows does not start as `git` without a
+// shell: there the hooks run the real git, and only the request catches a
+// guess (LOGGING_GIT).
+const LOGGING_GIT = process.platform !== 'win32'
 function makeRepo(root) {
   const repo = join(root, 'some-repo')
-  mkdirSync(join(repo, '.git'), { recursive: true })
-  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
-  writeFileSync(join(repo, '.git', 'config'),
-    '[remote "origin"]\n\turl = https://example.com/acme/some-repo.git\n')
+  mkdirSync(repo)
+  execFileSync(REAL_GIT, ['-C', repo, 'init', '-q'], { env: isolatedEnv(), stdio: 'ignore' })
+  execFileSync(REAL_GIT, ['-C', repo, 'remote', 'add', 'origin', 'https://example.com/acme/some-repo.git'],
+    { env: isolatedEnv(), stdio: 'ignore' })
   const bin = join(root, 'bin')
   mkdirSync(bin)
   const marker = join(root, 'git-was-run')
-  writeFileSync(join(bin, 'git'),
-    `#!/bin/sh\necho "$*" >> '${marker}'\necho https://example.com/acme/some-repo.git\n`)
+  writeFileSync(join(bin, 'git'), `#!/bin/sh\necho "$*" >> '${marker}'\nexec '${REAL_GIT}' "$@"\n`)
   chmodSync(join(bin, 'git'), 0o755)
   return { repo, bin, marker }
 }
 
-// The git calls a hook made other than the Superpowers overlay lookup, which
+// The git calls a hook made other than the one query of the settings, which
 // only asks git for the worktree roots. Anything else — a remote, a config
 // value — is a project guessed from the repository.
-const OVERLAY_GIT = /^-C .+ rev-parse (--show-toplevel|--git-common-dir)$/
+const SETTINGS_GIT = /^-C .+ rev-parse --show-toplevel --git-common-dir$/
 function projectGuesses(ctx) {
   if (!existsSync(ctx.marker)) return []
-  return readFileSync(ctx.marker, 'utf8').split('\n').filter((l) => l && !OVERLAY_GIT.test(l))
+  return readFileSync(ctx.marker, 'utf8').split('\n').filter((l) => l && !SETTINGS_GIT.test(l))
+}
+function assertNoGuesses(ctx, message) {
+  if (LOGGING_GIT) assert.deepEqual(projectGuesses(ctx), [], message)
 }
 
 async function withEnv(fn) {
   const api = await startApi()
-  const root = mkdtempSync(join(tmpdir(), 'conport-address-'))
+  const root = isolatedDir()
   const dataDir = join(root, 'data')
   mkdirSync(dataDir)
   try {
     await fn({ api, root, dataDir, ...makeRepo(root) })
   } finally {
     await api.close()
-    rmSync(root, { recursive: true, force: true })
   }
 }
 
-// `vars` is the whole project addressing of the run: both variables are
-// removed first, so a test names exactly the ones it means.
+// `vars` is the whole project addressing of the run: isolatedEnv removes both
+// variables, so a test names exactly the ones it means.
 function runHook(script, payload, ctx, vars = {}) {
-  const env = { ...process.env }
+  const env = isolatedEnv()
+  // One PATH under one spelling: Windows names it `Path` in process.env.
+  for (const k of Object.keys(env)) if (k.toUpperCase() === 'PATH') delete env[k]
   delete env.CLAUDE_PLUGIN_OPTION_API_KEY
-  delete env.CONPORT_PROJECT_ID
-  delete env.CONPORT_PROJECT_NAME
   Object.assign(env, {
     CLAUDE_PLUGIN_DATA: ctx.dataDir,
     CONPORT_URL: ctx.api.url,
     CONPORT_API_KEY: 'cport_test_key',
-    PATH: `${ctx.bin}:/usr/bin:/bin`,
+    PATH: LOGGING_GIT ? `${ctx.bin}:/usr/bin:/bin` : process.env.PATH,
     ...vars,
   })
   return new Promise((resolve, reject) => {
@@ -122,8 +128,7 @@ const stop = (ctx, vars, session = 's1') =>
   runHook('stop-epic-tails.js', { session_id: session, stop_hook_active: false }, ctx, vars)
 const DENY = [{ pattern: '^forbidden-tool\\b', reason: 'not here' }]
 const bash = (ctx, vars) => new Promise((resolve, reject) => {
-  const env = { ...process.env, CLAUDE_PLUGIN_DATA: ctx.dataDir, ...vars }
-  for (const name of ['CONPORT_PROJECT_ID', 'CONPORT_PROJECT_NAME']) if (!(name in vars)) delete env[name]
+  const env = isolatedEnv({ CLAUDE_PLUGIN_DATA: ctx.dataDir, ...vars })
   const child = spawn(process.execPath, [join(SCRIPTS, 'check-command.js')], { env, cwd: ctx.repo })
   let err = ''
   child.stderr.on('data', (d) => { err += d })
@@ -171,7 +176,7 @@ test('without CONPORT_PROJECT_NAME no hook calls the server', () => withEnv(asyn
   assert.equal(stopped.out, '')
 
   assert.deepEqual(ctx.api.requests, [])
-  assert.deepEqual(projectGuesses(ctx), [], 'no hook may run git to guess a project')
+  assertNoGuesses(ctx, 'no hook may run git to guess a project')
   assert.deepEqual(hookState(ctx).filter((f) => /^(project_id|epic_tails)_/.test(f)), [])
   assert.deepEqual(denyLists(ctx), [])
 }))
@@ -226,22 +231,29 @@ test('the machine-wide deny-list of earlier versions is neither read nor removed
   assert.deepEqual(denyLists(ctx), ['deny-list.json', 'deny-list_my-proj.json'])
 }))
 
-const RETIRED = 'CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project\'s handle or name'
+// The line names the one place a project is set now: project_name of .conport.json.
+const RETIRED = 'CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project\'s handle or name'
 
-// What the session start told the session: the line the user is shown and the
-// context the agent is given (null: none). The line has one channel — the user.
+// What the session start told the session: the lines the user is shown and the
+// context the agent is given (null: none). The line about CONPORT_PROJECT_ID
+// has one channel — the user.
 function startNotice(out) {
+  if (!out) return { user: null, agent: null }
   const parsed = JSON.parse(out)
-  return { user: parsed.systemMessage, agent: parsed.hookSpecificOutput?.additionalContext ?? null }
+  return { user: parsed.systemMessage ?? null, agent: parsed.hookSpecificOutput?.additionalContext ?? null }
 }
+const saysRetired = (out) => (startNotice(out).user ?? '').split('\n').includes(RETIRED)
 
 // The line is said once per session: at its start, not again when the same
-// session is resumed, cleared or compacted.
+// session is resumed, cleared or compacted. The agent is still told the project.
 for (const source of ['resume', 'clear', 'compact']) {
   test(`a session start from ${source} does not say the line again`, () => withEnv(async (ctx) => {
     const started = await sessionStart(ctx, { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'my-proj' }, source)
     assert.equal(started.code, 0)
-    assert.equal(started.out, '')
+    const told = startNotice(started.out)
+    assert.equal(told.user, null)
+    assert.ok(!told.agent.includes(RETIRED))
+    assert.equal(told.agent.split('\n')[0], 'ConPort project: my-proj (from CONPORT_PROJECT_NAME)')
     assert.deepEqual(ctx.api.requests, [{ url: '/api/v1/hooks/conventions?project=my-proj', team: undefined }])
   }))
 }
@@ -270,7 +282,7 @@ test('CONPORT_PROJECT_ID alone names no project, and the session start says so i
   assert.equal((await stop(ctx, vars)).out, '')
   assert.equal((await bash(ctx, vars)).code, 0)
   assert.deepEqual(ctx.api.requests, [], 'no hook reaches the server by the number')
-  assert.deepEqual(projectGuesses(ctx), [])
+  assertNoGuesses(ctx)
   assert.deepEqual(denyLists(ctx), [])
 }))
 
@@ -278,7 +290,10 @@ test('with both variables the name addresses the project and the session start s
   const vars = { CONPORT_PROJECT_ID: '42', CONPORT_PROJECT_NAME: 'k7m2qx9d/my-proj' }
   await prompt(ctx, vars)
   const started = await sessionStart(ctx, vars)
-  assert.deepEqual(startNotice(started.out), { user: RETIRED, agent: null })
+  const told = startNotice(started.out)
+  assert.equal(told.user.split('\n')[0], RETIRED)
+  assert.ok(told.user.includes('ConPort project: k7m2qx9d/my-proj (from CONPORT_PROJECT_NAME)'))
+  assert.ok(!told.agent.includes(RETIRED), 'the line about the retired variable is for the user only')
   assert.deepEqual(ctx.api.requests, [
     { url: '/api/v1/projects/my-proj/epic-tails', team: 'k7m2qx9d' },
     { url: '/api/v1/hooks/conventions?project=k7m2qx9d%2Fmy-proj', team: undefined },
@@ -290,7 +305,7 @@ test('the line is said only when CONPORT_PROJECT_ID holds a value', () => withEn
     { CONPORT_PROJECT_NAME: 'my-proj' }, { CONPORT_PROJECT_NAME: 'my-proj', CONPORT_PROJECT_ID: ' ' }]) {
     const started = await sessionStart(ctx, vars)
     assert.equal(started.code, 0)
-    assert.equal(started.out, '', JSON.stringify(vars))
+    assert.equal(saysRetired(started.out), false, JSON.stringify(vars))
   }
   // Any value counts, a name-shaped one too: the variable is not read as a project.
   const named = await sessionStart(ctx, { CONPORT_PROJECT_ID: 'my-proj' })
@@ -336,6 +351,6 @@ for (const name of ['a/b/c', '/my-proj', 'pers/', '/']) {
     assert.equal((await sessionStart(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
     assert.equal((await prompt(ctx, { CONPORT_PROJECT_NAME: name })).code, 0)
     assert.deepEqual(ctx.api.requests, [])
-    assert.deepEqual(projectGuesses(ctx), [])
+    assertNoGuesses(ctx)
   }))
 }

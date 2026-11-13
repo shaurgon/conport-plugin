@@ -83,9 +83,11 @@ for (const { file, run, green, mergeLabel } of RUNS) {
       assert.equal(call.opts.schema.required, undefined,
         `${label} schema still requires report keys, so an error object would be discarded before the script sees it`)
     }
-    // Judgement agents are not pipes: their schemas stay strict.
+    // Judgement agents are not pipes: the scout is never handed the refusal object.
+    // Its schema also admits {no_project: [lines]}, so the run checks its required
+    // keys itself (test/scout-no-project.test.mjs holds that check).
     const scout = calls.find(c => c.label === 'scout')
-    assert.ok(scout.opts.schema.required.length > 0)
+    assert.equal(scout.opts.schema.properties.error, undefined)
     assert.ok(!scout.prompt.includes('{"error": "refused: <'))
   })
 }

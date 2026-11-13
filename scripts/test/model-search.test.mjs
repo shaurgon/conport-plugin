@@ -92,11 +92,16 @@ test('the command list shows the graph view of arch_get', () => {
   assert.doesNotMatch(get, /four views/)
   assert.match(get, /composition \\\| neighbourhood \\\| contribution \\\| data \\\| graph/)
   assert.match(get, /`graph` takes no other parameter/)
-  assert.match(get, /past 500 nodes/)
-  // The answer of the view graph: decisions as nodes and the flag of the cut.
+  assert.match(get, /past 1000 nodes/i)
+  assert.match(get, /past 1000 entities the units only/i)
+  assert.doesNotMatch(get, /500 nodes/)
+  // The answer of the view graph: decisions as nodes, the flags of the cut
+  // and the progress of a unit.
   assert.match(get, /`decisions` \(`id`, `summary`, `entity_ids`\)/)
   assert.match(get, /`truncated`/)
+  assert.match(get, /`decisions_omitted`/)
   assert.match(get, /`hint`/)
+  assert.match(get, /each unit `progress`/)
   // The section PROJECT MODEL of the skill names the view in a row of `arch_get`.
   const row = model().split('\n').find((line) => line.includes("view='graph'"))
   assert.ok(row, 'the skill names no view graph')

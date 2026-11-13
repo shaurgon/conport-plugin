@@ -12,25 +12,39 @@ you are a member of.
 ## Project name (required)
 
 ```text
-Set CONPORT_PROJECT_NAME.
+Set project_name in .conport.json at the root of the repository and commit the file.
 Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it.
 Personal repository: <project>.
 Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page.
 A bare name in a team repository sends every member to their own Private Team.
-CONPORT_PROJECT_ID is no longer read.
+Never put the API key into the file: it is committed.
 ```
 
-In Claude Code the variable lives in `.claude/settings.local.json` of the
-repository:
+The file `.conport.json`:
 
 ```json
 {
-  "env": { "CONPORT_PROJECT_NAME": "<project>" }
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>"
 }
 ```
 
-Without the variable the hooks stay silent and the skill stops at session start
-and asks for this line — the name is never taken from anywhere else.
+The plugin's hooks read it at session start, from the root of the repository
+Claude Code was opened in, and print the project and where it came from:
+`ConPort project: <project> (from .conport.json)`. A `cd` into another
+repository during the session does not change the project. A personal override
+goes into `.conport.local.json` beside it, kept out of git (add it to
+`.gitignore`); a linked worktree without one reads the main worktree's.
+`CONPORT_PROJECT_NAME` of Claude Code's environment is read only when no file
+names the project.
+
+Without a project the hooks stay silent and the skill stops at session start
+and asks for `project_name` — the name is never taken from anywhere else. A
+repository that still keeps the project in `env.CONPORT_PROJECT_NAME` of
+`.claude/settings.local.json`, or the overlay switch in
+`.superpowers/config.json`, gets a line at session start that names those old
+places; move them by
+<https://conport.app/docs/projects/project-settings.md>.
 
 ## 2. Add the marketplace and install
 
@@ -70,7 +84,7 @@ In the same session:
 
 Ask Claude in the session:
 
-> Call `mcp__conport__init` with the name from `CONPORT_PROJECT_NAME`. If it
+> Call `mcp__conport__init` with `project_name` from `.conport.json`. If it
 > answers `project_not_found`, call `mcp__conport__create_project` with the
 > same name and repeat `init`.
 
@@ -85,11 +99,15 @@ expected for a fresh HTTP transport.
 ## Superpowers overlay (optional)
 
 If the project works with the Superpowers skills, specs and plans can live in
-ConPort instead of `docs/superpowers/`. Create `.superpowers/config.json` at
-the root of the repository:
+ConPort instead of `docs/superpowers/`. Turn it on with `plugins.superpowers`
+in `.conport.json`:
 
 ```json
-{ "conport": { "superpowers": true } }
+{
+  "$schema": "https://conport.app/schema/conport.json",
+  "project_name": "<project>",
+  "plugins": { "superpowers": true }
+}
 ```
 
 and add one line to the project's `CLAUDE.md`:
@@ -98,18 +116,21 @@ and add one line to the project's `CLAUDE.md`:
 Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay
 ```
 
-The file at the root of the current worktree decides on its own; a worktree
-without one (an epic branch, for example) reads the main worktree's file.
-From the next session on, the session-start hook passes the overlay rules to
-Claude, which prints `[CONPORT] Superpowers overlay: on`; the command check
-reads the file on every commit and refuses one that adds a new file under
-`docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules call the `conport` CLI through
-`npx -y conport@^0.8.0` (`documents get`, `plan import`, `plan pull`,
-`superpowers migrate`), so Node.js and network access are needed. The CLI does
-not see the plugin's `api_key`: put `CONPORT_API_KEY` in the environment or in
-`~/.config/conport/.env`. See the
-[README](../../README.md#superpowers-overlay). To turn the overlay off, remove
-the `conport.superpowers` key.
+The switch is the team's, committed with the file; one person can turn it off
+with `"plugins": { "superpowers": false }` in `.conport.local.json`. While
+neither file sets `plugins.superpowers`, the old switch
+`.superpowers/config.json` holding `{"conport": {"superpowers": true}}` is still
+read. From the next session on, the session-start hook passes the overlay rules
+to Claude, which prints `[CONPORT] Superpowers overlay: on`; the command check
+reads the settings of the folder of each commit and refuses one that adds a new
+file under `docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules
+call the `conport` CLI (`documents get`, `plan import`, `plan pull`,
+`superpowers migrate`), which takes the project from `.conport.json` from 0.11
+on — `npx -y conport@^0.11.0` — so Node.js and network access are needed. The
+CLI does not see the plugin's `api_key`: put `CONPORT_API_KEY` in the
+environment or in `~/.config/conport/.env`. See the
+[README](../../README.md#superpowers-overlay). To turn the overlay off, set
+`plugins.superpowers` to `false`.
 
 ## Updating
 

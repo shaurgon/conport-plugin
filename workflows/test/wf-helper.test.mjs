@@ -134,7 +134,10 @@ const noisyGitEnv = () => {
   return { ...process.env, PATH: bin + ':' + process.env.PATH }
 }
 
-test('preflight: git warnings on stderr are not read as data', () => {
+// The noisy git is a shell script, which Windows does not start without a shell.
+const NO_SHELL_STAND_IN = process.platform === 'win32' &&
+  'the noisy git stand-in is a shell script, which Windows does not start without a shell'
+test('preflight: git warnings on stderr are not read as data', { skip: NO_SHELL_STAND_IN }, () => {
   const dir = mkRepo()
   const env = noisyGitEnv()
   const noisy = spawnSync('git', ['status', '--porcelain'], { cwd: dir, env, encoding: 'utf8' })
@@ -153,15 +156,26 @@ test('preflight: git warnings on stderr are not read as data', () => {
 
 // ---------------------------------------------------------------------- gate
 
+// The helper runs a gate command with `shell: true`: sh on POSIX, cmd.exe on
+// Windows, which knows no `true`, `;`, `$(…)` or `>&2`. So the commands here
+// are ones both read — `exit 0`, `echo` of one word, or node running a script
+// written without a character either shell reads inside double quotes.
+const PASS = 'exit 0'
+const nodeGate = script => {
+  assert.doesNotMatch(script, /["$`\\%!]/, 'a gate script holds no character a shell reads in double quotes')
+  return `"${process.execPath}" -e "${script}"`
+}
+const FIFTY_LINES = "for (let i = 1; i <= 50; i++) console.log('line' + i);"
+
 test('gate: all commands succeed -> GREEN', () => {
   const dir = mkRepo()
-  const out = runJson(dir, 'gate', '--dir', dir, '--commands', JSON.stringify(['true', 'echo ok']))
+  const out = runJson(dir, 'gate', '--dir', dir, '--commands', JSON.stringify([PASS, 'echo ok']))
   assert.equal(out.gate, 'GREEN')
 })
 
 test('gate: the first failing command turns the gate RED with the last 30 lines', () => {
   const dir = mkRepo()
-  const cmds = ['true', 'for i in $(seq 1 50); do echo line$i; done; exit 1', 'echo unreached']
+  const cmds = [PASS, nodeGate(`${FIFTY_LINES} process.exit(1)`), 'echo unreached']
   const out = runJson(dir, 'gate', '--dir', dir, '--commands', JSON.stringify(cmds))
   assert.equal(out.gate, 'RED')
   const lines = out.red_summary.split('\n')
@@ -173,7 +187,8 @@ test('gate: the first failing command turns the gate RED with the last 30 lines'
 
 test('gate: secret values are masked in red_summary', () => {
   const dir = mkRepo()
-  const cmds = ['echo "MY_SECRET=hunter2"; echo "API_TOKEN=abc123"; echo "PLAIN=visible"; exit 1']
+  const cmds = [nodeGate(
+    "console.log('MY_SECRET=hunter2'); console.log('API_TOKEN=abc123'); console.log('PLAIN=visible'); process.exit(1)")]
   const out = runJson(dir, 'gate', '--dir', dir, '--commands', JSON.stringify(cmds))
   assert.equal(out.gate, 'RED')
   assert.ok(!out.red_summary.includes('hunter2'), 'secret value leaked: ' + out.red_summary)
@@ -185,7 +200,9 @@ test('gate: secret values are masked in red_summary', () => {
 
 test('gate: a masked value never bleeds past its own line or its quotes', () => {
   const dir = mkRepo()
-  const cmds = ['echo "API_TOKEN="; echo keepme; echo \'MY_SECRET="hunter two"\'; exit 1']
+  // The line printed is MY_SECRET="hunter two"; its quotes are char code 34.
+  const cmds = [nodeGate("const q = String.fromCharCode(34); console.log('API_TOKEN='); console.log('keepme'); " +
+    "console.log('MY_SECRET=' + q + 'hunter two' + q); process.exit(1)")]
   const out = runJson(dir, 'gate', '--dir', dir, '--commands', JSON.stringify(cmds))
   assert.equal(out.gate, 'RED')
   assert.ok(out.red_summary.includes('keepme'), 'the next line must survive: ' + out.red_summary)
@@ -203,7 +220,7 @@ const listFile = entries => {
 
 test('gate: --commands-file is accepted, a missing file exits 2', () => {
   const dir = mkRepo()
-  const out = runJson(dir, 'gate', '--dir', dir, '--commands-file', listFile(['true', 'echo ok']))
+  const out = runJson(dir, 'gate', '--dir', dir, '--commands-file', listFile([PASS, 'echo ok']))
   assert.equal(out.gate, 'GREEN')
   assert.equal(run(dir, 'gate', '--dir', dir, '--commands-file', join(dir, 'no-such.json')).code, 2)
 })
@@ -212,7 +229,8 @@ test('gate: the commands run in --dir', () => {
   const dir = mkRepo()
   const sub = join(dir, 'sub')
   mkdirSync(sub)
-  const out = runJson(dir, 'gate', '--dir', sub, '--commands', JSON.stringify(['test "$(basename "$PWD")" = sub']))
+  const out = runJson(dir, 'gate', '--dir', sub, '--commands',
+    JSON.stringify([nodeGate("process.exit(require('path').basename(process.cwd()) === 'sub' ? 0 : 1)")]))
   assert.equal(out.gate, 'GREEN')
 })
 
@@ -231,11 +249,26 @@ const mergeRun = (dir, queue, commands, ...extra) =>
 test('merge: a green branch is merged with the prescribed commit message', () => {
   const dir = mkRepo()
   const sha = mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
-  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], ['true'])
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], [PASS])
   assert.deepEqual(out.results.map(r => r.status), ['MERGED'])
   assert.equal(out.results[0].merge_sha, git(dir, 'rev-parse', 'HEAD').trim())
   assert.match(git(dir, 'log', '-1', '--pretty=%s').trim(), /^merge task-1: first$/)
   assert.equal(git(dir, 'status', '--porcelain'), '')
+})
+
+// The git facts of the project model date a change by the commit that brought it onto
+// the first-parent line of main: a fast-forward would lay the branch's own commits there,
+// dated before the portion they change, and the portion would never owe a resubmission.
+test('merge: a branch that could fast-forward lands as a merge commit', () => {
+  const dir = mkRepo()
+  const before = git(dir, 'rev-parse', 'HEAD').trim()
+  const sha = mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
+  assert.equal(git(dir, 'merge-base', 'main', 'task/t1').trim(), before, 'the fixture must allow a fast-forward')
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], ['true'])
+  assert.deepEqual(out.results.map(r => r.status), ['MERGED'])
+  const parents = git(dir, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ').slice(1)
+  assert.deepEqual(parents, [before, sha], 'HEAD has two parents: main before the merge, then the branch')
+  assert.notEqual(git(dir, 'rev-parse', 'HEAD').trim(), sha, 'main did not move onto the branch head')
 })
 
 test('merge: an already merged branch is not re-merged and reports ALREADY_MERGED', () => {
@@ -243,7 +276,7 @@ test('merge: an already merged branch is not re-merged and reports ALREADY_MERGE
   const sha = mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
   git(dir, 'merge', '--no-ff', '-m', 'pre-merged', 'task/t1')
   const before = git(dir, 'rev-parse', 'HEAD').trim()
-  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], ['true'])
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], [PASS])
   assert.deepEqual(out.results.map(r => r.status), ['ALREADY_MERGED'])
   assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), before, 'nothing may be committed')
 })
@@ -254,7 +287,7 @@ test('merge: a conflicting branch is aborted and reported with its conflicted fi
   writeFileSync(join(dir, 'base.txt'), 'ours\n')
   git(dir, 'commit', '-am', 'ours')
   const before = git(dir, 'rev-parse', 'HEAD').trim()
-  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], ['true'])
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], [PASS])
   assert.deepEqual(out.results.map(r => r.status), ['CONFLICT'])
   assert.deepEqual(out.results[0].conflict_files, ['base.txt'])
   assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), before)
@@ -269,7 +302,7 @@ test('merge: a red gate aborts the merge, reports GATE_RED and continues with th
   const out = mergeRun(dir, [
     { id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' },
     { id: 2, branch: 'task/t2', head_sha: sha2, title: 'second' },
-  ], ['! test -f a.txt'])
+  ], [nodeGate("process.exit(require('fs').existsSync('a.txt') ? 1 : 0)")])
   assert.deepEqual(out.results.map(r => r.status), ['GATE_RED', 'MERGED'])
   assert.equal(git(dir, 'log', '--pretty=%s', '-1').trim(), 'merge task-2: second')
   assert.equal(existsSync(join(dir, 'a.txt')), false, 'the red merge must be rolled back')
@@ -279,7 +312,7 @@ test('merge: GATE_RED carries the last 30 masked red lines', () => {
   const dir = mkRepo()
   const sha = mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
   const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }],
-    ['for i in $(seq 1 50); do echo line$i; done; echo "DB_PASSWORD=swordfish"; exit 1'])
+    [nodeGate(`${FIFTY_LINES} console.log('DB_PASSWORD=swordfish'); process.exit(1)`)])
   assert.equal(out.results[0].status, 'GATE_RED')
   const lines = out.results[0].gate_tail.split('\n')
   assert.equal(lines.length, 30)
@@ -297,7 +330,7 @@ test('merge: a red gate on an already merged branch stops the batch with RED_BAS
   const out = mergeRun(dir, [
     { id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' },
     { id: 2, branch: 'task/t2', head_sha: sha2, title: 'second' },
-  ], ['echo broken >&2; exit 1'])
+  ], [nodeGate("console.error('broken'); process.exit(1)")])
   assert.deepEqual(out.results.map(r => r.status), ['RED_BASELINE', 'NOT_MERGED'])
   assert.ok(out.results[0].gate_tail.includes('broken'))
   assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), before, 'no branch may be merged after a red baseline')
@@ -311,7 +344,7 @@ test('merge: a dirty tree stops the batch with DIRTY_ABORTED and fills the rest 
   const out = mergeRun(dir, [
     { id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' },
     { id: 2, branch: 'task/t2', head_sha: sha2, title: 'second' },
-  ], ['true'])
+  ], [PASS])
   assert.deepEqual(out.results.map(r => r.status), ['DIRTY_ABORTED', 'NOT_MERGED'])
   assert.ok(out.results[0].gate_tail.includes('base.txt'))
 })
@@ -325,7 +358,7 @@ test('merge: MERGE_HEAD debris left by an interrupted run is aborted and the bat
   assert.notEqual(gitTry(dir, 'merge', '--no-ff', 'debris').status, 0)
   assert.ok(existsSync(join(dir, '.git', 'MERGE_HEAD')))
 
-  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' }], ['true'])
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' }], [PASS])
   assert.deepEqual(out.results.map(r => r.status), ['MERGED'])
 })
 
@@ -338,7 +371,7 @@ test('merge --state-only: reads the state without merging anything', () => {
   const out = mergeRun(dir, [
     { id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' },
     { id: 2, branch: 'task/t2', head_sha: sha2, title: 'second' },
-  ], ['true'], '--state-only')
+  ], [PASS], '--state-only')
   assert.deepEqual(out.results.map(r => r.status), ['ALREADY_MERGED', 'NOT_MERGED'])
   assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), before, 'state-only must not merge')
 })
@@ -353,7 +386,7 @@ test('merge --state-only: a red gate marks the first NOT_MERGED entry RED_BASELI
     { id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' },
     { id: 2, branch: 'task/t2', head_sha: sha2, title: 'second' },
     { id: 3, branch: 'task/t3', head_sha: sha3, title: 'third' },
-  ], ['echo baseline broken; exit 1'], '--state-only')
+  ], [nodeGate("console.log('baseline broken'); process.exit(1)")], '--state-only')
   assert.deepEqual(out.results.map(r => r.status), ['ALREADY_MERGED', 'RED_BASELINE', 'NOT_MERGED'])
   assert.ok(out.results[1].gate_tail.includes('baseline broken'))
   assert.equal(out.results[2].gate_tail, '')
@@ -366,7 +399,7 @@ test('merge --state-only: MERGE_HEAD debris is the only mutation it performs', (
   writeFileSync(join(dir, 'base.txt'), 'ours\n')
   git(dir, 'commit', '-am', 'ours')
   assert.notEqual(gitTry(dir, 'merge', '--no-ff', 'debris').status, 0)
-  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' }], ['true'], '--state-only')
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha1, title: 'first' }], [PASS], '--state-only')
   assert.equal(existsSync(join(dir, '.git', 'MERGE_HEAD')), false)
   assert.deepEqual(out.results.map(r => r.status), ['NOT_MERGED'])
 })
@@ -376,7 +409,7 @@ test('merge: --gate-commands-file is accepted, a missing file exits 2', () => {
   const sha = mkBranch(dir, 'task/t1', 'a.txt', 'a\n')
   const queue = queueFile([{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }])
   const out = runJson(dir, 'merge', '--queue', queue, '--gate-dir', dir,
-    '--gate-commands-file', listFile(['true']))
+    '--gate-commands-file', listFile([PASS]))
   assert.deepEqual(out.results.map(r => r.status), ['MERGED'])
   assert.equal(run(dir, 'merge', '--queue', queue, '--gate-dir', dir,
     '--gate-commands-file', join(dir, 'no-such.json')).code, 2)
@@ -393,7 +426,7 @@ test('merge: a refused commit is red and says so in gate_tail', () => {
   chmodSync(join(hooks, 'commit-msg'), 0o755)
   const before = git(dir, 'rev-parse', 'HEAD').trim()
 
-  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], ['true'])
+  const out = mergeRun(dir, [{ id: 1, branch: 'task/t1', head_sha: sha, title: 'first' }], [PASS])
   assert.deepEqual(out.results.map(r => r.status), ['GATE_RED'])
   assert.ok(out.results[0].gate_tail.startsWith('commit refused: '),
     'gate_tail: ' + out.results[0].gate_tail)

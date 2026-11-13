@@ -45,6 +45,25 @@ for (const [name, carries] of Object.entries(MIRRORED)) {
       })
 }
 
+// The mirror rule at the head of each file lists the fenced regions both files
+// carry: a region fenced in both and missing from the list is a rule that no
+// longer says what the tests hold.
+const fencedNames = file => new Set([...source(file).matchAll(/\b([A-Z][A-Z_]*)_BEGIN\b/g)].map(m => m[1]))
+const mirrorRule = file => {
+  const src = source(file)
+  const from = src.indexOf('// Mirror rule:')
+  assert.ok(from >= 0, `no mirror rule in ${file}`)
+  return src.slice(from, src.indexOf('\n\n', from))
+}
+
+for (const file of ['task.js', 'epic.js'])
+  test(`${file}: the mirror rule names every region fenced in both files`, () => {
+    const other = fencedNames(file === 'task.js' ? 'epic.js' : 'task.js')
+    const rule = mirrorRule(file)
+    const missing = [...fencedNames(file)].filter(name => other.has(name) && !new RegExp(`\\b${name}\\b`).test(rule))
+    assert.deepEqual(missing, [], `the mirror rule of ${file} does not name ${missing.join(', ')}`)
+  })
+
 const skeletonVersionLine = file => {
   const matches = source(file).match(/^const SKELETON_VERSION = .+$/gm)
   assert.ok(matches, `SKELETON_VERSION declaration missing from ${file}`)

@@ -11,8 +11,9 @@
 // together.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, dirname, join, resolve, win32 } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const TAIL_LINES = 30
@@ -140,8 +141,38 @@ const git = (...a) => {
 }
 const gitOut = (...a) => git(...a).stdout.trim()
 
-const sh = (cmd, cwd) => {
-  const r = spawnSync(cmd, { shell: true, cwd, encoding: 'utf8' })
+// The shell of the gate commands. Plans write them in sh syntax, and on Windows
+// `shell: true` means cmd.exe, which reads them wrong and turns a sound branch
+// red. There they run through the bash of Git for Windows instead:
+// CLAUDE_CODE_GIT_BASH_PATH when it names a file, else the first bash.exe on
+// PATH; without one the gate is refused, never reported red. POSIX keeps sh.
+// Pure — platform, environment and the file probe come in — so every branch is
+// testable on any machine.
+export const GIT_BASH_MISSING =
+  'Git Bash not found: install Git for Windows or set CLAUDE_CODE_GIT_BASH_PATH to bash.exe'
+const isFile = p => { try { return statSync(p).isFile() } catch { return false } }
+export const gateShell = ({ platform = process.platform, env = process.env, isFile: probe = isFile } = {}) => {
+  if (platform !== 'win32') return { bash: null }
+  const given = (env.CLAUDE_CODE_GIT_BASH_PATH ?? '').trim()
+  if (given && probe(given)) return { bash: given }
+  const pathKey = Object.keys(env).find(k => k.toUpperCase() === 'PATH')
+  for (const entry of (pathKey ? env[pathKey] : '').split(';')) {
+    const dir = entry.trim().replace(/^"(.*)"$/, '$1')
+    if (!dir) continue
+    const candidate = win32.join(dir, 'bash.exe')
+    if (probe(candidate)) return { bash: candidate }
+  }
+  return { error: GIT_BASH_MISSING }
+}
+// The spawnSync call of one command: POSIX exactly as before, win32 as bash -c.
+export const shellInvocation = (shell, cmd) => shell.bash
+  ? { file: shell.bash, args: ['-c', cmd], options: {} }
+  : { file: cmd, args: null, options: { shell: true } }
+
+const sh = (cmd, cwd, shell) => {
+  const { file, args, options } = shellInvocation(shell, cmd)
+  const opts = { ...options, cwd, encoding: 'utf8' }
+  const r = args ? spawnSync(file, args, opts) : spawnSync(file, opts)
   return { ok: r.status === 0, out: (r.stdout ?? '') + (r.stderr ?? '') }
 }
 
@@ -173,9 +204,9 @@ const abortMergeDebris = () => {
   return true
 }
 
-const runGate = (dir, commands) => {
+export const runGate = (dir, commands, shell) => {
   for (const cmd of commands) {
-    const r = sh(cmd, dir)
+    const r = sh(cmd, dir, shell)
     if (!r.ok) return { green: false, tail: tail(r.out) }
   }
   return { green: true, tail: '' }
@@ -260,7 +291,9 @@ const gate = flags => {
   if (!dir) return usage('gate requires --dir <dir>')
   const commands = listOption(flags, 'commands')
   if (!commands || !commands.length) return usage('gate requires --commands <json array> or --commands-file <path>')
-  const r = runGate(dir, commands)
+  const shell = gateShell()
+  if (shell.error) return errorOut(shell.error)
+  const r = runGate(dir, commands, shell)
   emit(r.green ? { gate: 'GREEN', red_summary: '' } : { gate: 'RED', red_summary: r.tail })
 }
 
@@ -274,6 +307,9 @@ const merge = flags => {
   const commands = listOption(flags, 'gate-commands')
   if (!commands || !commands.length)
     return usage('merge requires --gate-commands <json array> or --gate-commands-file <path>')
+  // Before any git step: a gate that cannot run must leave the tree as it was.
+  const shell = gateShell()
+  if (shell.error) return errorOut(shell.error)
 
   const results = queue.map(e => ({
     id: e.id, status: 'NOT_MERGED', merge_sha: null, conflict_files: [], gate_tail: '',
@@ -283,7 +319,7 @@ const merge = flags => {
   if (flags['state-only']) {
     abortMergeDebris()
     queue.forEach((e, i) => { results[i].status = isAncestor(e.head_sha) ? 'ALREADY_MERGED' : 'NOT_MERGED' })
-    const g = runGate(gateDir, commands)
+    const g = runGate(gateDir, commands, shell)
     if (!g.green) {
       const first = results.find(r => r.status === 'NOT_MERGED')
       if (first) { first.status = 'RED_BASELINE'; first.gate_tail = g.tail }
@@ -304,7 +340,7 @@ const merge = flags => {
     }
 
     if (isAncestor(e.head_sha)) {                    // already in: gate only
-      const g = runGate(gateDir, commands)
+      const g = runGate(gateDir, commands, shell)
       if (g.green) { r.status = 'ALREADY_MERGED'; continue }
       r.status = 'RED_BASELINE'
       r.gate_tail = g.tail
@@ -320,7 +356,7 @@ const merge = flags => {
       continue
     }
 
-    const g = runGate(gateDir, commands)
+    const g = runGate(gateDir, commands, shell)
     if (!g.green) {
       git('merge', '--abort')
       r.status = 'GATE_RED'
@@ -446,10 +482,13 @@ const branch = flags => {
 // differences it names the carriers neither side can read (unchecked, never equal),
 // those in which a start ahead of the published branch already differs from it, and
 // whether the start is behind it or diverged (start_behind). Which units the project
-// has and where each carries its version is the project's own manifest
-// (.conport/units.json), read at the start of the run, so a branch under check cannot
-// change what it is checked by: none -> units:"none" and nothing is compared; one that
-// cannot be read -> units:"invalid" with manifest_error. Its reading lives in
+// has and where each carries its version is `units` of its .conport.json, read by the
+// settings rules, or, while that file names none, the old manifest .conport/units.json
+// of the same tree — both as of the start of the run, so a branch under check cannot
+// change what it is checked by. `manifest` names the file the units came from: none ->
+// units:"none", manifest null and nothing is compared; units that cannot be read (a
+// .conport.json that is not a JSON object counts, and is never passed over for the old
+// manifest) -> units:"invalid" with manifest_error. Their reading lives in
 // unit-versions.mjs, loaded only here: every other command runs without it.
 const versions = async flags => {
   const name = typeof flags.branch === 'string' ? flags.branch : null
@@ -467,13 +506,29 @@ const versions = async flags => {
     read: path => (git('cat-file', '-e', ref + ':' + path).ok ? git('show', ref + ':' + path).stdout : null),
     list: dir => git('ls-tree', '-r', '--name-only', ref, '--', dir).stdout.split('\n').filter(Boolean),
   })
-  const { MANIFEST_PATH, parseUnitManifest, unitVersionDrift, unreadableCarriers } = await import('./unit-versions.mjs')
+  const { SETTINGS_PATH, LEGACY_MANIFEST_PATH, parseUnits, parseUnitManifest, unitVersionDrift, unreadableCarriers } =
+    await import('./unit-versions.mjs')
   const nothing = { base, head, differs: [], unreadable: [], start_differs: [], start_behind: false }
-  const text = tree(start).read(MANIFEST_PATH)
-  if (text === null) emit({ units: 'none', ...nothing, equal: true })
-  const manifest = parseUnitManifest(text)
-  if (manifest.error) emit({ units: 'invalid', manifest_error: manifest.error, ...nothing, equal: false })
-  const { units } = manifest
+  const settingsText = tree(start).read(SETTINGS_PATH)
+  let manifest = null
+  let read = null
+  if (settingsText !== null) {
+    const { resolveSettings } = await settingsRules()
+    const settings = resolveSettings({ shared: settingsText, local: null, env: {} })
+    // What the rules say of the file as a whole or of its units; a line of another key
+    // leaves the units read.
+    const broken = settings.lines.find(line => [' is not valid JSON', ' must hold a JSON object', ': units must be ']
+      .some(says => line.startsWith(SETTINGS_PATH + says)))
+    if (settings.settings.units) [manifest, read] = [SETTINGS_PATH, parseUnits(settings.settings.units, SETTINGS_PATH)]
+    else if (broken) [manifest, read] = [SETTINGS_PATH, { error: broken }]
+  }
+  if (read === null) {
+    const text = tree(start).read(LEGACY_MANIFEST_PATH)
+    if (text === null) emit({ units: 'none', manifest: null, ...nothing, equal: true })
+    ;[manifest, read] = [LEGACY_MANIFEST_PATH, parseUnitManifest(text)]
+  }
+  if (read.error) emit({ units: 'invalid', manifest, manifest_error: read.error, ...nothing, equal: false })
+  const { units } = read
   const differs = unitVersionDrift(units, tree(base), tree(head))
   const unreadable = unreadableCarriers(units, tree(base), tree(head))
   // The direction of the start against the published branch. Ahead (or equal), a start
@@ -483,9 +538,14 @@ const versions = async flags => {
   // start_behind, and the action is to update the default branch.
   const ahead = !published || git('merge-base', '--is-ancestor', base, start).ok
   const startDiffers = published && ahead ? unitVersionDrift(units, tree(base), tree(start)) : []
-  emit({ units: 'manifest', base, head, equal: differs.length === 0 && unreadable.length === 0, differs, unreadable,
+  emit({ units: 'manifest', manifest, base, head, equal: differs.length === 0 && unreadable.length === 0, differs, unreadable,
     start_differs: startDiffers, start_behind: !ahead })
 }
+
+// The rules of the ConPort project settings (.conport.json, .conport.local.json), shared
+// with the plugin's hooks. Loaded only by the commands that read the settings: a helper
+// copied without the plugin's scripts still answers every other command.
+const settingsRules = async () => (await import('../scripts/project-config.js')).default
 
 // ------------------------------------------------------------------ accounting
 
@@ -1424,6 +1484,13 @@ export const projectAddress = name => {
   return parts.length === 1 ? { team: null, project: parts[0] } : { team: parts[0], project: parts[1] }
 }
 
+// The lines of the settings rules that name no project (the spec's line texts): a
+// failing git, a settings file that cannot be read, is not JSON or not an object, and
+// a wrong project_name. Every other line leaves the project to the files or the variable.
+const BROKEN_SETTINGS = [/^git failed \(/, / cannot be read \(/, / is not valid JSON \(/, / must hold a JSON object/, /: project_name must be /]
+const breaksSettings = line => BROKEN_SETTINGS.some(re => re.test(line))
+const NO_PROJECT_LINE = 'no ConPort project: set project_name in .conport.json'
+
 // The mechanical half of the scout: the task from ConPort, its plan slice, the
 // constraints, the gate and the spec reference. Nothing here is a judgement —
 // compressing and digesting is left to the caller.
@@ -1433,7 +1500,26 @@ const scout = async flags => {
 
   const key = apiKey()
   if (!key) sentinel('no api key')
-  const project = projectAddress(typeof flags.project === 'string' ? flags.project : process.env.CONPORT_PROJECT_NAME)
+  const root = typeof flags['repo-root'] === 'string' ? flags['repo-root'] : process.cwd()
+  // --project wins; without it the name comes from the settings of the repository
+  // root: project_name of .conport.json (.conport.local.json over it), else
+  // CONPORT_PROJECT_NAME — a settings file that exists but names no project names none.
+  let name = typeof flags.project === 'string' ? flags.project : null
+  let lines = []
+  if (name === null) {
+    try {
+      const settings = (await settingsRules()).loadSettings({ cwd: root, env: process.env, home: homedir() })
+      ;[name, lines] = [settings.project, settings.lines]
+    } catch (e) { errorOut(e && e.message ? e.message : String(e)) }
+  }
+  const project = projectAddress(name)
+  // A broken settings file or a failing git names no project, and nothing else may
+  // name one in its place: the answer carries the lines of the rules, and the run
+  // refuses by them instead of resolving the project another way. Lines that break
+  // nothing (a wrong key other than project_name, an API key, the user env file) do
+  // not say why there is no project, so the line that does closes them.
+  if (!project && lines.length)
+    emit({ error: 'no project', lines: lines.some(breaksSettings) ? lines : [...lines, NO_PROJECT_LINE] })
   if (!project) sentinel('no project')
 
   const api = conport(process.env.CONPORT_API_URL || API_BASE, key, project.team)
@@ -1450,7 +1536,6 @@ const scout = async flags => {
     linkedSpec = await specThroughPlan(api, encodeURIComponent(handle), taskId)
   } catch (e) { errorOut(scrub(e && e.message ? e.message : e)) }
 
-  const root = typeof flags['repo-root'] === 'string' ? flags['repo-root'] : process.cwd()
   const given = typeof flags.plan === 'string' ? flags.plan : null
   const planPath = given && !existsSync(given) ? join(root, given) : (given ?? findPlan(root, taskId))
   const text = planPath && existsSync(planPath) ? readFileSync(planPath, 'utf8') : null

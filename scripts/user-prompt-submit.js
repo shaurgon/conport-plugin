@@ -97,9 +97,10 @@ function formatTail(t) {
   return `[TAILS] task-${t.epic_id} ${t.title} — ${note}`;
 }
 
-async function fetchEpicTails() {
+async function fetchEpicTails(input) {
   // Cached, time-boxed, silent-failure: the hook must never slow a prompt.
-  const project = detectProject();
+  // The project is the session's, from the settings kept at its start.
+  const project = detectProject(input);
   if (!project) return { lines: [], ok: false };
   // Keyed by project — otherwise a session in another repo is served the
   // first project's tails (its epic ids!) for the rest of the TTL. A task
@@ -202,7 +203,7 @@ async function main() {
   // On the first prompt init prints these same tails, so the block would be
   // a duplicate. Its composition is still recorded (tailsChanged runs first),
   // so the next prompt with the same tails stays quiet too.
-  const tails = await fetchEpicTails();
+  const tails = await fetchEpicTails(input);
   if (tails.ok && tailsChanged(sessionId, tails.lines) && !restoring) {
     messages.push(...tails.lines);
   }

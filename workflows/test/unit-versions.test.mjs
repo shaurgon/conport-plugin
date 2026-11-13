@@ -5,13 +5,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MANIFEST_PATH, parseUnitManifest, unitVersionDrift, unreadableCarriers } from '../unit-versions.mjs'
+import { SETTINGS_PATH, LEGACY_MANIFEST_PATH, parseUnits, parseUnitManifest, unitVersionDrift, unreadableCarriers } from '../unit-versions.mjs'
 
 // An epic does not raise a unit version; the release step raises it once. The
 // workflows hold that mechanically: before READY they compare every version carrier
 // of every unit with the base branch. Which units a project has and where each
-// carries its version is the project's own manifest, never the plugin's. These tests
-// build a neutral project with its manifest and pin how the manifest is read, how each
+// carries its version is the project's own data, never the plugin's: `units` of its
+// .conport.json, or the old manifest .conport/units.json while .conport.json names none.
+// These tests build a neutral project with its units and pin how they are read, how each
 // kind of carrier is read, and the helper command that reads both out of git.
 
 const HELPER = join(dirname(dirname(fileURLToPath(import.meta.url))), 'wf-helper.mjs')
@@ -72,9 +73,18 @@ const drift = (base, head) => unitVersionDrift(UNITS, tree(base), tree(head))
 
 // ------------------------------------------------------------- the manifest
 
-test('the manifest lives at .conport/units.json and gives its units in order', () => {
-  assert.equal(MANIFEST_PATH, '.conport/units.json')
+test('the units live in .conport.json, the old manifest at .conport/units.json, both in order', () => {
+  assert.equal(SETTINGS_PATH, '.conport.json')
+  assert.equal(LEGACY_MANIFEST_PATH, '.conport/units.json')
   assert.deepEqual(UNITS.map(u => u.unit), ['the web app', 'the agent', 'the cli', 'the extension'])
+  assert.deepEqual(parseUnits(MANIFEST.units, SETTINGS_PATH).units.map(u => u.unit), UNITS.map(u => u.unit))
+})
+
+test('parseUnits names the file the units came from in every refusal', () => {
+  assert.deepEqual(parseUnits({}, SETTINGS_PATH), { error: '.conport.json: units must be a non-empty list' })
+  assert.deepEqual(parseUnits([], SETTINGS_PATH), { error: '.conport.json: units must be a non-empty list' })
+  assert.deepEqual(parseUnits([{ unit: '' }], SETTINGS_PATH), { error: '.conport.json units[0]: unit must name the unit' })
+  assert.deepEqual(parseUnitManifest('{ "units": [] }'), { error: '.conport/units.json: units must be a non-empty list' })
 })
 
 const broken = (over, carrierOver) => JSON.stringify({ units: [{ unit: 'u', carriers: [{ path: 'a.json', read: { json: 'version' }, ...carrierOver }], ...over }] })
@@ -196,15 +206,20 @@ const commitAll = (dir, files, msg) => {
   return git(dir, 'rev-parse', 'HEAD').trim()
 }
 // A throwaway repository on main carrying every carrier at its base version and, unless
-// told otherwise, the manifest; no remote.
-const mkRepo = (manifest = MANIFEST_TEXT) => {
+// told otherwise, the old manifest; `settings` is the text of a .conport.json beside it
+// (none by default); no remote.
+const mkRepo = (manifest = MANIFEST_TEXT, settings = null) => {
   const dir = mkdtempSync(join(tmpdir(), 'wfuv-'))
   roots.push(dir)
   git(dir, 'init', '-q', '-b', 'main')
   git(dir, 'config', 'user.email', 'wf@example.test')
   git(dir, 'config', 'user.name', 'wf')
   git(dir, 'config', 'commit.gpgsign', 'false')
-  const sha = commitAll(dir, { ...filesAt(), ...(manifest === null ? {} : { [MANIFEST_PATH]: manifest }) }, 'init')
+  const sha = commitAll(dir, {
+    ...filesAt(),
+    ...(manifest === null ? {} : { [LEGACY_MANIFEST_PATH]: manifest }),
+    ...(settings === null ? {} : { [SETTINGS_PATH]: settings }),
+  }, 'init')
   return { dir, sha }
 }
 const versions = (cwd, ...argv) => {
@@ -219,21 +234,22 @@ test('helper versions: no manifest -> units none, nothing compared, equal', () =
   const { dir, sha } = mkRepo(null)
   commitAll(dir, { 'ext/extension.json': render('ext/extension.json', '9.0.0') }, 'a raise nobody declared')
   assert.deepEqual(versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD'),
-    { units: 'none', base: short(dir, sha), head: 'HEAD', equal: true, differs: [], unreadable: [], start_differs: [], start_behind: false })
+    { units: 'none', manifest: null, base: short(dir, sha), head: 'HEAD', equal: true, differs: [], unreadable: [], start_differs: [], start_behind: false })
 })
 
 test('helper versions: a manifest that cannot be read -> units invalid with the reason, not equal', () => {
   const { dir, sha } = mkRepo('{ "units": [] }\n')
   const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
   assert.equal(out.units, 'invalid')
-  assert.match(out.manifest_error, /units must be a non-empty list/)
+  assert.equal(out.manifest, '.conport/units.json')
+  assert.equal(out.manifest_error, '.conport/units.json: units must be a non-empty list')
   assert.equal(out.equal, false)
 })
 
 test('helper versions: the manifest is read at the start, so a head that drops a carrier is still checked by it', () => {
   const { dir, sha } = mkRepo()
   const fewer = JSON.stringify({ units: MANIFEST.units.filter(u => u.unit !== 'the extension') })
-  commitAll(dir, { 'ext/extension.json': render('ext/extension.json', '0.4.5'), [MANIFEST_PATH]: fewer }, 'raise and hide')
+  commitAll(dir, { 'ext/extension.json': render('ext/extension.json', '0.4.5'), [LEGACY_MANIFEST_PATH]: fewer }, 'raise and hide')
   const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
   assert.deepEqual(out.differs.map(d => [d.unit, d.head]), [['the extension', '0.4.5']])
 })
@@ -242,7 +258,7 @@ test('helper versions: equal versions -> equal, no difference; a commit base is 
   const { dir, sha } = mkRepo()
   commitAll(dir, { 'docs/notes.md': 'work of the epic\n' }, 'work')
   const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
-  assert.deepEqual(out, { units: 'manifest', base: short(dir, sha), head: 'HEAD', equal: true, differs: [], unreadable: [], start_differs: [], start_behind: false })
+  assert.deepEqual(out, { units: 'manifest', manifest: '.conport/units.json', base: short(dir, sha), head: 'HEAD', equal: true, differs: [], unreadable: [], start_differs: [], start_behind: false })
   assert.ok(out.base.length < 40 && sha.startsWith(out.base), 'the short sha, so a title naming it is not cut')
 })
 
@@ -251,7 +267,7 @@ test('helper versions: a raised skill version -> not equal, the carrier named wi
   const path = 'web/skills/main/SKILL.md'
   commitAll(dir, { [path]: render(path, '2.7.0') }, 'raise')
   assert.deepEqual(versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD'),
-    { units: 'manifest', base: short(dir, sha), head: 'HEAD', equal: false, unreadable: [], start_differs: [], start_behind: false,
+    { units: 'manifest', manifest: '.conport/units.json', base: short(dir, sha), head: 'HEAD', equal: false, unreadable: [], start_differs: [], start_behind: false,
       differs: [{ unit: 'the web app', path, base: '2.6.0', head: '2.7.0' }] })
 })
 
@@ -338,6 +354,72 @@ test('helper versions: a base that does not resolve is an error object, never a 
   assert.equal(typeof out.error, 'string')
   assert.match(out.error, /deadbeef/)
   assert.equal(out.equal, undefined)
+})
+
+// ------------------------------------------------------- units of .conport.json
+
+const settingsWith = over => JSON.stringify({ $schema: 'https://conport.app/schema/conport.json', project_name: 'sample', ...over }, null, 2) + '\n'
+// The old manifest beside .conport.json lists one unit the settings list among four:
+// which list was read shows in what is compared.
+const OTHER_MANIFEST = JSON.stringify({ units: MANIFEST.units.filter(u => u.unit === 'the cli') }) + '\n'
+
+test('units come from .conport.json of the start tree', () => {
+  const { dir, sha } = mkRepo(OTHER_MANIFEST, settingsWith({ units: MANIFEST.units }))
+  // the head drops the units from .conport.json: the start still decides what is checked
+  commitAll(dir, { 'ext/extension.json': render('ext/extension.json', '0.4.5'), [SETTINGS_PATH]: settingsWith({}) }, 'raise and hide')
+  const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
+  assert.equal(out.units, 'manifest')
+  assert.equal(out.manifest, '.conport.json')
+  assert.deepEqual(out.differs.map(d => [d.unit, d.head]), [['the extension', '0.4.5']])
+})
+
+test('units of a .conport.json saved with a byte order mark and CRLF line ends are read as usual', () => {
+  const text = '﻿' + settingsWith({ units: MANIFEST.units }).replace(/\n/g, '\r\n')
+  const { dir, sha } = mkRepo(null, text)
+  const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
+  assert.deepEqual([out.units, out.manifest, out.equal], ['manifest', '.conport.json', true])
+})
+
+test('the legacy manifest is read when .conport.json names no units', () => {
+  const { dir, sha } = mkRepo(OTHER_MANIFEST, settingsWith({}))
+  commitAll(dir, {
+    'ext/extension.json': render('ext/extension.json', '0.4.5'),
+    'cli/package.json': render('cli/package.json', '0.7.4'),
+  }, 'raise two')
+  const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
+  assert.equal(out.units, 'manifest')
+  assert.equal(out.manifest, '.conport/units.json')
+  assert.deepEqual(out.differs.map(d => d.unit), ['the cli'], 'only the units of the old manifest are compared')
+})
+
+test('neither units in .conport.json nor the legacy manifest: units none, manifest null', () => {
+  const { dir, sha } = mkRepo(null, settingsWith({}))
+  const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
+  assert.deepEqual([out.units, out.manifest, out.equal], ['none', null, true])
+})
+
+for (const [what, settings, error] of [
+  ['units that are not a list', settingsWith({ units: { unit: 'x' } }), '.conport.json: units must be a list — fix it'],
+  ['an empty list of units', settingsWith({ units: [] }), '.conport.json: units must be a non-empty list'],
+  ['a unit without a name', settingsWith({ units: [{ unit: '', carriers: [] }] }), '.conport.json units[0]: unit must name the unit'],
+  ['a .conport.json that is not JSON', '{ "units": ', '.conport.json is not valid JSON (line 1, column 12): fix it'],
+  ['a .conport.json that holds no object', '[]\n', '.conport.json must hold a JSON object — fix it'],
+]) {
+  test(`invalid units name .conport.json: ${what}`, () => {
+    // the old manifest beside it is valid: a broken .conport.json is not passed over for it
+    const { dir, sha } = mkRepo(MANIFEST_TEXT, settings)
+    const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
+    assert.equal(out.units, 'invalid')
+    assert.equal(out.manifest, '.conport.json')
+    assert.equal(out.manifest_error, error)
+    assert.equal(out.equal, false)
+  })
+}
+
+test('a wrong key of .conport.json other than units leaves its units read', () => {
+  const { dir, sha } = mkRepo(null, settingsWith({ project_name: '', plugins: 'yes', units: MANIFEST.units }))
+  const out = versions(dir, '--branch', 'main', '--start', sha, '--head', 'HEAD')
+  assert.deepEqual([out.units, out.manifest, out.equal], ['manifest', '.conport.json', true])
 })
 
 test('helper versions: --branch and --start are required', () => {

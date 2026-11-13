@@ -1,9 +1,10 @@
 // The Superpowers overlay switch and the SessionStart injection of its rules.
-// overlayEnabled() reads `.superpowers/config.json` in the current worktree
-// root, then in the main worktree root, and outside git in the directory
-// itself; the SessionStart hook prints the rules file as additionalContext
-// when the overlay is on, whether or not a ConPort project is configured.
-// Every git repository is built under the OS temp dir.
+// Without plugins.superpowers in .conport.json, overlayEnabled() reads the old
+// flag in `.superpowers/config.json` in the current worktree root, then in the
+// main worktree root, and outside git in the directory itself; the
+// SessionStart hook adds the rules file to additionalContext when the overlay
+// is on, whether or not a ConPort project is configured. Every git repository
+// is built under the OS temp dir, outside this repository.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, execFileSync } from 'node:child_process'
@@ -14,8 +15,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isolatedEnv } from './support/isolated.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
 const RULES = join(SCRIPTS, '..', 'skills', 'conport', 'references', 'superpowers-overlay.md')
@@ -24,12 +26,15 @@ const { overlayEnabled, worktreeRoot, mainWorktreeRoot } = require(join(SCRIPTS,
 
 const ON = { conport: { superpowers: true } }
 
-// An environment free of git variables a calling hook may have exported, so
-// every git command and child script reads the repository it is pointed at.
+// An environment free of git and ConPort variables a calling hook may have
+// exported, with this repository forbidden as a settings root, so every git
+// command and child script reads the repository it is pointed at.
+const BASE_ENV = isolatedEnv()
 function cleanEnv(extra = {}) {
   const env = {}
-  for (const [k, v] of Object.entries(process.env)) {
-    if (!k.startsWith('GIT_') && !k.startsWith('CONPORT_') && k !== 'CLAUDE_PLUGIN_OPTION_API_KEY') env[k] = v
+  for (const [k, v] of Object.entries(BASE_ENV)) {
+    if (k.startsWith('CONPORT_') && k !== 'CONPORT_SETTINGS_FORBID_ROOT') continue
+    if (k !== 'CLAUDE_PLUGIN_OPTION_API_KEY') env[k] = v
   }
   return { ...env, ...extra }
 }
@@ -72,10 +77,12 @@ function addWorktree(main, tmp) {
 
 // --- overlayEnabled / worktreeRoot -----------------------------------------
 
-test('worktreeRoot names the top level of the worktree, from a subdirectory too', () => withRepo(({ main }) => {
+// git names the top level with forward slashes on Windows (`C:/…`); the root is
+// only ever joined and resolved, so it is compared resolved.
+test('worktreeRoot names the top level of the worktree, from a subdirectory too, on windows paths too', () => withRepo(({ main }) => {
   mkdirSync(join(main, 'sub', 'deep'), { recursive: true })
-  assert.equal(worktreeRoot(main), realpathSync(main))
-  assert.equal(worktreeRoot(join(main, 'sub', 'deep')), realpathSync(main))
+  assert.equal(resolve(worktreeRoot(main)), realpathSync(main))
+  assert.equal(resolve(worktreeRoot(join(main, 'sub', 'deep'))), realpathSync(main))
 }))
 
 test('worktreeRoot is null outside git and for a missing directory', () => {
@@ -171,7 +178,10 @@ function withOldGit(fn) {
   }
 }
 
-test('the main worktree is found from a relative common dir, without --path-format', () => withRepo(({ tmp, main }) => {
+// The old git is a shell script, which Windows does not start without a shell.
+const NO_SHELL_STAND_IN = process.platform === 'win32' &&
+  'the old git stand-in is a shell script, which Windows does not start without a shell'
+test('the main worktree is found from a relative common dir, without --path-format', { skip: NO_SHELL_STAND_IN }, () => withRepo(({ tmp, main }) => {
   mkdirSync(join(main, 'sub'))
   const wt = addWorktree(main, tmp)
   writeConfig(main, ON)
@@ -228,17 +238,23 @@ function runSessionStart({ stdin, cwd, env = {}, scripts = SCRIPTS }) {
 }
 
 const rulesText = () => readFileSync(RULES, 'utf8')
+const MOVE_LINE = 'ConPort settings are in the old places (conport in .superpowers/config.json): ' +
+  'move them to .conport.json — https://conport.app/docs/projects/project-settings.md'
 
+// The rules close the agent's context, after the line that asks to move the
+// old flag to .conport.json.
 function assertInjected(out) {
   const parsed = JSON.parse(out)
   assert.equal(parsed.hookSpecificOutput.hookEventName, 'SessionStart')
-  assert.equal(parsed.hookSpecificOutput.additionalContext, rulesText())
+  assert.equal(parsed.hookSpecificOutput.additionalContext, `${MOVE_LINE}\n\n${rulesText()}`)
 }
+
+const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.additionalContext ?? '').includes(rulesText())
 
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.8\.0 plan import/)
+  assert.match(text, /npx -y conport@\^0\.11\.0 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
@@ -297,9 +313,9 @@ test('a task comes before the design, the epic with the uploaded spec, the plan 
   assert.ok(upload.indexOf('documents upload') < upload.indexOf("kind='epic'"), 'the epic follows the upload')
 
   const plan = step('Plan')
-  assert.match(plan, /npx -y conport@\^0\.8\.0 plan import <draft> --spec doc-N --epic <id>` /)
+  assert.match(plan, /npx -y conport@\^0\.11\.0 plan import <draft> --spec doc-N --epic <id>` /)
   assert.match(plan, /the epic is not created again/)
-  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.8\.0 plan import <draft> \[--milestone <id>\]`/)
+  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.11\.0 plan import <draft> \[--milestone <id>\]`/)
   assert.doesNotMatch(plan, /\[--epic <id>\]/, 'the epic of a designed plan is not optional')
 })
 
@@ -404,12 +420,16 @@ test('a linked worktree session gets the rules from the main worktree switch', (
   assertInjected(out)
 }))
 
-test('with the overlay off the hook prints nothing, as before', () => withRepo(async ({ tmp, main }) => {
-  for (const config of [undefined, { conport: { superpowers: 'yes' } }, '{broken']) {
+test('with the overlay off the hook injects no rules', () => withRepo(async ({ tmp, main }) => {
+  for (const config of [undefined, '{broken', { conport: { superpowers: 'yes' } }]) {
     if (config !== undefined) writeConfig(main, config)
     const { code, out } = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp })
     assert.equal(code, 0)
-    assert.equal(out, '')
+    // No flag, or one that cannot be read, is no old place: nothing at all is said.
+    if (typeof config !== 'object') assert.equal(out, '')
+    else assert.deepEqual(JSON.parse(out), {
+      systemMessage: MOVE_LINE, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: MOVE_LINE },
+    })
   }
 }))
 
@@ -420,7 +440,7 @@ test('the deny-list fetch runs as before, with the overlay on and off', () => wi
   try {
     let res = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, env })
     assert.equal(res.code, 0)
-    assert.equal(res.out, '')
+    assert.ok(injectsNoRules(res.out))
     assert.equal(api.requests.length, 1)
     assert.match(api.requests[0], /^\/api\/v1\/hooks\/conventions\?project=prk7m2qx9d$/)
     assert.equal(readFileSync(join(dataDir, 'deny-list_prk7m2qx9d.json'), 'utf8'), '{"deny":[]}')
@@ -429,7 +449,7 @@ test('the deny-list fetch runs as before, with the overlay on and off', () => wi
     writeConfig(main, ON)
     res = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, env })
     assert.equal(res.code, 0)
-    assertInjected(res.out)
+    assert.ok(JSON.parse(res.out).hookSpecificOutput.additionalContext.endsWith(`\n\n${rulesText()}`))
     assert.equal(api.requests.length, 2)
     assert.ok(existsSync(join(dataDir, 'deny-list_prk7m2qx9d.json')))
   } finally {
@@ -442,16 +462,15 @@ test('the deny-list fetch runs as before, with the overlay on and off', () => wi
 // agent on every source — a compacted session needs them again.
 test('with the overlay on, the line goes to the user at startup and the rules to the agent', () => withRepo(async ({ tmp, main }) => {
   writeConfig(main, ON)
-  const line = 'CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project\'s handle or name'
+  const line = 'CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project\'s handle or name'
   const run = source => runSessionStart({
     stdin: JSON.stringify({ cwd: main, source }), cwd: tmp, env: { CONPORT_PROJECT_ID: '42' },
   })
   const started = await run('startup')
   assert.equal(started.code, 0)
   const parsed = JSON.parse(started.out)
-  assert.equal(parsed.systemMessage, line)
-  assert.equal(parsed.hookSpecificOutput.hookEventName, 'SessionStart')
-  assert.equal(parsed.hookSpecificOutput.additionalContext, rulesText())
+  assert.equal(parsed.systemMessage, `${line}\n${MOVE_LINE}`)
+  assertInjected(started.out)
 
   for (const source of ['resume', 'clear', 'compact']) {
     const again = await run(source)
@@ -461,13 +480,15 @@ test('with the overlay on, the line goes to the user at startup and the rules to
   }
 }))
 
-test('a missing rules file leaves the hook silent and the session starting', () => withRepo(async ({ tmp, main }) => {
+test('a missing rules file leaves the rules out and the session starting', () => withRepo(async ({ tmp, main }) => {
   writeConfig(main, ON)
   // The hook copied without the skill directory next to it.
   const scripts = join(tmp, 'plugin', 'scripts')
   mkdirSync(scripts, { recursive: true })
-  for (const f of ['session-start.js', '_common.js']) copyFileSync(join(SCRIPTS, f), join(scripts, f))
+  for (const f of ['session-start.js', '_common.js', 'project-config.js', 'old-settings.js']) {
+    copyFileSync(join(SCRIPTS, f), join(scripts, f))
+  }
   const { code, out } = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, scripts })
   assert.equal(code, 0)
-  assert.equal(out, '')
+  assert.equal(JSON.parse(out).hookSpecificOutput.additionalContext, MOVE_LINE)
 }))

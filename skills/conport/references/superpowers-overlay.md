@@ -1,7 +1,8 @@
 # ConPort Superpowers overlay
 
 This project has the ConPort Superpowers overlay switched on
-(`.superpowers/config.json` holds `{"conport": {"superpowers": true}}`).
+(`plugins.superpowers` is `true` in `.conport.json`, and `.conport.local.json`
+does not turn it off).
 
 **The user's preference for this project:** specs and plans live in ConPort,
 not in git. A spec is a ConPort document of type `spec`, a plan is a ConPort
@@ -38,7 +39,7 @@ creates).
    put their findings into the draft.
 3. **Approval.** The user reads and approves the draft with the findings in it.
 4. **Upload the spec, once.**
-   `npx -y conport@^0.8.0 documents upload <draft> --doc-type spec` → `doc-N`.
+   `npx -y conport@^0.11.0 documents upload <draft> --doc-type spec` → `doc-N`.
    Delete the draft. Right after the upload create the spec's epic —
    `add_task(project=<project>, kind='epic', title=<the spec's title>, description=<the goal and the acceptance criterion from the spec>, milestone_id=<the milestone>)`
    → `<id>`, with the milestone chosen by the project's roadmap rules and the
@@ -51,14 +52,14 @@ creates).
    an epic with no plan and no tasks is a normal state. Until the plan, the
    spec is not edited; if it must be, edit it with ConPort's block tools
    (`update_block`, `insert_block`, an `amend` change). For a local copy run
-   `npx -y conport@^0.8.0 documents get doc-N` → `.superpowers/docs/doc-N.md`.
+   `npx -y conport@^0.11.0 documents get doc-N` → `.superpowers/docs/doc-N.md`.
 5. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
    the writing-plans format (`### Task N: <title>`). After the user approves it:
-   `npx -y conport@^0.8.0 plan import <draft> --spec doc-N --epic <id>` — `<id>`
+   `npx -y conport@^0.11.0 plan import <draft> --spec doc-N --epic <id>` — `<id>`
    is the epic of step 4. This creates the `plan` document and the tasks of
    that epic; the epic is not created again. A plan with no design behind it
    has no spec and no epic:
-   `npx -y conport@^0.8.0 plan import <draft> [--milestone <id>]` creates the
+   `npx -y conport@^0.11.0 plan import <draft> [--milestone <id>]` creates the
    `plan` document, the epic and its tasks — attach that epic to a milestone
    by the project's roadmap rules. Delete the draft and the
    `<draft>.conport.json` that `plan import` wrote beside it.
@@ -81,17 +82,17 @@ creates).
    Before submitting it, review it in the order the part *The review of a
    document portion* of that section gives: build the
    reviewer's input with
-   `npx -y conport@^0.9.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
+   `npx -y conport@^0.11.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
    run the reviewer (`conport:model-reviewer` in Claude Code), resolve every
    finding, recheck once when something was fixed, and put the report into
    `review` of the portion. Then submit it:
    `arch_submit(project=<project>, portion=<the portion>)` or
-   `npx -y conport@^0.9.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
+   `npx -y conport@^0.11.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
    A refusal lists every error with its action: take them all and submit
    again. Delete the file and the input directory once the portion is
    accepted. If the spec is amended later, read the portion back with
    `arch_source`, bring it in line, review it again and submit it again.
-6. **Execution.** `npx -y conport@^0.8.0 plan pull <epic>` →
+6. **Execution.** `npx -y conport@^0.11.0 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
    file path). If `/conport:task` or `/conport:epic` is used, pass it the same
@@ -144,17 +145,17 @@ creates).
      id.
    - **A closed task** refuses every entry with `journal_task_closed`: reopen
      the task, then write the entry.
-7. **Editing the plan during the work.** `npx -y conport@^0.8.0 plan pull <epic>`
+7. **Editing the plan during the work.** `npx -y conport@^0.11.0 plan pull <epic>`
    → edit the pulled file above the line `<!-- conport-pull-tail -->` →
-   `npx -y conport@^0.8.0 plan import <pulled file>` →
-   `npx -y conport@^0.8.0 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
+   `npx -y conport@^0.11.0 plan import <pulled file>` →
+   `npx -y conport@^0.11.0 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
    number) → continue SDD. Once execution has started, section numbers never
    change: a new section takes the next free number, and a section no longer
    needed is not removed from the plan — its task is set to `CANCELLED` in
    ConPort with a resolution. The SDD ledger and `task-brief` key on the
    section number. When `plan import` refuses because `<file>` and ConPort's
    plan have both changed since pull: move `<file>` aside to
-   `<file>.mine.md`, run `npx -y conport@^0.8.0 plan pull <epic> -o <file>`,
+   `<file>.mine.md`, run `npx -y conport@^0.11.0 plan pull <epic> -o <file>`,
    carry your edits over from `<file>.mine.md`, run `plan import` again.
 8. **Finish.** The final whole-branch review (`conport:sdd-final-reviewer`
    in Claude Code) is clean and its fixes are merged → the terminal task of
@@ -162,29 +163,41 @@ creates).
    file → on a `READY` verdict the epic is closed, then the release follows
    the conport skill's section "Epic in its own branch".
 
+   The branch of the epic goes into the main branch with `git merge --no-ff`,
+   never by a fast-forward: the facts of git date a change by the commit that
+   brought it onto the first-parent line of the main branch, and a
+   fast-forward lays the epic's own commits there with their earlier dates.
+
    In a project whose model has `code` sources (`arch_sources` lists them):
-   once an epic that changed the code is merged, submit the skeleton of the
-   units it touched again — read each portion with `arch_source`, bring it in
-   line with the code, submit it — and run `npx -y conport@^0.8.0 arch check`
-   in the repository root.
+   once an epic that changed the code is merged, run
+   `npx -y conport@^0.11.0 arch check` in the repository root on the main
+   branch — there it also sends the facts of git. Then, for each debt
+   `code_portion_stale` it brings, read the paths its `detail` names, bring
+   the portion in line with the code with `arch_source` and submit it again —
+   as it is when the model does not change. The debt sees files added,
+   deleted and renamed, not what changed inside a file: when the epic changed
+   what a unit is made of in its existing files, submit that portion again
+   too. After the last submission run the check once more: a `code` portion
+   newer than the check owes `check_stale`.
 
 ## When the CLI fails
 
 The CLI reads its API key from `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`, never from the plugin's settings. When a
-`npx -y conport@^0.8.0 …` command fails with `CONPORT_API_KEY is not set`, the
+`npx -y conport@^0.11.0 …` command fails with `CONPORT_API_KEY is not set`, the
 one action is: set `CONPORT_API_KEY` (env or `~/.config/conport/.env`) and
 retry. When it fails with `No project specified`, or with
-`CONPORT_PROJECT_ID is no longer read — set CONPORT_PROJECT_NAME to the project's handle or name`,
-the one action is: set `CONPORT_PROJECT_NAME` to the project's handle or name
-and retry. When it says `<file>.conport.json names the project by a retired number`,
+`CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project's handle or name`,
+the one action is: pass `--project <handle>` — the `project` that `init`
+returned — to the command and retry. When it says `<file>.conport.json names the project by a retired number`,
 run the `plan pull` command that line gives. None of these is a reason to turn
 the overlay off.
 
 If the CLI does not run at all (no Node.js, no network, an old version), tell
 the user in one line which command failed and why, and ask whether to turn the
 overlay off for this work. With the user's consent,
-remove the `conport.superpowers` key from `.superpowers/config.json`: the
+set `plugins.superpowers` to `false` in `.conport.local.json` at the root of
+the project (the personal file, so the team keeps the overlay): the
 plugin then behaves as before — the `superpowers-conport` bridge with its
 anchors, spec and plan files in git. Until the user agrees, keep the drafts in
 `.superpowers/drafts/` and do not commit them under `docs/superpowers/`.

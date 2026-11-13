@@ -2,11 +2,12 @@ import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { extractGate, linksOf } from '../wf-helper.mjs'
+import { isolatedDir, isolatedEnv } from '../../scripts/test/support/isolated.mjs'
 
 const HELPER = join(dirname(dirname(fileURLToPath(import.meta.url))), 'wf-helper.mjs')
 const KEY = 'test_key_never_printed'
@@ -160,11 +161,9 @@ const runHelper = (env, ...argv) => new Promise((resolve, reject) => {
   p.on('close', code => resolve({ code, stdout, stderr }))
 })
 
-const scoutEnv = mock => {
-  const env = { ...process.env, CONPORT_API_URL: mock.url, CONPORT_API_KEY: KEY }
-  delete env.CONPORT_PROJECT_NAME
-  return env
-}
+// No project from the calling shell, and this repository forbidden as a settings
+// root: a scout that looks for .conport.json reads only what the test set up.
+const scoutEnv = mock => isolatedEnv({ CONPORT_API_URL: mock.url, CONPORT_API_KEY: KEY })
 
 const runScout = async (mock, argv, env = scoutEnv(mock)) => {
   const r = await runHelper(env, 'scout', ...argv)
@@ -582,11 +581,134 @@ test('no api key in either variable: the fallback sentinel is printed and nothin
   assert.deepEqual(mock.requests, [])
 }))
 
-test('no project to resolve: the fallback sentinel is printed and nothing is called', withMock({ tasks: TASKS }, async mock => {
-  const r = await runHelper(scoutEnv(mock), 'scout', '--task', '901')
+// ------------------------------------------------------------ .conport.json
+
+const SETTINGS = name => JSON.stringify({ $schema: 'https://conport.app/schema/conport.json', project_name: name }, null, 2) + '\n'
+const PLAN_FILE = 'docs/superpowers/plans/2026-09-01-sample.md'
+
+test('scout takes the project of .conport.json under --repo-root', withMock({ tasks: TASKS }, async mock => {
+  const root = isolatedDir({ '.conport.json': SETTINGS(PROJECT), [PLAN_FILE]: PLAN })
+  // the variable names another project: the file names one, so the variable is not read
+  const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: 'another-project' }
+  const { out } = await runScout(mock, ['--task', '901', '--repo-root', root], env)
+
+  assert.equal(out.project, HANDLE)
+  assert.equal(mock.requests[0].path, '/api/v1/projects/' + PROJECT)
+}))
+
+test('scout takes the project of .conport.json in the working folder without --repo-root', withMock({ tasks: TASKS }, async mock => {
+  const root = isolatedDir({ '.conport.json': SETTINGS(PROJECT) })
+  const r = await new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, [HELPER, 'scout', '--task', '903'], { env: scoutEnv(mock), cwd: root })
+    let stdout = ''
+    p.stdout.on('data', c => { stdout += c })
+    p.on('error', reject)
+    p.on('close', code => resolve({ code, stdout }))
+  })
+
+  assert.equal(r.code, 0)
+  assert.equal(JSON.parse(r.stdout).project, HANDLE)
+}))
+
+test('scout prefers --project', withMock({ tasks: TASKS }, async mock => {
+  const root = isolatedDir({ '.conport.json': SETTINGS('another-project'), [PLAN_FILE]: PLAN })
+  const { out } = await runScout(mock, ['--task', '901', '--project', PROJECT, '--repo-root', root])
+
+  assert.equal(out.project, HANDLE)
+  assert.equal(mock.requests[0].path, '/api/v1/projects/' + PROJECT)
+}))
+
+test('scout without a project gives the no project sentinel', withMock({ tasks: TASKS }, async mock => {
+  const r = await runHelper(scoutEnv(mock), 'scout', '--task', '901', '--repo-root', isolatedDir())
 
   assert.equal(r.code, 0)
   assert.equal(r.stdout.trim(), '{"error": "no project"}')
+  assert.deepEqual(mock.requests, [])
+}))
+
+// A .conport.json that exists but names no project — not JSON, not an object, or a
+// blank project_name — names none at all: the variable does not stand in for it,
+// and the answer carries the settings lines, so the run refuses by them instead of
+// resolving the project another way (branch B reading the variable).
+for (const [what, text, line] of [
+  ['is not JSON', '{ "project_name": ', '.conport.json is not valid JSON (line 1, column 19): fix it'],
+  ['is not an object', '[]', '.conport.json must hold a JSON object — fix it'],
+  ['has a blank project_name', SETTINGS('   '), '.conport.json: project_name must be a non-empty string — fix it'],
+  ['cannot be read (a folder in its place)', null, '.conport.json cannot be read (EISDIR): fix it'],
+]) {
+  test(`scout with a .conport.json that ${what} answers no project with its line, the variable unread`, withMock({ tasks: TASKS }, async mock => {
+    const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: PROJECT }
+    // null: a folder stands where the file should be
+    const root = text === null ? isolatedDir({ '.conport.json/keep': '' }) : isolatedDir({ '.conport.json': text })
+    const r = await runHelper(env, 'scout', '--task', '901', '--repo-root', root)
+
+    assert.equal(r.code, 0)
+    assert.deepEqual(JSON.parse(r.stdout), { error: 'no project', lines: [line] })
+    assert.deepEqual(mock.requests, [])
+  }))
+}
+
+// A git that fails other than "not a git repository" reads no settings at all: the
+// answer names the failure, and the variable does not stand in for the files.
+test('scout under a failing git answers no project with the git failed line, the variable unread', withMock({ tasks: TASKS }, async mock => {
+  const bin = isolatedDir({ git: '#!/bin/sh\necho "fatal: detected dubious ownership in repository" >&2\nexit 128\n' })
+  chmodSync(join(bin, 'git'), 0o755)
+  const env = { ...scoutEnv(mock), CONPORT_PROJECT_NAME: PROJECT, PATH: bin }
+  const r = await runHelper(env, 'scout', '--task', '901', '--repo-root', isolatedDir({ '.conport.json': SETTINGS(PROJECT) }))
+
+  assert.equal(r.code, 0)
+  assert.deepEqual(JSON.parse(r.stdout), {
+    error: 'no project',
+    lines: ['git failed (fatal: detected dubious ownership in repository): ConPort settings were not read'],
+  })
+  assert.deepEqual(mock.requests, [])
+}))
+
+// Lines that break nothing — a wrong key other than project_name, an API key outside
+// it, the variable in the user env file — do not say why there is no project: the
+// answer ends with the line that does, so one run names everything to fix. A line of
+// a broken file or of git (the tests above) carries no such line.
+const NO_PROJECT_LINE = 'no ConPort project: set project_name in .conport.json'
+for (const [what, files, line] of [
+  ['a wrong plugins key', { '.conport.json': JSON.stringify({ plugins: { superpowers: 'yes' } }) },
+    '.conport.json: plugins.superpowers must be true or false — fix it'],
+  ['an API key outside project_name', { '.conport.json': JSON.stringify({ token: { api_key: 'x' } }) },
+    '.conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env'],
+  ['the variable in the user env file', {}, null],
+  // A key in project_name blocks the project, but its line is the same as for a key
+  // elsewhere, so the no project line follows it too — the action stays right.
+  ['an API key in project_name', { '.conport.json': JSON.stringify({ project_name: 'cport_live_x' }) },
+    '.conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env'],
+]) {
+  test(`scout with only ${what} answers no project with its line and the no project line`, withMock({ tasks: TASKS }, async mock => {
+    const env = scoutEnv(mock)
+    let expected = line
+    if (line === null) {
+      mkdirSync(join(env.XDG_CONFIG_HOME, 'conport'), { recursive: true })
+      writeFileSync(join(env.XDG_CONFIG_HOME, 'conport', '.env'), 'CONPORT_PROJECT_NAME=everywhere\n')
+      expected = 'CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it'
+    }
+    const r = await runHelper(env, 'scout', '--task', '901', '--repo-root', isolatedDir(files))
+
+    assert.equal(r.code, 0)
+    assert.deepEqual(JSON.parse(r.stdout), { error: 'no project', lines: [expected, NO_PROJECT_LINE] })
+    assert.deepEqual(mock.requests, [])
+  }))
+}
+
+test('no project to resolve: the fallback sentinel is printed and nothing is called', withMock({ tasks: TASKS }, async mock => {
+  const r = await runHelper(scoutEnv(mock), 'scout', '--task', '901', '--repo-root', emptyRoot())
+
+  assert.equal(r.code, 0)
+  assert.equal(r.stdout.trim(), '{"error": "no project"}')
+  assert.deepEqual(mock.requests, [])
+}))
+
+test('scout refuses a settings root inside this repository instead of reading its .conport.json', withMock({ tasks: TASKS }, async mock => {
+  const r = await runHelper(scoutEnv(mock), 'scout', '--task', '901', '--repo-root', dirname(HELPER))
+
+  assert.equal(r.code, 0)
+  assert.match(JSON.parse(r.stdout).error, /^settings root .* is inside CONPORT_SETTINGS_FORBID_ROOT: run the test in a temporary folder$/)
   assert.deepEqual(mock.requests, [])
 }))
 

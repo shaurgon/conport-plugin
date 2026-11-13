@@ -8,15 +8,28 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const {
-  detectProject, denyListPath, readStdin, overlayEnabled, worktreeRoot, gitIn,
+  dataDir, detectProject, denyListPath, readStdin, overlayEnabled, worktreeRoot, gitIn, isForbiddenRoot,
 } = require('./_common.js');
 
 const SPECS_DIR = 'docs/superpowers/specs';
 const PLANS_DIR = 'docs/superpowers/plans';
 
-function loadConventions() {
-  // No project in the environment: no list is this session's, nothing is blocked.
-  const project = detectProject();
+// Whether any project's deny-list was fetched on this machine. Without one
+// nothing can be blocked, and the session's settings are not worked out.
+function anyDenyList() {
+  try {
+    return fs.readdirSync(dataDir()).some((f) => f.startsWith('deny-list_'));
+  } catch (_) {
+    return false;
+  }
+}
+
+function loadConventions(input) {
+  if (!anyDenyList()) return [];
+  // No project in the session's settings: no list is this session's, nothing
+  // is blocked. The project is the session's, not that of a folder a command
+  // moved to.
+  const project = detectProject(input);
   if (!project) return [];
   const p = denyListPath(project);
   if (!fs.existsSync(p)) return [];
@@ -297,15 +310,16 @@ function refusal(root, rel) {
   const file = shellWord(path.join(root, rel));
   if (rel.startsWith(`${PLANS_DIR}/`)) {
     return `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on plans live in ConPort: ` +
-      `run \`npx -y conport@^0.8.0 plan import ${file} --spec doc-N --epic <id>\` with doc-N the plan's spec and <id> the spec's epic, then remove the file.`;
+      `run \`npx -y conport@^0.11.0 plan import ${file} --spec doc-N --epic <id>\` with doc-N the plan's spec and <id> the spec's epic, then remove the file.`;
   }
   return `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.8.0 documents upload ${file} --doc-type spec\`, then remove the file.`;
+    `run \`npx -y conport@^0.11.0 documents upload ${file} --doc-type spec\`, then remove the file.`;
 }
 
 // The refusal for a command that commits a new spec or plan with the overlay
-// on, or null. No commit, the overlay off, no git, or a merge, cherry-pick or
-// revert in progress — no check.
+// on, or null. The overlay is read from the settings of the folder each
+// commit runs in, not from the session's. No commit, the overlay off, no git,
+// or a merge, cherry-pick or revert in progress — no check.
 function commitGuard(command, cwd) {
   const { dirs, adds } = commitsIn(command, cwd);
   const seen = new Set();
@@ -339,7 +353,8 @@ async function main() {
   try {
     const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : process.cwd();
     reason = commitGuard(command, cwd);
-  } catch (_) {
+  } catch (err) {
+    if (isForbiddenRoot(err)) throw err;
     reason = null;
   }
   if (reason) {
@@ -348,7 +363,7 @@ async function main() {
     process.exit(2);
   }
 
-  const conventions = loadConventions();
+  const conventions = loadConventions(input);
   for (const conv of conventions) {
     const pattern = conv && conv.pattern;
     if (!pattern) continue;

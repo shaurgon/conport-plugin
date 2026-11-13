@@ -1,5 +1,127 @@
 # conport changelog
 
+## 24.0.0
+
+**Breaking: the project's settings live in `.conport.json`.** The ConPort
+settings of a project are one file at the root of the repository,
+`.conport.json`, committed and shared by the team: `project_name` (any name
+`init` takes; the project's handle survives renames and moves),
+`plugins.superpowers`, `plugins.codegraph`, `arch.ignore`, `arch.git` and
+`units`. Its JSON schema is `https://conport.app/schema/conport.json`. A
+personal `.conport.local.json`, kept in `.gitignore`, lies over it key by key
+(objects merged, values whole) and may set only `project_name`,
+`plugins.superpowers` and `plugins.codegraph`; `arch` and `units` there are
+not read. The personal file is looked up at the root of the current worktree,
+else at the root of the main worktree; outside git both files are looked up
+in the working directory only, and never above the root.
+
+The project name is taken in one order: a name passed explicitly, then
+`project_name` of the merged files, then `CONPORT_PROJECT_NAME` of the process
+— the variable only when no file sets `project_name`. The file now wins over
+the variable: a session whose environment names another project works with
+the project of the file after the update. A file that cannot be read, is not
+valid JSON, holds no object or carries a wrong `project_name` sets no project,
+and the variable does not stand in for it. `CONPORT_PROJECT_NAME` in
+`~/.config/conport/.env` is never read: it would apply to every repository.
+`CONPORT_PROJECT_ID` is no longer read at all: a command that has no project
+from the files or `CONPORT_PROJECT_NAME` and finds it set is refused with one
+line, `CONPORT_PROJECT_ID is no longer read — set project_name in
+.conport.json to the project's handle or name`.
+
+The session-start hook prints the chosen project to the agent and to the user
+as `ConPort project: <X> (from <.conport.json | .conport.local.json | CONPORT_PROJECT_NAME>)`,
+and each problem of the settings as one line with one action: a file that is
+not valid JSON (line and column only, never its text), a key of a wrong type,
+a key the personal file may not set, an API key found in a file (it is never
+read and never printed; revoke it), `.conport.local.json` not ignored by git,
+a personal name over the shared one, a variable the file overrides, the
+variable in `~/.config/conport/.env`, and a failure of git. The hook works the
+settings out once per session and keeps them in the plugin's data folder; the
+other hooks of the session read that cache, so a `cd` in Bash does not change
+the project of the session, and a torn cache is worked out again. Git is
+asked in English (`LC_ALL=C`, empty `LANGUAGE`), so a folder outside git is
+read as one under any locale, not told as a failure of git.
+
+The Superpowers overlay is switched by `plugins.superpowers`: on for the team
+in `.conport.json`, off for one user in `.conport.local.json`. The release
+manifest of the workflows is `units` of `.conport.json`.
+
+Settings in the old places — `env.CONPORT_PROJECT_NAME` in
+`.claude/settings.local.json` or `.claude/settings.json`, the key `conport`
+of `.superpowers/config.json`, `.conport/units.json` — give a line at the
+session start that sends the agent to the move document,
+https://conport.app/docs/projects/project-settings.md: it moves them into
+`.conport.json` with the project's handle, removes the moved personal ones,
+keeps `.conport/units.json`, and says how to roll back. For this release the
+old places still work while `.conport.json` does not set the key:
+`.superpowers/config.json` for the overlay and `.conport/units.json` for the
+units. `CONPORT_PROJECT_NAME` in the environment stays a source for good.
+
+Step 1 of the skill follows suit: an agent with hooks takes the project from
+the `ConPort project:` line; Codex, Cursor and other agents without hooks read
+the two files by the whole rule themselves, asking git in English
+(`LC_ALL=C`) so that a folder outside git is told under any locale, never read
+an API key from them, and carry out the move document when they find the old
+places. The refusals
+of `init`, the overlay rules and the tool reference name `project_name` in
+`.conport.json`. Every CLI recipe of the skill, the overlay rules, the tool
+reference and the model backfill runs `npx -y conport@^0.11.0`, the first CLI
+that reads `.conport.json`; the actions of the model debts `check_stale` and
+`removed_but_present` and of the refusal `review_not_for_code` name the same
+range.
+
+`/conport:task` and `/conport:epic` take the project by the same rule. A
+settings file that cannot be read, is not valid JSON, holds no object or
+carries a wrong `project_name`, or a failure of git, stops the run with
+`ABORTED_NO_PROJECT` and the lines of the settings that say what to fix; the
+scout no longer falls back to `CONPORT_PROJECT_NAME` for it. With no project
+anywhere the run stops with `no ConPort project: set project_name in .conport.json`.
+
+On Windows, the plan's checks in `/conport:task` and `/conport:epic` run
+through Git Bash, not `cmd.exe`, which misread their `sh` syntax and reported
+a sound branch red: `CLAUDE_CODE_GIT_BASH_PATH` when it names a file, else the
+first `bash.exe` on `PATH`. Without one the gate is refused with
+`Git Bash not found: install Git for Windows or set CLAUDE_CODE_GIT_BASH_PATH to bash.exe`.
+
+The project model learns from git. On `main` or `master`,
+`npx -y conport@^0.11.0 arch check` also sends the facts of git with the
+outcome of the anchors: the activity of each anchored entity, the files added,
+deleted and renamed under the anchors since the oldest `code` portion, and
+the hot directories of each unit. No code, no commit message and no author
+leaves the machine; what does is listed in the skill's part *The anchor
+check* — the name of the branch, the dates of commits, the paths under the
+anchors, the paths of the hot directories and of the units, the patterns of
+`arch.ignore`, the numbers of commits and of index nodes. `--no-git` or
+`arch.git: false` in `.conport.json` sends none of it; `plugins.codegraph`
+and `arch.ignore` are read from the same file. The facts bring two debts,
+`code_portion_stale` (resubmit the `code` portion whose anchors saw files
+added, deleted or renamed) and `area_uncovered` (describe a hot directory or
+ignore it; the debt carries `area` with the unit, the path, the commits, the
+share, the index nodes and the `unit` entity on the root of the unit; the
+root `.`, which no pattern of `arch.ignore` reaches, asks for an anchor
+alone), and three more reasons for `check_stale`, one of them a check from a
+shallow clone. A check that sends its git block without facts — a refusal
+(`--no-git`, `arch.git: false`, no main branch) or a shallow clone — replaces
+the earlier facts and clears their debts; a check off the main branch sends no
+block and changes nothing; the shallow clone owes `check_stale` until
+`git fetch --unshallow` and a new check. `arch_status` gains
+`git_pass`, and the slice `graph` of `arch_get` and the card of `arch_entity`
+gain `activity`. The step *Skeleton* of the backfill names the version files
+of a unit and runs `npx -y conport@^0.11.0 arch suggest --json`, which
+proposes the units and their parts from git history and, with a `codegraph`
+index, the imports between the parts. The overlay's step *Finish* and the procedure's *After the backfill*
+merge with `--no-ff`, run the check on the main branch and resubmit the
+portions `code_portion_stale` names; `/conport:epic` reports every line of
+the check, joined with `; `. Every text that runs `arch check` asks for
+`^0.11.0`.
+
+The slice `graph` of `arch_get` shows up to 1000 nodes: past 1000 nodes with
+the decisions it leaves the decisions out first (`decisions_omitted` true and
+a `hint` that the card of an entity lists them), and only past 1000 entities
+does it show the units alone. Each unit of the slice carries `progress` — the
+open epics of its documents and the counts of their tasks and bugs (`done`,
+`in_progress`, `blocked`, `waiting`, `live`), or null without an open epic.
+
 ## 23.1.0
 
 Search reaches records through the project model. In a project whose model is

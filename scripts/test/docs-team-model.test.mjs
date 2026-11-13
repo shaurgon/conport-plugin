@@ -1,6 +1,7 @@
 // The shipped texts describe one model of teams: an API key belongs to its
 // user and to no team, a project is addressed as `<team ID>/<project>`, the
-// name comes from CONPORT_PROJECT_NAME alone, and a project is created only by
+// name is written down explicitly (`project_name` of `.conport.json`, then
+// CONPORT_PROJECT_NAME), and a project is created only by
 // an explicit `create_project`. These tests read the plugin's files as they
 // ship and hold them to that model.
 import { test } from 'node:test'
@@ -119,7 +120,7 @@ test('the skill names the new model', () => {
     'pers/',
     'candidates',
     'CONPORT_PROJECT_NAME',
-    '"env": { "CONPORT_PROJECT_NAME": "<project>" }',
+    '"project_name": "<project>"',
   ]) {
     assert.ok(skill.includes(needle), `skills/conport/SKILL.md does not contain ${needle}`)
   }
@@ -176,7 +177,7 @@ test('no internal identifier leaks into the rewritten sections', () => {
 })
 
 const PROJECT_NAME_RULE =
-  "Set CONPORT_PROJECT_NAME. Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it. Personal repository: <project>. Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page. A bare name in a team repository sends every member to their own Private Team. CONPORT_PROJECT_ID is no longer read."
+  "Set project_name in .conport.json at the root of the repository and commit the file. Any repository: the project's handle, e.g. prk7m2qx9d — init, list_projects and the projects page of the dashboard show it. Personal repository: <project>. Team repository: k7m2qx9d/<project> — the team ID is on the team's settings page. A bare name in a team repository sends every member to their own Private Team. Never put the API key into the file: it is committed."
 
 test('every install guide carries the project name rule word for word', () => {
   for (const name of ['INSTALL.md', 'docs/install/claude-code.md', 'docs/install/cursor.md', 'docs/install/other-agents.md']) {
@@ -193,15 +194,15 @@ test('the Claude.ai guide has the user name the project and create it explicitly
   }
 })
 
-test('the superpowers bridge takes the project from the variable and creates nothing on its own', () => {
+test('the superpowers bridge takes the project from the settings and creates nothing on its own', () => {
   const resolve = section('skills/superpowers-conport/SKILL.md', /^1\. Resolve ConPort project$/)
-  for (const needle of ['CONPORT_PROJECT_NAME', 'project_not_found', 'create_project', 'candidates']) {
+  for (const needle of ['`.conport.json`', 'project_name', 'project_not_found', 'create_project', 'candidates']) {
     assert.ok(resolve.includes(needle), `the section does not contain ${needle}`)
   }
 })
 
 test('the CLI guides name the one command that creates a project', () => {
-  const command = 'npx -y conport api projects create --name <project>'
+  const command = 'npx -y conport@^0.11.0 api projects create --name <project>'
   for (const [name, heading] of [
     ['INSTALL.md', /^Step 4\b/],
     ['docs/install/other-agents.md', NAME_SECTION],

@@ -1,0 +1,1972 @@
+{
+  "resolve": [
+    {
+      "name": "shared only names the project",
+      "input": {
+        "shared": "{\"$schema\":\"https://conport.app/schema/conport.json\",\"project_name\":\"conport-demo\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "conport-demo",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "local over shared names the local project with the override line",
+      "input": {
+        "shared": "{\"project_name\":\"team-project\",\"plugins\":{\"superpowers\":true,\"codegraph\":true}}",
+        "local": "{\"project_name\":\"my-sandbox\",\"plugins\":{\"codegraph\":false}}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "my-sandbox",
+        "source": ".conport.local.json",
+        "lines": [
+          "project_name from .conport.local.json (my-sandbox) overrides .conport.json (team-project)"
+        ],
+        "settings": {
+          "plugins": {
+            "superpowers": true,
+            "codegraph": false
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "the same name in both files is no override line",
+      "input": {
+        "shared": "{\"project_name\":\"same\"}",
+        "local": "{\"project_name\":\"same\"}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "same",
+        "source": ".conport.local.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "local without shared works alone",
+      "input": {
+        "shared": null,
+        "local": "{\"project_name\":\"solo\",\"plugins\":{\"superpowers\":true}}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "solo",
+        "source": ".conport.local.json",
+        "lines": [],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "local arch and units are lines and not read",
+      "input": {
+        "shared": "{\"project_name\":\"shared-project\",\"arch\":{\"git\":false}}",
+        "local": "{\"arch\":{\"git\":true,\"ignore\":[\"local/\"]},\"units\":[]}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "shared-project",
+        "source": ".conport.json",
+        "lines": [
+          "arch is read from .conport.json only",
+          "units is read from .conport.json only"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": false
+          }
+        }
+      }
+    },
+    {
+      "name": "explicit wins without name lines",
+      "input": {
+        "shared": "{\"project_name\":\"from-shared\"}",
+        "local": "{\"project_name\":\"from-local\"}",
+        "localIgnored": true,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": "from-flag",
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-flag",
+        "source": "explicit",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an empty explicit argument is not set",
+      "input": {
+        "shared": "{\"project_name\":\"from-shared\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": "   ",
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-shared",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a padded explicit argument is trimmed",
+      "input": {
+        "shared": "{\"project_name\":\"from-shared\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": " from-flag\t",
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-flag",
+        "source": "explicit",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "explicit still gets the user env line",
+      "input": {
+        "shared": null,
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": "from-flag",
+        "userEnv": "CONPORT_PROJECT_NAME=elsewhere\n"
+      },
+      "expect": {
+        "project": "from-flag",
+        "source": "explicit",
+        "lines": [
+          "CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "file wins over the variable with the ignored line",
+      "input": {
+        "shared": "{\"project_name\":\"from-file\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-file",
+        "source": ".conport.json",
+        "lines": [
+          "CONPORT_PROJECT_NAME is ignored: .conport.json names from-file — remove the variable"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "the variable equal to the file is no line",
+      "input": {
+        "shared": "{\"project_name\":\"same\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": " same "
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "same",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "the ignored line names the local file when the name came from it",
+      "input": {
+        "shared": "{\"project_name\":\"from-shared\"}",
+        "local": "{\"project_name\":\"from-local\"}",
+        "localIgnored": true,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-local",
+        "source": ".conport.local.json",
+        "lines": [
+          "project_name from .conport.local.json (from-local) overrides .conport.json (from-shared)",
+          "CONPORT_PROJECT_NAME is ignored: .conport.local.json names from-local — remove the variable"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "no project_name falls back to the variable",
+      "input": {
+        "shared": "{\"plugins\":{\"superpowers\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "  env-project "
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "env-project",
+        "source": "CONPORT_PROJECT_NAME",
+        "lines": [],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "no files fall back to the variable",
+      "input": {
+        "shared": null,
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "env-project"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "env-project",
+        "source": "CONPORT_PROJECT_NAME",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a blank variable names no project",
+      "input": {
+        "shared": null,
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "   "
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "no files and no variable name no project",
+      "input": {
+        "shared": null,
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a bare name is taken as written",
+      "input": {
+        "shared": "{\"$schema\":\"https://conport.app/schema/conport.json\",\"project_name\":\"conport-global\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "conport-global",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "a pers/ name is taken as written",
+      "input": {
+        "shared": "{\"project_name\":\"pers/notes\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "pers/notes",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "a team id/project name is taken as written",
+      "input": {
+        "shared": "{\"project_name\":\"k7m2qx9d/api\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "k7m2qx9d/api",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "a handle is taken as written",
+      "input": {
+        "shared": "{\"project_name\":\"prk7m2qx9d\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "prk7m2qx9d",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "invalid json gives line and column and blocks the variable",
+      "input": {
+        "shared": "{\n  \"project_name\": \"p\",\n}\n",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 3, column 1): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "invalid json never quotes the file",
+      "input": {
+        "shared": "{\"project_name\": 'secret-name'}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 18): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "unclosed json points at the end of the text",
+      "input": {
+        "shared": "{\"project_name\": \"p\"",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 21): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an empty file is not valid json",
+      "input": {
+        "shared": "",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 1): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an invalid local file gives no project",
+      "input": {
+        "shared": "{\"project_name\":\"shared-project\"}",
+        "local": "{",
+        "localIgnored": true,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.local.json is not valid JSON (line 1, column 2): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an invalid shared file gives no project even with a local name",
+      "input": {
+        "shared": "{",
+        "local": "{\"project_name\":\"mine\"}",
+        "localIgnored": true,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 2): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an unreadable local file gives no project",
+      "input": {
+        "shared": "{\"project_name\":\"shared-project\"}",
+        "local": {
+          "error": "EACCES"
+        },
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.local.json cannot be read (EACCES): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a blank local project_name gives no project and its other keys apply",
+      "input": {
+        "shared": "{\"project_name\":\"shared-project\",\"plugins\":{\"codegraph\":true}}",
+        "local": "{\"project_name\":\"\",\"plugins\":{\"superpowers\":true}}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.local.json: project_name must be a non-empty string — fix it"
+        ],
+        "settings": {
+          "plugins": {
+            "codegraph": true,
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a blank shared project_name gives no project even with a local name",
+      "input": {
+        "shared": "{\"project_name\":\" \",\"arch\":{\"git\":false}}",
+        "local": "{\"project_name\":\"mine\"}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json: project_name must be a non-empty string — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": false
+          }
+        }
+      }
+    },
+    {
+      "name": "an explicit argument still wins over a broken file",
+      "input": {
+        "shared": "{",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": "from-flag",
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-flag",
+        "source": "explicit",
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 2): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a valid local file applies its keys when the shared file is broken",
+      "input": {
+        "shared": "{oops",
+        "local": "{\"plugins\":{\"superpowers\":true}}",
+        "localIgnored": true,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 2): fix it"
+        ],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "bom and crlf are read",
+      "input": {
+        "shared": "﻿{\r\n  \"project_name\": \"crlf-project\",\r\n  \"plugins\": { \"superpowers\": true }\r\n}\r\n",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "crlf-project",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a bom does not shift the column",
+      "input": {
+        "shared": "﻿{\"a\":}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 6): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a second byte order mark is not valid JSON",
+      "input": {
+        "shared": "﻿﻿{\"project_name\": \"p\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json is not valid JSON (line 1, column 1): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a blank project_name blocks the variable",
+      "input": {
+        "shared": "{\"project_name\":\"   \"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json: project_name must be a non-empty string — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a project_name of a byte order mark is blank",
+      "input": {
+        "shared": "{\"project_name\":\"﻿\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json: project_name must be a non-empty string — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a project_name that is no string blocks the variable",
+      "input": {
+        "shared": "{\"project_name\":42}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json: project_name must be a non-empty string — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a padded project_name is trimmed",
+      "input": {
+        "shared": "{\"project_name\":\"  padded-project\\t\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "padded-project"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "padded-project",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a wrong type drops the key",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"plugins\":{\"superpowers\":\"yes\",\"codegraph\":true},\"arch\":{\"ignore\":\"docs/\",\"git\":1},\"units\":{\"unit\":\"x\"}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: plugins.superpowers must be true or false — fix it",
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it",
+          ".conport.json: arch.git must be true or false — fix it",
+          ".conport.json: units must be a list — fix it"
+        ],
+        "settings": {
+          "plugins": {
+            "codegraph": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an object of the wrong type drops its keys",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"plugins\":true,\"arch\":[\"docs/\"]}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: plugins must be an object — fix it",
+          ".conport.json: arch must be an object — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a leading slash in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"/docs/\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a ./ start in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"./docs/\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a .. segment in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"docs/../x\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a . segment in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"docs/./x\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "an empty segment in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"a//b\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a backslash in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"docs\\\\x\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "an empty string in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a blank string in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"  \"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a lone byte order mark in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",\"﻿\"],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a leading slash in an object path in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",{\"path\":\"/docs/\",\"reason\":\"prose\"}],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "an object with an extra field in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",{\"path\":\"docs/\",\"reason\":\"prose\",\"owner\":\"x\"}],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "an object without a reason in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",{\"path\":\"docs/\"}],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "an object whose path is blank in arch.ignore is the wrong type",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"kept/\",{\"path\":\" \",\"reason\":\"prose\"}],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a trailing slash and globs are in the dialect",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"docs/\",\"**/*.snap\",\"a?/b*/**\",\"with space/x\"]}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "ignore": [
+              "docs/",
+              "**/*.snap",
+              "a?/b*/**",
+              "with space/x"
+            ]
+          }
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "a line feed after a .. segment makes another segment",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"a/..\\n\"]}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "ignore": [
+              "a/..\n"
+            ]
+          }
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "one wrong element drops the whole arch.ignore",
+      "input": {
+        "shared": "{\"arch\":{\"ignore\":[\"a/\",{\"path\":\"b/\"}],\"git\":false}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json: arch.ignore must be a list of path patterns or {\"path\", \"reason\"} objects — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "git": false
+          }
+        }
+      }
+    },
+    {
+      "name": "a local key of the wrong type is a line of the local file",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"plugins\":{\"superpowers\":true}}",
+        "local": "{\"plugins\":{\"superpowers\":\"off\"}}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.local.json: plugins.superpowers must be true or false — fix it"
+        ],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an unknown key is skipped",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"color\":\"blue\",\"plugins\":{\"superpowers\":true,\"other\":1},\"arch\":{\"depth\":3}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "an api key name on the second level is dropped",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"plugins\":{\"superpowers\":true,\"ApiKey\":\"not-a-real-key\"}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an api key name drops its whole value",
+      "input": {
+        "shared": null,
+        "local": "{\"project_name\":\"mine\",\"conport_api_key\":\"kept\",\"CONPORT_API_KEY\":{\"value\":\"x\"}}",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "mine",
+        "source": ".conport.local.json",
+        "lines": [
+          ".conport.local.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a cport_ value is dropped",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"arch\":{\"ignore\":[\"docs/\",\"cport_live_example\"]}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "ignore": [
+              "docs/"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "one api key line per file",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"api_key\":\"x\",\"units\":[{\"unit\":\"u\",\"carriers\":[],\"token\":\"cport_live_example\"}]}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {},
+          "units": [
+            {
+              "unit": "u",
+              "carriers": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a padded cport_ project_name is an api key",
+      "input": {
+        "shared": "{\"project_name\":\"  cport_live_example\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an api key outside project_name leaves the variable",
+      "input": {
+        "shared": "{\"api_key\":\"x\",\"plugins\":{\"superpowers\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "from-env",
+        "source": "CONPORT_PROJECT_NAME",
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {
+            "superpowers": true
+          },
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a project_name holding an api key blocks the variable",
+      "input": {
+        "shared": "{\"project_name\":\"cport_live_example\"}",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "arch.ignore takes a string and an object",
+      "input": {
+        "shared": "{\"$schema\":\"https://conport.app/schema/conport.json\",\"project_name\":\"p\",\"arch\":{\"ignore\":[\"**/fixtures/\",{\"path\":\"db/migrations/**\",\"reason\":\"SQL migrations are no entities of the model\"}],\"git\":true}}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {
+            "ignore": [
+              "**/fixtures/",
+              {
+                "path": "db/migrations/**",
+                "reason": "SQL migrations are no entities of the model"
+              }
+            ],
+            "git": true
+          }
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "units are read from the shared file",
+      "input": {
+        "shared": "{\"project_name\":\"p\",\"plugins\":{\"superpowers\":true,\"codegraph\":false},\"units\":[{\"unit\":\"the demo plugin\",\"carriers\":[{\"path\":\"plugin/.claude-plugin/plugin.json\",\"read\":{\"json\":\"version\"}}]}]}",
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "p",
+        "source": ".conport.json",
+        "lines": [],
+        "settings": {
+          "plugins": {
+            "superpowers": true,
+            "codegraph": false
+          },
+          "arch": {},
+          "units": [
+            {
+              "unit": "the demo plugin",
+              "carriers": [
+                {
+                  "path": "plugin/.claude-plugin/plugin.json",
+                  "read": {
+                    "json": "version"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "schema_valid": true
+    },
+    {
+      "name": "the variable in the user env file is a line",
+      "input": {
+        "shared": null,
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": "CONPORT_BASE_URL=https://api.conport.app\nexport CONPORT_PROJECT_NAME=\"elsewhere\"\n"
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          "CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a commented variable in the user env file is no line",
+      "input": {
+        "shared": null,
+        "local": null,
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": "# CONPORT_PROJECT_NAME=elsewhere\nCONPORT_PROJECT_NAMES=x\n"
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "an unreadable file blocks the variable",
+      "input": {
+        "shared": {
+          "error": "EACCES"
+        },
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json cannot be read (EACCES): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a file that is not an object is a line",
+      "input": {
+        "shared": "[\"p\"]",
+        "local": null,
+        "localIgnored": null,
+        "env": {
+          "CONPORT_PROJECT_NAME": "from-env"
+        },
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.json must hold a JSON object — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a null file is not an object",
+      "input": {
+        "shared": "{\"project_name\":\"p\"}",
+        "local": "null",
+        "localIgnored": true,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.local.json must hold a JSON object — fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a local file that is not ignored is a line",
+      "input": {
+        "shared": null,
+        "local": "{\"project_name\":\"mine\"}",
+        "localIgnored": false,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": "mine",
+        "source": ".conport.local.json",
+        "lines": [
+          ".conport.local.json is not ignored by git: add it to .gitignore"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "a read error comes before the lines of the files",
+      "input": {
+        "shared": "{",
+        "local": {
+          "error": "EISDIR"
+        },
+        "localIgnored": null,
+        "env": {},
+        "explicit": null,
+        "userEnv": null
+      },
+      "expect": {
+        "project": null,
+        "source": null,
+        "lines": [
+          ".conport.local.json cannot be read (EISDIR): fix it",
+          ".conport.json is not valid JSON (line 1, column 2): fix it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    },
+    {
+      "name": "lines come in the fixed order",
+      "input": {
+        "shared": "{\"project_name\":\"team-project\",\"apiKey\":\"x\",\"plugins\":\"on\"}",
+        "local": "{\"project_name\":\"mine\",\"units\":[]}",
+        "localIgnored": false,
+        "env": {
+          "CONPORT_PROJECT_NAME": "third"
+        },
+        "explicit": null,
+        "userEnv": "CONPORT_PROJECT_NAME=fourth\n"
+      },
+      "expect": {
+        "project": "mine",
+        "source": ".conport.local.json",
+        "lines": [
+          ".conport.json holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env",
+          ".conport.json: plugins must be an object — fix it",
+          "units is read from .conport.json only",
+          ".conport.local.json is not ignored by git: add it to .gitignore",
+          "project_name from .conport.local.json (mine) overrides .conport.json (team-project)",
+          "CONPORT_PROJECT_NAME is ignored: .conport.local.json names mine — remove the variable",
+          "CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it"
+        ],
+        "settings": {
+          "plugins": {},
+          "arch": {}
+        }
+      }
+    }
+  ],
+  "locations": [
+    {
+      "name": "the git root",
+      "cwd": "/work/repo",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/repo",
+        "commonDir": ".git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/repo",
+        "mainRoot": "/work/repo",
+        "shared": "/work/repo/.conport.json",
+        "locals": [
+          "/work/repo/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "a subfolder of the project",
+      "cwd": "/work/repo/src/lib",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/repo",
+        "commonDir": "/work/repo/.git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/repo",
+        "mainRoot": "/work/repo",
+        "shared": "/work/repo/.conport.json",
+        "locals": [
+          "/work/repo/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "outside git the folder itself",
+      "cwd": "/work/loose/",
+      "git": {
+        "ok": false,
+        "error": "fatal: not a git repository (or any of the parent directories): .git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/loose",
+        "mainRoot": null,
+        "shared": "/work/loose/.conport.json",
+        "locals": [
+          "/work/loose/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "a linked worktree looks for the local file in the main root too",
+      "cwd": "/work/repo-wt/sub",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/repo-wt",
+        "commonDir": "/work/repo/.git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/repo-wt",
+        "mainRoot": "/work/repo",
+        "shared": "/work/repo-wt/.conport.json",
+        "locals": [
+          "/work/repo-wt/.conport.local.json",
+          "/work/repo/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "a relative common dir is resolved against cwd",
+      "cwd": "/work/repo/src",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/repo",
+        "commonDir": "../.git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/repo",
+        "mainRoot": "/work/repo",
+        "shared": "/work/repo/.conport.json",
+        "locals": [
+          "/work/repo/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "windows paths are normalised",
+      "cwd": "c:\\repo\\sub",
+      "git": {
+        "ok": true,
+        "toplevel": "C:/repo",
+        "commonDir": "../.git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "C:/repo",
+        "mainRoot": "C:/repo",
+        "shared": "C:/repo/.conport.json",
+        "locals": [
+          "C:/repo/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "a submodule has no main root",
+      "cwd": "/work/repo/vendor/lib",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/repo/vendor/lib",
+        "commonDir": "/work/repo/.git/modules/vendor/lib"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/repo/vendor/lib",
+        "mainRoot": null,
+        "shared": "/work/repo/vendor/lib/.conport.json",
+        "locals": [
+          "/work/repo/vendor/lib/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "a bare repository worktree has no main root",
+      "cwd": "/work/wt",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/wt",
+        "commonDir": "/work/repo.git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/wt",
+        "mainRoot": null,
+        "shared": "/work/wt/.conport.json",
+        "locals": [
+          "/work/wt/.conport.local.json"
+        ]
+      }
+    },
+    {
+      "name": "dubious ownership is a git failure",
+      "cwd": "/work/repo",
+      "git": {
+        "ok": false,
+        "error": "fatal: detected dubious ownership in repository at '/work/repo'\nTo add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /work/repo\n"
+      },
+      "expect": {
+        "ok": false,
+        "line": "git failed (fatal: detected dubious ownership in repository at '/work/repo'): ConPort settings were not read"
+      }
+    },
+    {
+      "name": "git missing is a git failure",
+      "cwd": "/work/repo",
+      "git": {
+        "ok": false,
+        "error": "spawnSync git ENOENT"
+      },
+      "expect": {
+        "ok": false,
+        "line": "git failed (spawnSync git ENOENT): ConPort settings were not read"
+      }
+    },
+    {
+      "name": "a plan sidecar x.conport.json is no settings file",
+      "cwd": "/work/repo/docs/plans",
+      "git": {
+        "ok": true,
+        "toplevel": "/work/repo",
+        "commonDir": "/work/repo/.git"
+      },
+      "expect": {
+        "ok": true,
+        "root": "/work/repo",
+        "mainRoot": "/work/repo",
+        "shared": "/work/repo/.conport.json",
+        "locals": [
+          "/work/repo/.conport.local.json"
+        ]
+      }
+    }
+  ]
+}

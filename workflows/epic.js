@@ -12,7 +12,7 @@ export const meta = {
 // mirror parity tests hold byte for byte alike exactly this: every region fenced
 // by a <NAME>_BEGIN / <NAME>_END marker pair that both files carry (PIPE_BASE,
 // FENCE, PIPE_CYCLE, PIPE_PRE, PIPE_MERGE, PIPE_VERSIONS, PIPE_JAN, SCOUT_BASE,
-// ACCOUNT_PIPE, AGENT_TYPES, SPEC_EDIT, REVIEW_CONCERNS) and the
+// SCOUT_PROJECT, ACCOUNT_PIPE, AGENT_TYPES, SPEC_EDIT, REVIEW_CONCERNS) and the
 // SKELETON_VERSION declaration. Everything else the two files share — the
 // judgement prompts included — is duplicated by hand and guarded by nothing.
 
@@ -108,6 +108,7 @@ const typed = async (prompt, opts) => {
 // The one action of each refusal at the start of a run (mirrored from task.js).
 const NO_API_KEY = 'set CONPORT_API_KEY (or the api key option of the conport plugin) and run again: the agents work from the task journal in ConPort'
 const STALE_HELPER = 'update the conport plugin: its workflow helper does not say whether an api key is set'
+const NO_PROJECT = 'no ConPort project: set project_name in .conport.json'
 const hard = rev => rev.findings.some(f => f.severity === 'CRITICAL' || f.severity === 'IMPORTANT')
 // What holds a task's merge: a serious finding, and for a task filed from a finding
 // any finding at all — its minors are fixed before it merges, never filed again.
@@ -151,6 +152,8 @@ const S_SCOUT = { type: 'object', required: ['project', 'plan_path', 'epic', 'ta
   divergences: { type: 'array', items: { type: 'object', properties: {
     kind: { type: 'string' }, detail: { type: 'string' } } } },
   via: { type: 'string' },
+  // Branch B found no project: the settings lines that say why, in place of a base.
+  no_project: { type: 'array', items: { type: 'string' } },
   notes: { type: 'array', items: { type: 'string' } } } }
 
 // Growth is read fresh before the findings batch and again for the run summary.
@@ -289,8 +292,9 @@ const S_ACC = { type: 'object', required: ['actions', 'epic_closed'], properties
   failed_calls: { type: 'array', items: { type: 'object', properties: {
     call: { type: 'string' }, error: { type: 'string' } } } } } }
 
-// The anchor check of the project model after the merges: the CLI's own line
-// (its counts, or its refusal) travels into the report as it was printed.
+// The anchor check of the project model after the merges: the CLI's own lines
+// (its counts and those of its git pass, or its refusal) travel into the report
+// as they were printed, joined into one line.
 const S_ANCHORS = { type: 'object', required: ['status', 'line'], properties: {
   status: { type: 'string', enum: ['CHECKED', 'NO_ANCHORS', 'FAILED'] }, line: { type: 'string' } } }
 
@@ -527,20 +531,23 @@ const mergeStatePrompt = (q, gate) =>
 // PIPE_VERSIONS_BEGIN — mirrored in the other workflow file; compared byte for byte by the mirror parity test.
 // An epic does not raise a unit version: the release step raises each changed unit
 // once and pushes it, and it is never run through a workflow. Before READY the helper
-// compares every version carrier of the units the project's manifest (.conport/units.json)
-// lists in a commit with the base branch, and any difference
+// compares every version carrier of the units the project lists — `units` of its
+// .conport.json, else the old manifest .conport/units.json — in a commit with the base
+// branch, and any difference
 // refuses READY with one action: push the release step first when the default branch
 // was ahead of the published one at the start of the run and already differed from it,
 // update the default branch first when it was behind the published one or diverged,
 // otherwise restore the version. A check that does not answer, or a carrier whose
 // version neither side can read, refuses READY too: a version the run could not compare
-// is no pass. A project without the manifest has no units to compare: the run passes
-// and says so in one note; a manifest that cannot be read refuses READY until it is fixed.
+// is no pass. A project that names no units has none to compare: the run passes and
+// says so in one note; units that cannot be read refuse READY until the file they came
+// from (manifest) is fixed.
 const S_VER_DIFF = { type: 'array', items: { type: 'object', required: ['unit', 'path'], properties: {
   unit: { type: 'string' }, path: { type: 'string' },
   base: { type: ['string', 'null'] }, head: { type: ['string', 'null'] } } } }
 const S_VER = { type: 'object', required: ['base', 'equal', 'differs'], properties: {
   units: { type: 'string', enum: ['none', 'manifest', 'invalid'] }, manifest_error: { type: 'string' },
+  manifest: { type: ['string', 'null'] },
   base: { type: 'string' }, head: { type: 'string' }, equal: { type: 'boolean' },
   differs: S_VER_DIFF, start_differs: S_VER_DIFF, start_behind: { type: 'boolean' },
   unreadable: { type: 'array', items: { type: 'string' } } } }
@@ -549,7 +556,7 @@ const versionsPrompt = (branch, start, head) =>
   pipe(`versions --branch ${shq(branch)} --start ${shq(start)} --head ${shq(head)}`)
 
 const VERSIONS_UNCHECKED = 'the check of unit versions against the base branch did not answer: update the conport plugin and run again'
-const NO_UNIT_MANIFEST = 'versions: the repository has no unit manifest .conport/units.json — unit versions were not compared'
+const NO_UNIT_MANIFEST = 'versions: the repository names no units in .conport.json — unit versions were not compared'
 const unitList = units => (units.length < 2 ? units.join('')
   : units.slice(0, -1).join(', ') + ' and ' + units[units.length - 1])
 const unitsOf = list => [...new Set((Array.isArray(list) ? list : []).map(d => d && d.unit).filter(u => typeof u === 'string' && u))]
@@ -560,7 +567,7 @@ const versionsVerdict = v => {
   if (!v || typeof v.base !== 'string') return { cause: 'unchecked', action: VERSIONS_UNCHECKED }
   if (v.units === 'none') return { cause: 'no_manifest', action: null }
   if (v.units === 'invalid') return { cause: 'unchecked',
-    action: 'Fix .conport/units.json, then run again: ' + (typeof v.manifest_error === 'string' ? v.manifest_error : 'it cannot be read') }
+    action: 'Fix ' + (v.manifest || '.conport.json') + ', then run again: ' + (typeof v.manifest_error === 'string' ? v.manifest_error : 'it cannot be read') }
   if (!Array.isArray(v.differs) || (Array.isArray(v.unreadable) && v.unreadable.length))
     return { cause: 'unchecked', action: VERSIONS_UNCHECKED }
   if (v.equal === true && !v.differs.length) return { cause: 'equal', action: null }
@@ -609,6 +616,31 @@ Its stdout is an object carrying an "error" key, is not a JSON object at all (em
 output, a crash trace, a bare string, an array), or no helper exists -> that is NOT
 a base: discard it and do BRANCH B instead.`
 // SCOUT_BASE_END
+
+// Step 0 of branch B: the project. A broken settings file or a failing git names no
+// project, and neither the other file nor CONPORT_PROJECT_NAME stands in for it; the
+// scout then answers {no_project: [lines]} and the run refuses by them. Mirror this
+// region in task.js — it is compared byte for byte by test/scout-no-project.test.mjs.
+// SCOUT_PROJECT_BEGIN
+const projectStep = project => `0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}. Not null -> use it. Null -> the
+   project settings decide, in this order:
+   a) STEP 1's helper stdout was an object with "error": "no project" and a non-empty "lines"
+      list -> return exactly {"no_project": <those lines, verbatim>} and stop: the settings
+      name no project, and nothing else may name one.
+   b) The repository root: LC_ALL=C git rev-parse --show-toplevel. "not a git repository" ->
+      the working directory; any other failure of git -> return exactly
+      {"no_project": ["git failed (<first line of the error>): ConPort settings were not read"]}
+      and stop.
+   c) .conport.json at the root and .conport.local.json (at the root, else at the root of the
+      main worktree): a file that exists but cannot be read, is not valid JSON, is not a JSON
+      object, or whose project_name is not a non-empty string or holds an API key names no
+      project -> return exactly {"no_project": ["<that file> <what is wrong with it>: fix it"]}
+      and stop; neither the other file nor CONPORT_PROJECT_NAME stands in for it.
+   d) name = project_name of .conport.local.json, else of .conport.json; only when neither file
+      sets project_name, env CONPORT_PROJECT_NAME. None -> return exactly
+      {"no_project": ["no ConPort project: set project_name in .conport.json"]} and stop.
+   Load conport MCP tools via ToolSearch and call init(name=<that name>, questions=false) (no person answers here); pass the project handle it returns as project=<handle> in every call.`
+// SCOUT_PROJECT_END
 
 const scoutPrompt = (epicId, project, planPath) => `You are the scout for epic task-${epicId}. Mutate nothing.
 
@@ -664,9 +696,7 @@ carry the base's empty values forward.
 Return strict JSON per schema; minimal texts, pointers instead of copies.
 
 === BRANCH B (fallback: there is no base to build on) ===
-0) Resolve the ConPort project: name = ${project === null ? 'null' : JSON.stringify(project)}; if null, read
-   env CONPORT_PROJECT_NAME. If it is unset, stop and report: "CONPORT_PROJECT_NAME is not set". Load conport
-   MCP tools via ToolSearch and call init(name=<that name>, questions=false) (no person answers here); pass the project handle it returns as project=<handle> in every call.
+${projectStep(project)}
 1) Plan: ${planPath ? `use the plan file ${planPath}.` : `grep '<!-- conport-epic: ${epicId} -->'
    across docs/superpowers/plans/*.md; else the text 'task-${epicId}' there; else
    get_task(${epicId}) and a plan reference in its description.`} Multiple candidates ->
@@ -1019,10 +1049,16 @@ Each finding: file:line + scenario + minimal fix (<=3 lines).${specReviewRule(sc
   : ''}`
 
 // The merges changed the code on the default branch, so the anchors of the
-// project model are checked against it here, by the run itself: the server
-// never gets the code, only the outcome the CLI sends. A project without
-// portions with anchors has nothing to check, and the CLI is not run for it.
-const ANCHOR_CHECK = project => `npx -y conport@^0.8.0 arch check -p ${project}`
+// project model are checked against it here, by the run itself, and on main or
+// master the CLI also sends the git facts of the model. The server never gets
+// the code, the commit messages or the authors: only the outcome of the anchors,
+// the dates of commits and the paths under the model's anchors, the hot
+// directories and units, the patterns of arch.ignore and the numbers of commits
+// and index nodes. Every merge of the run is a merge commit (wf-helper merges
+// with --no-ff), so the facts date a change by its merge. The CLI prints one
+// line per finding of the pass, and the report keeps them all. A project
+// without portions with anchors has nothing to check, and the CLI is not run for it.
+const ANCHOR_CHECK = project => `npx -y conport@^0.11.0 arch check -p ${project}`
 const anchorsPrompt = (project, MAIN) => `Mechanical step: the anchor check of the project model after the merges of this run.
 Decide nothing about the code, fix nothing, edit no file.
 ConPort MCP tools via ToolSearch, project=${project}.
@@ -1035,7 +1071,7 @@ arch_sources is not among your tools -> return {"status": "FAILED", "line": "the
 3) In the repository root (git rev-parse --show-toplevel), on ${MAIN} — any other current
    branch -> return {"status": "FAILED", "line": "the repository root is on <branch>, not ${MAIN}"} —
    run exactly ONE command: ${ANCHOR_CHECK(project)}
-   Exit code 0 -> return {"status": "CHECKED", "line": "<its stdout line, verbatim>"}.
+   Exit code 0 -> return {"status": "CHECKED", "line": "<its stdout, every line, joined with \\"; \\">"}.
    Any other exit code -> return {"status": "FAILED", "line": "<its stderr line, verbatim>"}.
 A Bash call of yours is refused — denied by the permission system or a classifier, so the
 command never ran -> return {"status": "FAILED", "line": "refused: <the refusal text, one line>"};
@@ -1694,8 +1730,18 @@ if (pre.current_branch !== pre.branch)
 const MAIN = pre.branch
 
 phase('Scout')
-const sc = await retry('scout', l => ask(scoutPrompt(EPIC, PROJECT, A.plan), { label: l, schema: S_SCOUT }))
+// The scout answers a base or, when the settings name no project, {no_project: [lines]}:
+// the schema admits both, so its required keys are checked here (mirrored from task.js).
+// An empty list beside a whole base is a base: a model filling the schema may set one.
+const { required: SCOUT_REQUIRED, ...SCOUT_SHAPE } = S_SCOUT
+const isBase = r => SCOUT_REQUIRED.every(k => r[k] !== undefined)
+const noProject = r => Array.isArray(r.no_project) && (r.no_project.length > 0 || !isBase(r))
+const sc = await retry('scout', async l => {
+  const r = await ask(scoutPrompt(EPIC, PROJECT, A.plan), { label: l, schema: SCOUT_SHAPE })
+  return r && (noProject(r) || isBase(r)) ? r : null
+})
 if (!sc) return abort(L, 'ABORTED_NO_SCOUT')
+if (noProject(sc)) return abort(L, 'ABORTED_NO_PROJECT', sc.no_project.join('\n') || NO_PROJECT)
 L.notes.push('scout via:"' + (sc.via ?? 'unknown') + '"')  // the branch that ran the scout: wf-helper (A) or mcp (B)
 if (sc.epic.kind !== 'epic') return abort(L, 'ABORTED_NOT_EPIC', 'this id is not an epic — use /conport:task for a single task')
 const noPlan = sc.plan_path === null

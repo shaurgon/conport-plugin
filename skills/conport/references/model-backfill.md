@@ -42,10 +42,31 @@ Six steps, in this order:
 
 ## Step 1. Skeleton
 
-**A unit** is a directory with its own version file (`pyproject.toml`,
-`package.json`, `plugin.json`) and its own release. The list of units with
-their labels is the first table of the inventory (step 2) and is approved with
-it; until then the skeleton is submitted by the proposed list.
+**A unit** is found by its version file: `pyproject.toml`, `package.json`,
+`plugin.json`, `orca-plugin.json`, `Cargo.toml`, `go.mod`.
+
+- A directory with a version file is a unit.
+- A version file in a directory whose name starts with a dot (`.claude-plugin/`,
+  `.cursor-plugin/`) makes its parent directory the unit.
+- A `package.json` with `workspaces` whose directory holds no files of its own
+  besides nested units and service files (`package.json`, lock files,
+  `.gitignore`, `.npmrc`, `README*`, `LICENSE*`, `CHANGELOG*`) is the root of a
+  workspace, not a unit.
+- A version file under a path of the noise does not count (dependencies,
+  builds, tests: `node_modules/`, `dist/`, `test/`, `tests/` and the like).
+- A file belongs to the deepest unit.
+- The files outside every unit make up the root (`code:root`).
+
+`npx -y conport@^0.11.0 arch suggest --json` applies this rule to the tree of
+`HEAD` and proposes the units with their labels, the parts of each unit — its
+hot directories over the whole history of commits, and with a `codegraph`
+index also the large ones — and, with that index, the imports between the
+parts of one unit; with a project and its server it marks the candidates the
+model already covers. It reads the history of git, the `codegraph` index when
+there is one and, for the marks, the server; it submits nothing: the list is a
+proposal, checked against the code like any other. The list of units with their labels is the first
+table of the inventory (step 2) and is approved with it; until then the
+skeleton is submitted by the proposed list.
 
 **The label** of a unit's source is `code:<unit-name>`: lower case, no `/` —
 the unit `cli/conport` → `code:cli-conport`. A unit with more than 400
@@ -55,7 +76,8 @@ unit itself goes first.
 **What is written out** — read the code through `codegraph` or the files:
 
 - units and their parts — top-level packages and modules, no deeper than two
-  levels;
+  levels; the parts `arch suggest` proposes are where the history of the unit
+  goes;
 - interfaces — only external ones, and by groups: the routes of one REST
   section are one entity anchored at their routes file, the tools of one MCP
   module are one entity, the commands of one CLI group are one entity. An
@@ -84,7 +106,7 @@ submitted: the documents bring it.
 migrations, routes against the API description or the route files, tools
 against their registry. A difference goes into the inventory.
 
-**After every `code` portion** run `npx -y conport@^0.8.0 arch check` in the
+**After every `code` portion** run `npx -y conport@^0.11.0 arch check` in the
 repository root. A skeleton submitted earlier grows by submitting the same
 source again: read it with `arch_source`, add to it, submit it. No tool of its
 own builds the skeleton: it is this step.
@@ -172,7 +194,7 @@ characters".
 **The review.** Every document portion is reviewed before it is submitted,
 in the order of the part *The review of a document portion* of the skill's
 section *PROJECT MODEL*: the input directory
-(`npx -y conport@^0.9.0 arch review-input doc-N --portion <draft> -o <dir>`),
+(`npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`),
 the reviewer, every finding fixed or dismissed with a reason, one recheck
 when something was fixed, and the portion submitted with `review`. A long
 document is reviewed like any other: the reviewer reads it block by block.
@@ -277,7 +299,7 @@ each item and call again:
   any other debt: run the reviewer on the portion and submit it again with
   `review`;
 - `code_source_unchecked` — a `code` source was submitted after the latest
-  anchor check: run `npx -y conport@^0.8.0 arch check`.
+  anchor check: run `npx -y conport@^0.11.0 arch check`.
 
 ## Refusals
 
@@ -290,7 +312,7 @@ each item and call again:
 ## Rollback
 
 The rollback runs only on the user's word, never as a step of your own; no
-refusal prescribes it. `npx -y conport@^0.8.0 arch withdraw --all` shows what
+refusal prescribes it. `npx -y conport@^0.11.0 arch withdraw --all` shows what
 would be removed — without `--apply` it removes nothing. With `--apply` it
 withdraws every source of the project, documents and code alike: the state of
 the backfill returns to the start. The roles, types and links of the documents
@@ -299,6 +321,15 @@ and step 5 attaches them again on the next pass.
 
 ## After the backfill
 
-In a project whose model has `code` sources: after an epic that changed the
-code is merged, submit the skeleton of the units it touched again and run
-`npx -y conport@^0.8.0 arch check`.
+In a project whose model has `code` sources: merge an epic that changed the
+code into the main branch with `--no-ff`, then run
+`npx -y conport@^0.11.0 arch check` in the repository root on that branch.
+For each debt `code_portion_stale` it brings, read the paths its `detail`
+names, bring the portion in line with the code and submit it again — as it is
+when the model does not change. The debt sees files added, deleted and
+renamed, not what changed inside a file: when the epic changed what a unit is
+made of in its existing files, submit the portion of that unit again too.
+After the last submission run the check once more: a `code` portion newer
+than the check owes `check_stale`. A debt `area_uncovered` asks for a hot
+directory no entity is anchored in: describe it in the portion of its unit
+with an anchor `path`, or add it to `arch.ignore` with its reason.

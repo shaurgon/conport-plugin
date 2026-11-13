@@ -158,13 +158,31 @@ test('task: the head after a rebase with a raised version is not merged', async 
   assert.ok(!labels(calls).includes('merge-rb'), 'the rebased head is not merged')
 })
 
-// Which units a project has is its own manifest. Without one there is nothing to
-// compare: the run passes and says so in one note; a manifest that cannot be read is
-// unchecked, with the action that fixes it.
-const NO_MANIFEST = { ...EQUAL, units: 'none' }
-const NO_MANIFEST_NOTE = 'versions: the repository has no unit manifest .conport/units.json — unit versions were not compared'
-const INVALID = { ...EQUAL, equal: false, units: 'invalid', manifest_error: '.conport/units.json: units must be a non-empty list' }
-const FIX_MANIFEST = 'Fix .conport/units.json, then run again: .conport/units.json: units must be a non-empty list'
+// Which units a project has is its own data: `units` of .conport.json, or the old
+// manifest .conport/units.json. Without either there is nothing to compare: the run
+// passes and says so in one note; units that cannot be read are unchecked, with the
+// action that fixes the file they came from.
+const NO_MANIFEST = { ...EQUAL, units: 'none', manifest: null }
+const NO_MANIFEST_NOTE = 'versions: the repository names no units in .conport.json — unit versions were not compared'
+const INVALID = { ...EQUAL, equal: false, units: 'invalid', manifest: '.conport.json', manifest_error: '.conport.json: units must be a list — fix it' }
+const FIX_MANIFEST = 'Fix .conport.json, then run again: .conport.json: units must be a list — fix it'
+
+for (const [what, flow] of [['task', async v => (await task({ versions: v })).ledger.fail_detail],
+  ['epic', async v => {
+    const { ledger } = await epic({ versions: v })
+    return ledger.questions.map(q => q.title).find(t => t.startsWith('Acceptance could not observe: Fix '))
+      ?.slice('Acceptance could not observe: '.length)
+  }]]) {
+  test(`${what}: the refusal of an invalid manifest names the file it came from`, async () => {
+    const legacyError = '.conport/units.json: units must be a non-empty list'
+    assert.equal(await flow({ ...INVALID, manifest: '.conport/units.json', manifest_error: legacyError }),
+      'Fix .conport/units.json, then run again: ' + legacyError)
+    assert.equal(await flow(INVALID), FIX_MANIFEST)
+    // an answer that names no file: the place the units are kept now
+    const { manifest, ...unnamed } = INVALID
+    assert.equal(await flow(unnamed), FIX_MANIFEST)
+  })
+}
 
 test('task: no unit manifest -> the task merges, and one note says the versions were not compared', async () => {
   const { ledger } = await task({ versions: NO_MANIFEST })
@@ -221,7 +239,7 @@ test('epic: a unit manifest that cannot be read refuses READY as a question, fil
   const { ledger, prompt } = await epic({ versions: INVALID })
   const table = accountTable(prompt('account'))
   assert.equal(table.verdict, 'NOT_READY')
-  assert.ok(!table.minors.some(m => m.title.includes('units.json')), 'no child')
+  assert.ok(!table.minors.some(m => m.title.includes('.conport.json')), 'no child')
   assert.ok(ledger.questions.some(q => q.title === 'Acceptance could not observe: ' + FIX_MANIFEST))
 })
 

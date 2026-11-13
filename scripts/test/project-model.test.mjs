@@ -87,12 +87,12 @@ test('the overlay submits the portion right after plan import', () => {
   // The portion is reviewed before it is submitted, by the order the skill gives.
   const flat = submit.replace(/\s+/g, ' ')
   const submitted = flat.indexOf('arch_submit(')
-  for (const step of ['*The review of a document portion*', 'npx -y conport@^0.9.0 arch review-input doc-N']) {
+  for (const step of ['*The review of a document portion*', 'npx -y conport@^0.11.0 arch review-input doc-N']) {
     const at = flat.indexOf(step)
     assert.ok(at >= 0, `the step has no ${step}`)
     assert.ok(at < submitted, `${step} comes after arch_submit(`)
   }
-  assert.match(submit, /npx -y conport@\^0\.9\.0 arch submit /)
+  assert.match(submit, /npx -y conport@\^0\.11\.0 arch submit /)
   assert.match(submit, /"source": "doc-N"/)
   // Nothing submits a portion before the plan is imported.
   for (const step of steps.slice(0, steps.findIndex((s) => s.title === 'Plan'))) {
@@ -124,7 +124,7 @@ test('the conport skill names both scenario debts and their actions', () => {
   assert.equal(debts.get('step_without_relation'), 'Add the missing relation to the portion or correct the step.')
   assert.equal(debts.get('scenario_participant_gone'),
     'Resubmit the scenario: drop the removed entity or name the one that replaced it.')
-  // The tool reference lists the same eight kinds for `arch_status`, and the number of the scenario.
+  // The tool reference lists the same kinds for `arch_status`, in the same order, and the number of the scenario.
   const status = section(read('references/command_list.md'), '### arch_status')
   const kinds = status.slice(status.indexOf('`kind`'), status.indexOf('`subject`')).match(/[a-z]+(?:_[a-z]+)+|mismatch/g)
   assert.deepEqual(kinds, [...debts.keys()])
@@ -198,9 +198,9 @@ test('the skill dismisses a whole-scenario finding for a missing kind in the rev
 test('the skill runs the reviewer before a document portion is submitted', () => {
   const model = section(read('SKILL.md'), '## PROJECT MODEL').replace(/\s+/g, ' ')
   // The input directory, then the reviewer: a subagent, or a separate process by a ready command.
-  assert.match(model, /npx -y conport@\^0\.9\.0 arch review-input doc-N --portion <draft> -o <dir>/)
+  assert.match(model, /npx -y conport@\^0\.11\.0 arch review-input doc-N --portion <draft> -o <dir>/)
   assert.match(model, /`conport:model-reviewer`/)
-  assert.match(model, /npx -y conport@\^0\.9\.0 agent model-reviewer/)
+  assert.match(model, /npx -y conport@\^0\.11\.0 agent model-reviewer/)
   for (const command of ['claude -p', 'codex exec --sandbox read-only --output-last-message', 'cursor-agent -p']) {
     assert.ok(model.includes(command), `no ready command ${command}`)
   }
@@ -217,7 +217,7 @@ test('the skill runs the reviewer before a document portion is submitted', () =>
   assert.match(model, /a portion sent back with it is\s+refused as `review_reused` — run the reviewer again, or submit the portion\s+without `review`/)
   assert.doesNotMatch(model, /sent back with it is\s+`portion_invalid`/)
   // The file of `arch source -o` holds no `review`: sent back unreviewed, the portion owes the debt.
-  assert.match(model, /`npx -y conport@\^0\.9\.0 arch source <source>` prints `review` the same way, but with `-o <file>` it writes the portion without `review`: that file submitted back without a new review is accepted, and the portion owes `unchecked_portion`/)
+  assert.match(model, /`npx -y conport@\^0\.11\.0 arch source <source>` prints `review` the same way, but with `-o <file>` it writes the portion without `review`: that file submitted back without a new review is accepted, and the portion owes `unchecked_portion`/)
   // A dismissal holds while its evidence stands, so the evidence is carried over as the reviewer gave it.
   assert.match(model, /`evidence` exactly as the reviewer gave it/)
   // A ULID stands as the `ulid` of a block or of an item of a list block: reviewers cite item ULIDs too.

@@ -141,8 +141,28 @@ test('the procedure tells how to build a code label and when to split it', () =>
   assert.match(skeleton, /more than 400 entities/)
   assert.match(skeleton, /`code:<unit-name>\.<part>`/)
   assert.match(skeleton, /the portion with the unit itself goes first/)
-  assert.match(skeleton, /npx -y conport@\^0\.8\.0 arch check/)
+  assert.match(skeleton, /npx -y conport@\^0\.11\.0 arch check/)
   assert.match(skeleton, /no tool of its own builds the skeleton/i)
+})
+
+test('the skeleton step runs arch suggest --json and names the version files', () => {
+  const skeleton = step(1)
+  // The proposal of units, parts and links comes from git history; it submits nothing.
+  assert.match(skeleton, /`npx -y conport@\^0\.11\.0 arch suggest --json`/)
+  assert.match(skeleton, /submits nothing/)
+  // The rule of units is the CLI's own (spec doc-224 §3.4), so the list the agent
+  // writes and the one `arch suggest` proposes are the same.
+  for (const file of ['pyproject.toml', 'package.json', 'plugin.json', 'orca-plugin.json', 'Cargo.toml', 'go.mod']) {
+    assert.ok(skeleton.includes(`\`${file}\``), `the version file ${file} is not named`)
+  }
+  assert.match(skeleton, /whose name starts with a dot \(`\.claude-plugin\/`, `\.cursor-plugin\/`\) makes its parent directory the unit/)
+  assert.match(skeleton, /`workspaces`/)
+  assert.match(skeleton, /the root of a workspace, not a unit/)
+  assert.match(skeleton, /A version file under a path of the noise does not count/)
+  assert.match(skeleton, /A file belongs to the deepest unit/)
+  assert.match(skeleton, /the root \(`code:root`\)/)
+  // The old rule asked for a release of its own, which no file shows.
+  assert.doesNotMatch(skeleton, /and its own release/)
 })
 
 test('the procedure carries the limits 150 and 30', () => {
@@ -168,7 +188,7 @@ test('the pass reviews every document portion before it is submitted', () => {
   const pass = step(3)
   assert.match(pass, /reviewed before it is submitted/)
   assert.match(pass, /\*The review of a document portion\*/)
-  assert.match(pass, /npx -y conport@\^0\.9\.0 arch review-input/)
+  assert.match(pass, /npx -y conport@\^0\.11\.0 arch review-input/)
   // A check refused by the team's usage is gone with the check itself.
   assert.doesNotMatch(pass, /not admitted|team's usage/)
 })
@@ -238,7 +258,7 @@ test("the procedure allows the rollback only on the user's word", () => {
   const rollback = oneLine(section(text, '## Rollback'))
   assert.match(rollback, /only on the user's word/)
   // `withdraw --all` came with the CLI 0.7.3.
-  assert.match(rollback, /`npx -y conport@\^0\.8\.0 arch withdraw --all`/)
+  assert.match(rollback, /`npx -y conport@\^0\.11\.0 arch withdraw --all`/)
   assert.match(rollback, /with `--apply` it withdraws every source of the project/i)
   assert.match(rollback, /without `--apply` it removes nothing/)
   // No refusal prescribes the rollback (spec doc-197 §13), and none is tied to it.
@@ -306,13 +326,57 @@ test('the overlay resubmits the skeleton only in a project whose model has code 
   const flow = read('references/superpowers-overlay.md').split('\n## The flow\n')[1].split('\n## ')[0]
   const finish = oneLine(flow.slice(flow.search(/^\d+\. \*\*Finish\.\*\*/m)))
   const condition = finish.indexOf('In a project whose model has `code` sources')
-  const action = finish.indexOf('submit the skeleton of the units it touched again')
+  const check = finish.indexOf('npx -y conport@^0.11.0 arch check')
+  const debt = finish.indexOf('`code_portion_stale`')
   assert.ok(condition >= 0, 'the finish step has no condition on code sources')
-  assert.ok(action > condition, 'the skeleton is resubmitted without the condition')
+  assert.ok(check > condition, 'the anchor check runs without the condition')
+  // The git facts come from the main branch, and the portions are resubmitted by the debt they owe.
+  assert.match(finish.slice(check), /on the main branch/)
+  assert.ok(debt > check, 'the portions are resubmitted before the check that names them')
+  assert.match(finish.slice(debt), /submit it again/)
   assert.match(finish, /`arch_sources`/)
-  assert.match(finish.slice(action), /npx -y conport@\^0\.8\.0 arch check/)
+  // The branch of the epic lands as a merge commit: a fast-forward dates its changes before the portions.
+  assert.match(finish, /`git merge --no-ff`/)
   // The procedure says the same after the backfill.
-  assert.match(oneLine(section(procedure(), '## After the backfill')), /submit the skeleton of the units it touched again/)
+  const after = oneLine(section(procedure(), '## After the backfill'))
+  assert.match(after, /`code_portion_stale`/)
+  assert.match(after, /npx -y conport@\^0\.11\.0 arch check/)
+  assert.match(after, /`--no-ff`/)
+})
+
+// ── the git facts of the anchor check ──────────────────────────────────────
+
+test('the skill teaches the git facts of the anchor check and what leaves the machine', () => {
+  const model = oneLine(modelSection())
+  const check = oneLine(section(modelSection(), '### The anchor check'))
+  // The promise the facts broke is gone; the list of what leaves the machine replaces it.
+  assert.doesNotMatch(model, /The code never leaves the machine/)
+  for (const what of ['the name of the branch', 'the dates of commits', '`recent_files`', '`changes`',
+    '`symbol_files`', 'the paths of the hot directories and of the units', 'the patterns of `arch.ignore`',
+    'the numbers of commits and of index nodes']) assert.ok(check.includes(what), `the list lacks ${what}`)
+  assert.match(check, /No code, no commit message and no author/)
+  // Main or master only; a shallow clone and the opt-out.
+  assert.match(check, /`main` or `master`/)
+  assert.match(check, /git fetch --unshallow/)
+  assert.match(check, /`--no-git`/)
+  // The keys of `.conport.json` the pass reads.
+  for (const key of ['`plugins.codegraph`', '`arch.ignore`', '`arch.git`']) assert.ok(check.includes(key), key)
+  // The debts the facts feed and the state of the pass.
+  for (const kind of ['`code_portion_stale`', '`area_uncovered`', '`check_stale`']) assert.ok(check.includes(kind), kind)
+  assert.match(check, /older than 7 days/)
+  assert.match(check, /`git_pass`/)
+  // The table of commands at the head of the section names both new forms of the CLI.
+  const table = model.slice(0, model.indexOf('### What goes into the model'))
+  assert.match(table,/`npx -y conport@\^0\.11\.0 arch suggest --json`/)
+  assert.match(table, /`npx -y conport@\^0\.11\.0 arch check --no-git`/)
+})
+
+test('the tool reference describes git_pass of arch_status and activity of the graph and the card', () => {
+  const reference = read('references/command_list.md')
+  assert.match(oneLine(section(reference, '### arch_status')), /`git_pass` \(`checked_at`, `commit`, `branch`, `head_at`, `history_truncated`, `shallow`, `codegraph`, `disabled`/)
+  assert.match(oneLine(section(reference, '### arch_get')), /`activity` \(`last_commit_at`, `commits_90d`, `recent_files`/)
+  assert.match(oneLine(section(reference, '### arch_get')), /`activity_as_of`/)
+  assert.match(oneLine(section(reference, '### arch_entity')), /`activity`/)
 })
 
 // ── the offer goes only to a session with a person ─────────────────────────
