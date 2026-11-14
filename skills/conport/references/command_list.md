@@ -1690,13 +1690,10 @@ an owner, and the parts of the units in `expand`; `neighbourhood` shows
 what one to three `documents` claim; `data` shows the data entities and their
 references, under `unit` when it is given. `graph` takes no other parameter:
 every active entity, the active relations between them and the current
-decisions bound to them, each decision a node beside its entities. Past 1000
-nodes (entities and decisions together) the decisions go first: every entity
-and relation stays, `decisions` is empty, `decisions_omitted` true and a
-`hint` says the card of an entity lists them. Past 1000 entities the units
-only, the relations of their parts raised onto them, with `truncated` and
-`decisions_omitted` true and a `hint` (expand a unit in the Architecture
-section of the dashboard, or read it with `composition`).
+decisions bound to them, each decision a node beside its entities, without a
+node limit. No entities or decisions are dropped because of model size.
+The compatibility fields `truncated` and `decisions_omitted` are false;
+`hint` is null.
 
 ```
 mcp__conport__arch_get({

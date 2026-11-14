@@ -92,8 +92,7 @@ test('the command list shows the graph view of arch_get', () => {
   assert.doesNotMatch(get, /four views/)
   assert.match(get, /composition \\\| neighbourhood \\\| contribution \\\| data \\\| graph/)
   assert.match(get, /`graph` takes no other parameter/)
-  assert.match(get, /past 1000 nodes/i)
-  assert.match(get, /past 1000 entities the units only/i)
+  assert.match(get, /without a node limit/i)
   assert.doesNotMatch(get, /500 nodes/)
   // The answer of the view graph: decisions as nodes, the flags of the cut
   // and the progress of a unit.

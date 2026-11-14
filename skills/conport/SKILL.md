@@ -822,7 +822,7 @@ below.
 | "What is the system made of?" | `arch_get` with `view='composition'` (`expand` opens units) |
 | "What touches X?" / one entity and its neighbours | `arch_get` with `view='neighbourhood'`, then `arch_entity` for the card |
 | "What did these specs bring in?" | `arch_get` with `view='contribution'` (one to three `documents`) |
-| The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; past 1000 nodes the decisions are left out, with `decisions_omitted` true and a `hint`; past 1000 entities the units only, with `truncated` true) |
+| The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; all active entities, their active relations and bound current decisions, without a node limit) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
 | Review a document portion before submitting it | `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
