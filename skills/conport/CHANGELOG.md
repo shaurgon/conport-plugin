@@ -1,5 +1,13 @@
 # conport changelog
 
+## Unreleased
+
+**Ownership refusals follow document chronology.** The skill's `second_owner`
+condition and action match the server: later documents may replace earlier
+owners, while equal-precedence conflicts are refused, including when an empty
+resubmission, withdrawal or document change would expose them. Correct or
+withdraw the conflicting claims; an old document need not invent `removed`.
+
 ## 24.0.2
 
 **The backfill walks the project's path of development.** The pass of
