@@ -123,7 +123,7 @@ test('the conport skill names both scenario debts and their actions', () => {
   // The actions are the server's own text, word for word.
   assert.equal(debts.get('step_without_relation'), 'Add the missing relation to the portion or correct the step.')
   assert.equal(debts.get('scenario_participant_gone'),
-    'Resubmit the scenario: drop the removed entity or name the one that replaced it.')
+    'Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history.')
   // The tool reference lists the same kinds for `arch_status`, in the same order, and the number of the scenario.
   const status = section(read('references/command_list.md'), '### arch_status')
   const kinds = status.slice(status.indexOf('`kind`'), status.indexOf('`subject`')).match(/[a-z]+(?:_[a-z]+)+|mismatch/g)

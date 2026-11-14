@@ -226,6 +226,17 @@ non-empty `scenarios` is refused `scenario_malformed` by the rule
 history again without the field `scenarios`. The reviewer raises no
 whole-scenario finding for such a document.
 
+**State at the document source.** For a non-history document, relations and
+all scenario entity references use the source position `(created_at, id)`.
+Document claims, history claims included, are cut at that position and folded
+normally with undated code claims. A later removal does not require rewriting
+valid earlier actions, removing participants, or reviving the current entity.
+`introduced` and `changed` can restore state; `mentioned` cannot. Names,
+aliases, types, existence, grounds and ownership keep their current checks.
+Mutations recheck affected accepted document references atomically. For code
+admission and code participant debts the state stays current. Correct an
+actual violation at the source position, preserving valid earlier history.
+
 **Two documents of the structure contradict each other** — the later one
 wins. When the code says otherwise, the correction is a `changed` claim in the
 result document (step 4), and the contradiction goes into its table.
@@ -266,9 +277,13 @@ The user is not asked about each one: the user reads the result as a whole; a
 row they disagree with is edited, and the portion of the result is submitted
 again.
 
-**A document submitted again after this step** claims a relation to a removed
-entity with the action `removed`, and submits a scenario without the removed
-participant or with the one that replaced it.
+**A document submitted again after this step** keeps its original relation
+actions and scenario participants when they are valid at the document source
+position `(created_at, id)`. A later removal or replacement alone does not
+require rewriting that earlier history. Correct a reference only when it is
+invalid at that source position, under the state rules of Step 3; code
+admission and code participant debts continue to use current state. The full
+current fold still keeps the later retirement.
 
 ## Step 5. Decisions
 

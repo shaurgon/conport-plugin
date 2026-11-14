@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Document references keep their historical state.** Relations and every
+entity reference of a document scenario use the source position `(created_at,
+id)` with the ordinary entity fold and undated code basis. Later retirement
+preserves valid earlier claims and scenarios, without reviving current
+entities or creating false participant debts. Mutations atomically recheck
+affected document dependencies; code admission, ownership, names and types
+keep their existing guards.
+
 **Ownership refusals follow document chronology.** The skill's `second_owner`
 condition and action match the server: later documents may replace earlier
 owners, while equal-precedence conflicts are refused, including when an empty

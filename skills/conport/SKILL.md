@@ -1368,10 +1368,11 @@ where. A few codes the entities share prescribe another action for a scenario:
   `arch_scenario` shows it under `debt_dismissal`. The same record with the
   same reason sent again does not widen the dismissal to new steps; the steps
   unmatched now can be dismissed only with a new reason.
-- `scenario_participant_gone` — an entity the scenario names was removed or
-  replaced after the submission, or the scenario an action runs was deleted.
-  Resubmit the scenario without the removed entity or with the one that
-  replaced it.
+- `scenario_participant_gone` — an entity is removed or replaced at the
+  document source position `(created_at, id)` (current state for code), or
+  the scenario an action runs was deleted. A later retirement preserves a
+  valid earlier document scenario. Correct the actual invalid reference
+  and resubmit its source; preserve valid earlier history.
 - `anchor_missing` with a scenario as its subject — the anchor check did not
   find the anchor of a scenario of a `code:` portion. Correct the anchor and
   submit that portion again.
@@ -1407,7 +1408,7 @@ finding for that reason:
 | `unknown_entity_type` | The entity type is not one of the eight | Give the entity one of the types person, external_system, unit, component, interface, store, data, setting. |
 | `unknown_relation_type` | The relation type is not one of the eight | Give the relation one of the types contains, calls, starts, reads, writes, derived_from, replaces, references. |
 | `relation_endpoint_missing` | A relation names an entity neither the portion nor the model has | Name each end of the relation by a name or an alias of an entity of the portion or of `arch_names`. |
-| `relation_endpoint_removed` | A relation names a removed or replaced entity | Claim the relation with the action `removed`, since an end of it is gone. |
+| `relation_endpoint_removed` | A non-history document relation names an endpoint removed or replaced at its source position, or a code relation names a currently retired endpoint; `replaces` permits its replaced target | Correct the relation or restore its endpoint at the document source position (current state for code), then resubmit; preserve valid earlier history. |
 | `relation_pair_not_allowed` | The types of the two ends are not a pair the relation allows | Join the types the relation allows: `contains` from a unit to a component, interface, store, data or setting, from a component to a component, interface, data or setting, from a store to data; `references` from data to data; `replaces` within one type. |
 | `second_owner` | Two different owners of one entity in one portion, or active owners at equal precedence after folding the proposed model. A later document may replace the earlier owner by `(created_at, id)`; that is allowed. Empty resubmission, withdrawal, document deletion and type or role changes are also refused atomically if they expose conflicting owners | Correct or withdraw conflicting ownership claims so one owner remains at each precedence. |
 | `block_not_found` | The source document has no block with that ULID | Take the block ULID from `list_blocks` of the source document. |
@@ -1421,7 +1422,7 @@ finding for that reason:
 | `unknown_scenario_kind` | The kind of a scenario, a step or a branch is not one of its set | Give the scenario one of the kinds sequence, states, activity, a step one of call, reply, async and a branch one of alt, opt, loop. |
 | `unknown_node_kind` | The kind of a node of an activity is not one of the seven | Give the node one of the kinds start, end, action, decision, fork, join, wait. |
 | `scenario_participant_missing` | A participant, the subject, a performer or `via` names an entity neither the portion nor the model has | Name the participant, subject, performer or `via` by a name or an alias of an entity of the portion or of `arch_names`. |
-| `scenario_participant_removed` | A participant, the subject, a performer or `via` names a removed or replaced entity | Drop the removed entity from the scenario or name the entity that replaced it. |
+| `scenario_participant_removed` | A participant, the subject, a performer or `via` names an entity retired at the document source position (current state for code) | Correct the participant or restore it at the document source position (current state for code), then resubmit; preserve valid earlier history. |
 | `scenario_ref_unknown` | A step or a transition names a key or a state the scenario lacks, or `scenario`, `takes_over`, `renamed_from` or a dismissal names no scenario | Name only the keys and states the scenario declares, the scenarios of the portion or of `arch_scenarios`, and in `renamed_from` a scenario of this source. |
 | `scenario_malformed` | A rule of the scenario's kind is broken; the message names the rule and the place | Correct the scenario at the place its message names so that it keeps the rule. |
 | `scenario_name_taken` | The name is the name of a scenario of another source | Submit the scenario with `takes_over` naming it when this source changes that behaviour, or leave it out when the source repeats it. |
@@ -1616,7 +1617,7 @@ one. When `total` is above five, `arch_status` lists them all.
 | `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
 | `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.11.0 arch check`. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
-| `scenario_participant_gone` | An entity a scenario names was removed or replaced, or the scenario an action runs was deleted | Resubmit the scenario: drop the removed entity or name the one that replaced it. |
+| `scenario_participant_gone` | An entity a scenario names is removed or replaced at the document source position (current state for code), or the scenario an action runs was deleted | Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history. |
 
 ### Filling the model of an existing project
 
