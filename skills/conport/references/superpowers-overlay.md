@@ -34,9 +34,18 @@ creates).
    needs none — do not create one. Write the spec draft to
    `.superpowers/drafts/<date>-<topic>-design.md`.
 2. **Spec review and gap hunt on the draft.** Both work on the draft file —
-   nothing is uploaded yet. Give the spec reviewer and the gap hunter
-   (`conport:sdd-gap-hunter`) the path
-   `.superpowers/drafts/<date>-<topic>-design.md` as their scope and the goal
+   nothing is uploaded yet — and they run one after the other, never at the
+   same time. The spec reviewer goes first and looks for problems in what the
+   draft says: its claims about the code, the schema and today's behaviour
+   checked against the repository, contradictions between sections, ambiguous
+   or unworkable requirements. Its findings go into the draft. Only then does
+   the gap hunter (`conport:sdd-gap-hunter`) run, on the corrected draft, and
+   look for the unknown unknowns — the gaps of the design itself: what the goal
+   needs that the draft does not cover, seams nobody owns, failure modes, the
+   operational tail. A gap hunt over a draft that still holds factual errors
+   spends its pass on what the review changes anyway, and the review's edits
+   can open new gaps. Give each of them the path
+   `.superpowers/drafts/<date>-<topic>-design.md` as its scope and the goal
    as the user stated it — never a goal taken from the draft they check — and
    put their findings into the draft.
 3. **Approval.** The user reads and approves the draft with the findings in it.

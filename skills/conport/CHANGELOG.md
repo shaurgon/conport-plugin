@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+**The spec review comes before the gap hunt.** Step 2 of the Superpowers
+overlay no longer runs the spec reviewer and the gap hunter together. The
+reviewer checks what the draft says against the code first, its findings go
+into the draft, and only then does the gap hunter look for the gaps of the
+design on the corrected draft.
+
 **Document references keep their historical state.** Relations and every
 entity reference of a document scenario use the source position `(created_at,
 id)` with the ordinary entity fold and undated code basis. Later retirement
