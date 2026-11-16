@@ -12,12 +12,6 @@ and skills work across many clients.
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
   - `conport-roadmap` — the roadmap rules: a release milestone holds its epics, waiting and undated work in standing milestones, what may be said about a release
   - `superpowers-conport` — bridge for Claude Code's superpowers plugin: imports `docs/superpowers/specs/*-design.md` + `docs/superpowers/plans/*.md` into ConPort as spec + epic + tasks. Idempotent. Its `finish` mode audits the plan's epic once the work is done and prints a release-readiness verdict. With the Superpowers overlay on, `import` writes nothing and names `plan import`; `finish` audits a pulled plan through its `<file>.conport.json`, with the overlay on or off.
-- **Workflows** (Claude Code, paid plan)
-  - `/conport:task` — deterministic execution of one ConPort task (worktree, independent review through REVIEW and the task journal, gated merge, close with resolution)
-  - `/conport:epic` — the same for a whole epic: the plan is sliced into tasks, they run in waves, and the epic closes on the run's verdict
-  - bundled helper `workflows/wf-helper.mjs` — the mechanical half of both (preflight, gate, merge, cleanup, accounting, the review cycle, scouting), so no step of a run depends on a model's mood
-
-  See [docs/workflows.md](./docs/workflows.md).
 - **Agents** (Claude Code) — typed subagents for subagent-driven development and for the review of the project model, listed among your agent types under the plugin's name:
   - `conport:sdd-implementer` — one plan task end to end: TDD, commits, a report
   - `conport:sdd-task-reviewer` — one task's diff, two verdicts (spec compliance, code quality); read-only
@@ -26,12 +20,13 @@ and skills work across many clients.
   - `conport:sdd-final-reviewer` — a whole epic branch against its spec, after every task has merged; read-only
   - `conport:model-reviewer` — a document's draft portion of the project model against the document's text, before it is submitted; read-only; started by the session that submits the portion
 
-  None of them may start subagents of its own, and none pins a model: each runs on the model of your session. The workflows dispatch the first four; `conport:sdd-final-reviewer` is started by the session that leads an epic with subagent-driven development and hands its findings back in its answer. Dispatch any of them by hand the same way. See [docs/workflows.md](./docs/workflows.md#the-agents).
+  None of them may start subagents of its own, and none pins a model: each runs on the model of your session. The session that leads an epic with subagent-driven development dispatches them, the model reviewer aside; it starts `conport:sdd-final-reviewer` once, after every task has merged, and the reviewer hands its findings back in its answer. Dispatch any of them by hand the same way. See [docs/agents.md](./docs/agents.md).
 - **Hooks** (Claude Code only, Node.js, zero deps)
   - `SessionStart` — fetches the deny-list (project conventions) from ConPort; with the Superpowers overlay on, tells the session so and names the file of the overlay rules
   - `PreToolUse(Bash)` — blocks commands matching deny-list patterns; with the Superpowers overlay on, refuses a commit that adds a new file under `docs/superpowers/specs/` or `docs/superpowers/plans/`
+  - `PreToolUse(add_task / update_task)` — holds a new task in an epic that has a plan (a started plan or a plan document), and an `update_task` that attaches a task with no epic to one: without `Why not a fix round:` at the start of the description it says a finding is a fix round; with it, it asks for the person's reply `allow epic <N> in <project>` and lets one call through per reply; a subagent is told to hand the task to the session that dispatched it; when ConPort does not answer, it says to call again and writes the cause to `epic-growth-guard.log` in the plugin's data folder (`CLAUDE_PLUGIN_DATA`, else `~/.claude/plugin-data/conport`; the log keeps its newer half past 64 KiB). An epic without a plan, the tails epic of a release and a move between epics pass. `CONPORT_EPIC_GROWTH_GUARD=off` in the environment of Claude Code turns it off. The ConPort server must be connected under a name with `conport`, `Conport`, `ConPort` or `conPort` in it (the plugin's `.mcp.json` does so). A hook that does not answer within its 10 seconds refuses the call on Claude Code 2.1.295 or later (`onFailure: "block"`); an older Claude Code lets such a call through
   - `PostToolUse(add_task / update_task / delete_task)` — records the epics this session changed and drops the cached `[TAILS]` rows, so the next message fetches them again
-  - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing, printed only when its composition changed
+  - `UserPromptSubmit` — context restore + save reminder every 5 messages + `[TAILS]` reminder for epics near closing, printed only when its composition changed; a message that is exactly `allow epic <N> in <project>` (or `allow epic <N>` in a session with a project) records the person's one-time consent to add a new task to that epic. Only the person gives it: `PreToolUse(Bash)` refuses any command that names the consent file `epic-growth-allow`
   - `Stop` — holds the end of the turn once while an epic this session changed still has open children, lists them (epics that grew after work started first) and says the epic is not done: dispatch them now, or name the reason each cannot start
 
 ## Install — one line, any agent
@@ -105,7 +100,7 @@ to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
 they call the `conport` CLI, which takes the project from `.conport.json` from
-0.11 on: `npx -y conport@^0.11.0`. The CLI does not see the plugin's `api_key`:
+0.11 on: `npx -y conport@^0.13.0`. The CLI does not see the plugin's `api_key`:
 it needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`.
 
 | Command | Does |

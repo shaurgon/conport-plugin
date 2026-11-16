@@ -75,7 +75,7 @@ the project in the chat, in the same form.
 
 A project that does not exist yet is not created by reading it: ask the
 user, and only when they say so run
-`npx -y conport@^0.11.0 api projects create --name <project>` — for a team's project
+`npx -y conport@^0.13.0 api projects create --name <project>` — for a team's project
 add `--team-id k7m2qx9d`; the name itself never contains `/`.
 
 ## 3. Use the CLI
@@ -85,20 +85,20 @@ reads and writes ConPort.
 
 ```bash
 # Browse the live docs (keyless — also verifies connectivity)
-npx -y conport@^0.11.0 docs
+npx -y conport@^0.13.0 docs
 
 # Discover every resource and operation from the live OpenAPI spec
-npx -y conport@^0.11.0 api __schema
+npx -y conport@^0.13.0 api __schema
 
 # Call any operation: conport api <resource> <operation> [--flags]
-npx -y conport@^0.11.0 api tasks list --project <project_name from .conport.json>
-npx -y conport@^0.11.0 api search create --query "auth flow"
+npx -y conport@^0.13.0 api tasks list --project <project_name from .conport.json>
+npx -y conport@^0.13.0 api search create --query "auth flow"
 ```
 
-`npx -y conport@^0.11.0 docs` works without a key and confirms the CLI can
+`npx -y conport@^0.13.0 docs` works without a key and confirms the CLI can
 reach the API. Everything under `conport api …` is generated from the live
 OpenAPI spec, so `__schema` is the source of truth for resources, operations,
-and flags — run `npx -y conport@^0.11.0 api <resource> --help` for the exact
+and flags — run `npx -y conport@^0.13.0 api <resource> --help` for the exact
 options of any one operation. `conport api …` takes the project only from
 `--project`: pass `project_name` of `.conport.json` as the file has it.
 
@@ -129,6 +129,6 @@ overlay rules from the **Superpowers overlay** block of the `conport` skill.
 There is no commit guard either, so nothing refuses a commit of a new file
 under `docs/superpowers/` — the rules alone keep specs and plans out of git. The
 rules call the `conport` CLI, which takes the project from `.conport.json` from
-0.11 on (`npx -y conport@^0.11.0`) and needs `CONPORT_API_KEY` in the
+0.11 on (`npx -y conport@^0.13.0`) and needs `CONPORT_API_KEY` in the
 environment or in `~/.config/conport/.env` (the key from step 2). See the
 [README](../../README.md#superpowers-overlay).

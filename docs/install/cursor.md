@@ -112,7 +112,7 @@ rules from the **Superpowers overlay** block of the `conport` skill. There is no
 commit guard either, so nothing refuses a commit of a new file under
 `docs/superpowers/` — the rules alone keep specs and plans out of git. The rules
 call the `conport` CLI, which takes the project from `.conport.json` from 0.11
-on (`npx -y conport@^0.11.0`) and needs `CONPORT_API_KEY` in the environment or
+on (`npx -y conport@^0.13.0`) and needs `CONPORT_API_KEY` in the environment or
 in `~/.config/conport/.env`. See the
 [README](../../README.md#superpowers-overlay).
 

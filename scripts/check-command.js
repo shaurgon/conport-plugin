@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// PreToolUse(Bash): refuse a commit that adds a Superpowers spec or plan while
-// the overlay is on, then block commands matching ConPort deny-list patterns.
+// PreToolUse(Bash): refuse a command that names the file of the person's
+// consent to grow an epic, refuse a commit that adds a Superpowers spec or plan
+// while the overlay is on, then block commands matching ConPort deny-list
+// patterns.
 'use strict';
 
 const fs = require('fs');
@@ -10,6 +12,11 @@ const { execFileSync } = require('child_process');
 const {
   dataDir, detectProject, denyListPath, readStdin, overlayEnabled, worktreeRoot, gitIn, isForbiddenRoot,
 } = require('./_common.js');
+
+// Only the person's message gives the consent (epic-growth-consent.js); no
+// command writes its file. A file system that ignores case reaches it in any case.
+const CONSENT_FILE_NAME = /epic-growth-allow/i;
+const CONSENT_REFUSAL = 'BLOCKED: only the person gives this consent; ask them to reply: allow epic <N> in <project>.';
 
 const SPECS_DIR = 'docs/superpowers/specs';
 const PLANS_DIR = 'docs/superpowers/plans';
@@ -310,10 +317,10 @@ function refusal(root, rel) {
   const file = shellWord(path.join(root, rel));
   if (rel.startsWith(`${PLANS_DIR}/`)) {
     return `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on plans live in ConPort: ` +
-      `run \`npx -y conport@^0.11.0 plan import ${file} --spec doc-N --epic <id>\` with doc-N the plan's spec and <id> the spec's epic, then remove the file.`;
+      `run \`npx -y conport@^0.13.0 plan import ${file} --spec doc-N --epic <id>\` with doc-N the plan's spec and <id> the spec's epic, then remove the file.`;
   }
   return `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.11.0 documents upload ${file} --doc-type spec\`, then remove the file.`;
+    `run \`npx -y conport@^0.13.0 documents upload ${file} --doc-type spec\`, then remove the file.`;
 }
 
 // The refusal for a command that commits a new spec or plan with the overlay
@@ -347,6 +354,11 @@ async function main() {
   const toolInput = input && input.tool_input;
   const command = toolInput && typeof toolInput.command === 'string' ? toolInput.command : '';
   if (!command) process.exit(0);
+
+  if (CONSENT_FILE_NAME.test(command)) {
+    await new Promise((resolve) => process.stderr.write(`${CONSENT_REFUSAL}\n`, resolve));
+    process.exit(2);
+  }
 
   // The guard comes before the deny-list and the project: it needs neither.
   let reason = null;

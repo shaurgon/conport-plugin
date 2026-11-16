@@ -57,7 +57,7 @@ Six steps, in this order:
 - A file belongs to the deepest unit.
 - The files outside every unit make up the root (`code:root`).
 
-`npx -y conport@^0.11.0 arch suggest --json` applies this rule to the tree of
+`npx -y conport@^0.13.0 arch suggest --json` applies this rule to the tree of
 `HEAD` and proposes the units with their labels, the parts of each unit — its
 hot directories over the whole history of commits, and with a `codegraph`
 index also the large ones — and, with that index, the imports between the
@@ -106,7 +106,7 @@ submitted: the documents bring it.
 migrations, routes against the API description or the route files, tools
 against their registry. A difference goes into the inventory.
 
-**After every `code` portion** run `npx -y conport@^0.11.0 arch check` in the
+**After every `code` portion** run `npx -y conport@^0.13.0 arch check` in the
 repository root. A skeleton submitted earlier grows by submitting the same
 source again: read it with `arch_source`, add to it, submit it. No tool of its
 own builds the skeleton: it is this step.
@@ -205,7 +205,7 @@ old document, and never rename an entity to get past a refusal.
 **The review.** Every document portion is reviewed before it is submitted,
 in the order of the part *The review of a document portion* of the skill's
 section *PROJECT MODEL*: the input directory
-(`npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`),
+(`npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir>`),
 the reviewer, every finding fixed or dismissed with a reason, one recheck
 when something was fixed, and the portion submitted with `review`. A long
 document is reviewed like any other: the reviewer reads it block by block.
@@ -325,7 +325,7 @@ each item and call again:
   any other debt: run the reviewer on the portion and submit it again with
   `review`;
 - `code_source_unchecked` — a `code` source was submitted after the latest
-  anchor check: run `npx -y conport@^0.11.0 arch check`.
+  anchor check: run `npx -y conport@^0.13.0 arch check`.
 
 ## Refusals
 
@@ -338,7 +338,7 @@ each item and call again:
 ## Rollback
 
 The rollback runs only on the user's word, never as a step of your own; no
-refusal prescribes it. `npx -y conport@^0.11.0 arch withdraw --all` shows what
+refusal prescribes it. `npx -y conport@^0.13.0 arch withdraw --all` shows what
 would be removed — without `--apply` it removes nothing. With `--apply` it
 withdraws every source of the project, documents and code alike: the state of
 the backfill returns to the start. The roles, types and links of the documents
@@ -349,7 +349,7 @@ and step 5 attaches them again on the next pass.
 
 In a project whose model has `code` sources: merge an epic that changed the
 code into the main branch with `--no-ff`, then run
-`npx -y conport@^0.11.0 arch check` in the repository root on that branch.
+`npx -y conport@^0.13.0 arch check` in the repository root on that branch.
 For each debt `code_portion_stale` it brings, read the paths its `detail`
 names, bring the portion in line with the code and submit it again — as it is
 when the model does not change. The debt sees files added, deleted and

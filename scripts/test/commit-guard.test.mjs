@@ -144,7 +144,7 @@ function assertRefusedSpec(res, path) {
   const file = shown(path)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err.trimEnd().split('\n').length, 1, 'the reason is one line')
-  assert.ok(res.err.includes(`npx -y conport@^0.11.0 documents upload ${file} --doc-type spec`), res.err)
+  assert.ok(res.err.includes(`npx -y conport@^0.13.0 documents upload ${file} --doc-type spec`), res.err)
   assert.match(res.err, /remove the file/)
 }
 
@@ -155,7 +155,7 @@ function assertRefusedPlan(res, path) {
   const file = shown(path)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on ` +
-    `plans live in ConPort: run \`npx -y conport@^0.11.0 plan import ${file} --spec doc-N --epic <id>\` ` +
+    `plans live in ConPort: run \`npx -y conport@^0.13.0 plan import ${file} --spec doc-N --epic <id>\` ` +
     "with doc-N the plan's spec and <id> the spec's epic, then remove the file.\n")
 }
 

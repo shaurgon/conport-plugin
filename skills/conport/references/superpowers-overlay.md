@@ -50,7 +50,7 @@ creates).
    put their findings into the draft.
 3. **Approval.** The user reads and approves the draft with the findings in it.
 4. **Upload the spec, once.**
-   `npx -y conport@^0.11.0 documents upload <draft> --doc-type spec` → `doc-N`.
+   `npx -y conport@^0.13.0 documents upload <draft> --doc-type spec` → `doc-N`.
    Delete the draft. Right after the upload create the spec's epic —
    `add_task(project=<project>, kind='epic', title=<the spec's title>, description=<the goal and the acceptance criterion from the spec>, milestone_id=<the milestone>)`
    → `<id>`, with the milestone chosen by the project's roadmap rules and the
@@ -63,14 +63,14 @@ creates).
    an epic with no plan and no tasks is a normal state. Until the plan, the
    spec is not edited; if it must be, edit it with ConPort's block tools
    (`update_block`, `insert_block`, an `amend` change). For a local copy run
-   `npx -y conport@^0.11.0 documents get doc-N` → `.superpowers/docs/doc-N.md`.
+   `npx -y conport@^0.13.0 documents get doc-N` → `.superpowers/docs/doc-N.md`.
 5. **Plan.** Write the plan draft to `.superpowers/drafts/<date>-<topic>.md` in
    the writing-plans format (`### Task N: <title>`). After the user approves it:
-   `npx -y conport@^0.11.0 plan import <draft> --spec doc-N --epic <id>` — `<id>`
+   `npx -y conport@^0.13.0 plan import <draft> --spec doc-N --epic <id>` — `<id>`
    is the epic of step 4. This creates the `plan` document and the tasks of
    that epic; the epic is not created again. A plan with no design behind it
    has no spec and no epic:
-   `npx -y conport@^0.11.0 plan import <draft> [--milestone <id>]` creates the
+   `npx -y conport@^0.13.0 plan import <draft> [--milestone <id>]` creates the
    `plan` document, the epic and its tasks — attach that epic to a milestone
    by the project's roadmap rules. Delete the draft and the
    `<draft>.conport.json` that `plan import` wrote beside it.
@@ -80,6 +80,18 @@ creates).
    directly below that line. `plan import` builds a new task's description
    from these two lines and refuses, before writing anything, a section that
    would create a task without them. The terminal finish section needs neither.
+
+   The plan's last section is `### Task N: Final review`: the final whole-branch
+   review and the last pass of `conport:sdd-gap-hunter` over the branch, and the
+   one fix round of their findings, with its
+   own `**Goal:**` and `**Acceptance:**` lines like any other section. The first
+   `plan import` of a plan without it writes nothing and answers with one
+   action: add a last section `### Task N: Final review` and import again. It
+   files that task with a `requires` dependency on every other task of the plan,
+   so it becomes ready only when the rest is closed, and the lead session runs
+   it, never an implementer — the execution contract in the tail of the pulled
+   plan names its journal entries. An epic whose plan was imported without the
+   section is finished under the rule it started with.
 
    **Submit the portion of the spec.** Right after the import, before any task
    starts, submit what the spec says about the system as its portion of the
@@ -93,26 +105,22 @@ creates).
    Before submitting it, review it in the order the part *The review of a
    document portion* of that section gives: build the
    reviewer's input with
-   `npx -y conport@^0.11.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
+   `npx -y conport@^0.13.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
    run the reviewer (`conport:model-reviewer` in Claude Code), resolve every
    finding, recheck once when something was fixed, and put the report into
    `review` of the portion. Then submit it:
    `arch_submit(project=<project>, portion=<the portion>)` or
-   `npx -y conport@^0.11.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
+   `npx -y conport@^0.13.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
    A refusal lists every error with its action: take them all and submit
    again. Delete the file and the input directory once the portion is
    accepted. If the spec is amended later, read the portion back with
    `arch_source`, bring it in line, review it again and submit it again.
-6. **Execution.** `npx -y conport@^0.11.0 plan pull <epic>` →
+6. **Execution.** `npx -y conport@^0.13.0 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
-   file path). If `/conport:task` or `/conport:epic` is used, pass it the same
-   pulled path as the `plan` key of its JSON argument:
-   `/conport:task {"task": <id>, "plan": ".superpowers/plans/doc-M.md"}`,
-   `/conport:epic {"epic": <id>, "plan": ".superpowers/plans/doc-M.md"}`. Briefs, reports,
-   reviews and fixes are entries in the task's journal; stages are the
-   `REVIEW` status. Keep the `<file>.conport.json` written next to the pulled
-   plan: import and finish read it.
+   file path). Briefs, reports, reviews and fixes are entries in the task's
+   journal; stages are the `REVIEW` status. Keep the `<file>.conport.json`
+   written next to the pulled plan: import and finish read it.
 
    A task that changes behaviour the spec describes changes the spec in the
    same task, with the block tools (`update_block`, `insert_block`), before
@@ -156,18 +164,37 @@ creates).
      id.
    - **A closed task** refuses every entry with `journal_task_closed`: reopen
      the task, then write the entry.
-7. **Editing the plan during the work.** `npx -y conport@^0.11.0 plan pull <epic>`
+7. **Editing the plan during the work.** `npx -y conport@^0.13.0 plan pull <epic>`
    → edit the pulled file above the line `<!-- conport-pull-tail -->` →
-   `npx -y conport@^0.11.0 plan import <pulled file>` →
-   `npx -y conport@^0.11.0 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
+   `npx -y conport@^0.13.0 plan import <pulled file>` →
+   `npx -y conport@^0.13.0 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
    number) → continue SDD. Once execution has started, section numbers never
    change: a new section takes the next free number, and a section no longer
    needed is not removed from the plan — its task is set to `CANCELLED` in
    ConPort with a resolution. The SDD ledger and `task-brief` key on the
    section number. When `plan import` refuses because `<file>` and ConPort's
    plan have both changed since pull: move `<file>` aside to
-   `<file>.mine.md`, run `npx -y conport@^0.11.0 plan pull <epic> -o <file>`,
+   `<file>.mine.md`, run `npx -y conport@^0.13.0 plan pull <epic> -o <file>`,
    carry your edits over from `<file>.mine.md`, run `plan import` again.
+
+   A finding is never a new section: it is a fix round (the section BACKLOG
+   DISCIPLINE of the conport skill). A new section in an epic whose plan has
+   started is a new task. A new task in an epic that has a plan is the
+   exception: only new work the goal needs that no plan task and no fix round
+   can hold, approved by the person. It goes through the hook, in this order:
+   ask the person in one line why this is not a fix round and, in Claude Code,
+   to reply `allow epic <N> in <project>` — the plugin's hook takes that reply
+   and no other; after it,
+   `add_task(project=<project>, parent_task_id=<epic>, title=<title>, description='Why not a fix round: …')`
+   — the plugin's hook lets it through after the person's yes (elsewhere wait
+   for an explicit yes in the chat); then `npx -y conport@^0.13.0 plan pull <epic>`,
+   a section with the next free number and the marker
+   `<!-- conport-task: <id> -->` of that task under its heading,
+   `npx -y conport@^0.13.0 plan import <pulled file>`,
+   `npx -y conport@^0.13.0 plan pull <epic>` again. `plan import` refuses a new
+   section without a marker in an epic whose plan has started with
+   `plan_section_needs_task` and one action: file the task with add_task first
+   (the person approves it), then put its marker under the heading.
 8. **Finish.** The final whole-branch review (`conport:sdd-final-reviewer`
    in Claude Code) is clean and its fixes are merged → the terminal task of
    the pulled plan → `superpowers-conport` in `finish` mode on the pulled plan
@@ -181,7 +208,7 @@ creates).
 
    In a project whose model has `code` sources (`arch_sources` lists them):
    once an epic that changed the code is merged, run
-   `npx -y conport@^0.11.0 arch check` in the repository root on the main
+   `npx -y conport@^0.13.0 arch check` in the repository root on the main
    branch — there it also sends the facts of git. Then, for each debt
    `code_portion_stale` it brings, read the paths its `detail` names, bring
    the portion in line with the code with `arch_source` and submit it again —
@@ -195,7 +222,7 @@ creates).
 
 The CLI reads its API key from `CONPORT_API_KEY` in the environment or in
 `~/.config/conport/.env`, never from the plugin's settings. When a
-`npx -y conport@^0.11.0 …` command fails with `CONPORT_API_KEY is not set`, the
+`npx -y conport@^0.13.0 …` command fails with `CONPORT_API_KEY is not set`, the
 one action is: set `CONPORT_API_KEY` (env or `~/.config/conport/.env`) and
 retry. When it fails with `No project specified`, or with
 `CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project's handle or name`,

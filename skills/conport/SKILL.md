@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 24.0.2
+  version: 25.0.0
 ---
 
 # ConPort — Project Management System
@@ -111,13 +111,14 @@ yourself before `init`:
    read only when neither file sets `project_name`; `CONPORT_PROJECT_NAME` in
    `~/.config/conport/.env` is never read. From the personal file only
    `project_name`, `plugins.superpowers` and `plugins.codegraph` are read;
-   `arch` and `units` are read from `.conport.json` only.
+   `arch` and `units` are read from `.conport.json` only. No ConPort component
+   acts on `units`; a project's own release tools may read it.
 6. **Old places.** Look at the root for `env.CONPORT_PROJECT_NAME` in
-   `.claude/settings.local.json` or `.claude/settings.json`, the key `conport`
-   in `.superpowers/config.json` (also at the root of the main worktree) and
-   `.conport/units.json`. Without `.conport.json` and with any of them or with
-   `CONPORT_PROJECT_NAME` in your environment — or with `.conport.json` and a
-   personal one of them left (`.conport/units.json` does not count then) — fetch
+   `.claude/settings.local.json` or `.claude/settings.json` and the key
+   `conport` in `.superpowers/config.json` (also at the root of the main
+   worktree). Without `.conport.json` and with any of them or with
+   `CONPORT_PROJECT_NAME` in your environment — or with `.conport.json` and
+   one of them left — fetch
    `https://conport.app/docs/projects/project-settings.md` and carry out the
    document with the user before the user's task.
 7. **No name** — stop, do not call `init`, and ask the user to write
@@ -356,10 +357,10 @@ semantics of a surface, fetch the live-docs page named in the table.
 | "We need to do X" | `add_task` with priority **and `estimated_seconds`** (priority 1-5 where 1=critical and 5=idle, default 3; epic rows leave effort NULL, sum-from-children at read time) |
 | "X depends on Y" | `add_task_dep` |
 | "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` |
-| "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`) |
+| "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`); in an epic that has a plan a new task is the exception of BACKLOG DISCIPLINE — `Why not a fix round:` and the person's yes |
 | Work that needs a design, before the design | `add_task` (`kind='task'`) — one task and no epic yet; never an epic of design tasks before the spec |
 | The spec is approved | `add_task` with `kind='epic'` (description: the goal and the acceptance criterion from the spec; `milestone_id` by the project's roadmap rules), then `link_items` from the spec (`source_type='doc'`) to the epic (`target_type='task'`) with `relationship='clarifies'` — one spec per epic; close the task the design started from with a `resolution` naming the spec and the epic. An epic with no plan and no tasks is a normal state |
-| The plan is approved | the plan's tasks go into that epic: `add_task` with `parent_task_id`, or with the Superpowers overlay `plan import <draft> --spec doc-N --epic <id>` — the epic is not created again |
+| The plan is approved | the plan's tasks, its last section *Final review* among them, go into that epic before the work starts: `add_task` with `parent_task_id`, or with the Superpowers overlay `plan import <draft> --spec doc-N --epic <id>` — the epic is not created again |
 | "Move task X under epic Y" / re-parent | `update_task` with `parent_task_id` (target must be `kind='epic'`; `0` detaches to root) |
 | Taking a task into work, filing or moving an epic or a task, calling a task waiting, closing an epic or a milestone, talking about a release, a bump or a deploy, reporting open work to the user | the **conport-roadmap** skill first — its rules decide the milestone, the epic and what may be said about the release |
 | "Roadmap" / "milestones" / "what ships in the release" | `list_milestones` (roadmap view, `include_closed=true` for history) |
@@ -519,9 +520,8 @@ project turns it on.
   checks the switch at the start of the session and, when it is on, reads that
   file before any spec or plan work.
 - **SDD's subagents** are the plugin's agent types in Claude Code:
-  `conport:sdd-implementer`, `conport:sdd-task-reviewer`, `conport:sdd-fixer`
-  and `conport:sdd-gap-hunter` — the same ones `/conport:task` and
-  `/conport:epic` dispatch — and `conport:sdd-final-reviewer` for the final
+  `conport:sdd-implementer`, `conport:sdd-task-reviewer`, `conport:sdd-fixer`,
+  `conport:sdd-gap-hunter`, and `conport:sdd-final-reviewer` for the final
   review of the whole branch. They run on the session's model and start no
   subagents of their own.
 - **Visibility.** When the overlay is on, print one line at the start of the
@@ -719,7 +719,7 @@ mismatch.
 ## BACKLOG DISCIPLINE
 
 One line per rule; the full text with the reasons is
-`references/backlog-discipline.md` — read it before filing findings, growing an
+`references/backlog-discipline.md` — read it before acting on findings, growing an
 epic or reporting an epic's progress.
 
 - **Record** the decision and why, the options rejected, numbers with their
@@ -731,49 +731,51 @@ epic or reporting an epic's progress.
   record a decision as the user's only for what the user stated.
 - **Two or more related tasks** — an epic first; work before a design is one
   task (the Planning rows above).
-- **A finding** becomes a task after it is checked, not instead. File a defect
-  (a review's Critical or Important, a gap hunt's Blocker or Should-fix, or a
-  confirmed behaviour defect) with `kind='bug'`; polish and new work use
-  `kind='task'`. Every finding
-  not fixed in the same pass is a task of the current epic, done before the
-  epic is declared ready: a gap hunt's Blocker, Should-fix and Note, a review's
-  Critical, Important and Minor, a confirmed behaviour defect. A behaviour
-  defect always stays in this epic; an ordinary finding past the growth ceiling
-  goes to the tails epic of the release, and readiness does not wait for it. A
-  Note only the user can answer is asked at once; the answer becomes the task.
-  A filed
-  finding goes to an executor as the next action; the epic is not ready while
-  one is open. The report names the task numbers, never a list of findings: a
-  report "after the epic I found N problems" as text, with no task numbers and
-  no work started, is forbidden.
-- **Depth is one level:** the review of a task filed from a finding reports
-  every severity, and its author fixes all of it before the merge — nothing
-  from it is filed anew or dropped; only a behaviour defect outside that task's
-  diff becomes a new task.
+- **A finding** is checked first, then fixed. A finding is fixed, not filed.
+  A task review's finding: a fix round of that task by its implementer, every
+  finding at once (a Minor outside the task's diff is dropped). A final
+  review's or end gap hunt's finding, one in the code of a closed task
+  included: one fix round of the epic's final-review task, one fixer dispatch
+  with the whole list, recorded in that task's journal. A gap hunt of the spec:
+  an edit of the spec. A merge, a gate red after a merge, a re-submission, a
+  manifest or skill edit: done, never filed. A finding outside the epic's goal:
+  the tails epic of the release. A Note only the user can answer is asked at
+  once; the answer goes into the same fix round. A finding goes to its fix
+  round as the next action; the epic is not ready while one is open. A report
+  "after the epic I found N problems" as text, with no work started, is
+  forbidden. A new task in an epic that has a plan is the exception: only new
+  work the goal needs that no plan task and no fix round can hold. Its
+  description starts with `Why not a fix round:`, and the person approves each
+  one (in Claude Code the plugin's hook asks for it; elsewhere ask in one line
+  and wait for an explicit yes). The person's yes is the reply
+  `allow epic <N> in <project>`; never write it, or the consent file,
+  yourself. The server still bounds what the epic takes after the plan
+  (`epic_growth_ceiling`): on that refusal execute the calls in `suggestions`.
+  File a Bug (`kind='bug'`) only for a confirmed behaviour defect found outside
+  the fix rounds of an epic that has a plan; new work is `kind='task'`.
+- **Depth is one level:** the re-review after a fix round checks only that
+  round's diff; what it finds goes into the next fix round of the same task —
+  nothing from it is filed or dropped. After the third failed fix round the
+  task is BLOCKED, the finding stays in its journal, the epic is not ready, and
+  the user is told one action.
+- **The epic growth hook** of the plugin holds a new task in an epic that has a
+  plan in Claude Code: it refuses one without `Why not a fix round:`, asks for
+  the person's reply, and refuses a subagent, which hands the task to the
+  session that dispatched it. `CONPORT_EPIC_GROWTH_GUARD=off` in the
+  environment of Claude Code turns it off; that removes only the hook: the
+  text of the rule and the server ceiling stay.
 - **A change to behaviour a spec describes** changes the spec in the same task,
   by blocks (`update_block`, `insert_block`), before the task is closed — "the
   epic is closed" is no reason to skip it.
-- **Epic growth ceiling:** an epic takes max(3, floor(0.3 × plan tasks))
-  ordinary tasks added after the plan; the next ordinary task goes to the
-  tails epic of the release (the one of the freeze line below) — not into this
-  epic, not dropped; ask for its milestone only when no next release is
-  available. A defect never counts and always stays in this epic: a review's
-  Critical and Important, a gap hunt's Blocker and Should-fix, a confirmed
-  behaviour defect. Polish from findings counts: a review's Minor left after
-  the pass, a task from a Note's answer — and so does new scope. A progress
-  report names the ordinary tasks added (counted) and the defect fixes (not
-  counted) as two numbers. File defects with `kind='bug'`, polish and new work
-  with `kind='task'`: `kind` determines which count applies, not the task's
-  origin. The server counts the ceiling itself. On `epic_growth_ceiling`, take
-  one action: execute the call in `suggestions[].call`, using the tails epic
-  the server names. Do not recalculate the ceiling or choose another epic.
-  Read `epic_progress.plan_tasks`, `ordinary_added`, `bugs` and
-  `growth_ceiling`; the ceiling is `epic_progress.growth_ceiling`, and `null`
-  means no ceiling (the epic is outside its scope), never a fallback count.
-  With a ceiling, the server summary is "ordinary after plan N of C, bugs B".
-  The workflow run summary is "ordinary tasks added N of ceiling C; bug fixes B"
-  or "ordinary tasks added N (no ceiling); bug fixes B" outside that scope.
-  Execute the ordered calls from `suggestions` on a refusal; do not count locally.
+- **Epic growth ceiling:** the server takes at most
+  max(3, floor(0.3 × plan tasks)) ordinary tasks into an epic after its plan,
+  approved exceptions included; a Bug never counts. Never recount it locally:
+  read `epic_progress.plan_tasks`, `ordinary_added`, `bugs` and
+  `growth_ceiling`; `null` means no ceiling (the epic is outside its scope),
+  never a fallback count. With a ceiling, the server summary is "ordinary
+  after plan N of C, bugs B". On `epic_growth_ceiling`, take one action:
+  execute the call in `suggestions[].call`, using the tails epic the server
+  names; follow the ordered calls and do not choose another epic.
   `ask_user_milestone` asks where the target tails epic belongs whenever it has
   no milestone, whether that epic was found or created.
 - **Epic progress** is its open children in ConPort, not a plan file's list;
@@ -825,16 +827,16 @@ below.
 | The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; all active entities, their active relations and bound current decisions, without a node limit) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
-| Review a document portion before submitting it | `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
-| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.11.0 arch submit <file.json>`) |
-| Change a portion | `arch_source` (or `npx -y conport@^0.11.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
-| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.11.0 arch withdraw <source>`) |
+| Review a document portion before submitting it | `npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
+| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.13.0 arch submit <file.json>`) |
+| Change a portion | `arch_source` (or `npx -y conport@^0.13.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
+| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.13.0 arch withdraw <source>`) |
 | "Which behaviour scenarios does the project have?" | `arch_scenarios` |
 | One scenario with its participants, states or nodes and steps | `arch_scenario` |
 | "What does the model owe?" | `arch_status` |
-| Check the anchors against the code | `npx -y conport@^0.11.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*) |
-| Check the anchors and send no facts of git | `npx -y conport@^0.11.0 arch check --no-git` |
-| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.11.0 arch suggest --json` (any branch; it submits nothing) |
+| Check the anchors against the code | `npx -y conport@^0.13.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*) |
+| Check the anchors and send no facts of git | `npx -y conport@^0.13.0 arch check --no-git` |
+| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.13.0 arch suggest --json` (any branch; it submits nothing) |
 | Fill the model of a project that lived before it | the procedure `references/model-backfill.md` |
 | Start, complete or decline the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`, `declined` |
 | The role of a document in the model | `update_document` with `model_role` — `structure`, `history`, `none` |
@@ -908,13 +910,13 @@ with the block that states it.
   whenever it is written or changed.
 - **The code.** Write the skeleton yourself, reading the code through
   `codegraph` or the files: one unit per source `code:<label>`.
-  `npx -y conport@^0.11.0 arch suggest --json` proposes the units with their
+  `npx -y conport@^0.13.0 arch suggest --json` proposes the units with their
   labels and their parts from git history and, with a `codegraph` index, the
   imports between the parts; it
   submits nothing, and what goes into the portion is yours to decide.
   Submitting one label leaves the others as they are; to add to a skeleton,
   read its portion, edit it and submit it again. Then run
-  `npx -y conport@^0.11.0 arch check`. A debt `code_portion_stale` asks for a
+  `npx -y conport@^0.13.0 arch check`. A debt `code_portion_stale` asks for a
   `code` portion again once files under its anchors were added, deleted or
   renamed.
 
@@ -943,7 +945,7 @@ runs or after it is completed; before that it owes nothing.
    below. A `code:` portion is not reviewed: the anchor check checks it.
 5. **Submit it** with `arch_submit(project, portion)`, the report of the
    reviewer in `review` of the portion, or write it to a file and run
-   `npx -y conport@^0.11.0 arch submit <file.json>`. The answer carries
+   `npx -y conport@^0.13.0 arch submit <file.json>`. The answer carries
    `review_id`, the number of the stored report (null without one).
 6. **A refusal** is `portion_rejected` with every error at once, each with its
    `code`, `subject` and `action`; nothing was written. Take the action of each
@@ -967,18 +969,18 @@ it: no check of a portion runs on the server.
 
 1. **Write the draft** of the portion to a file.
 2. **Build the input directory**:
-   `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir>`,
+   `npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir>`,
    with `<dir>` outside the working tree. It holds `document.md`,
    `blocks.json`, `portion.json`, `names.json`, `scenarios.json`, `meta.json`
    and, when the document has a report, `previous-review.json`.
 3. **Run the reviewer** on `<dir>`. In Claude Code dispatch the subagent
    `conport:model-reviewer` with the path of `<dir>`. A client without
    subagents starts a separate process whose prompt is the output of
-   `npx -y conport@^0.11.0 agent model-reviewer` followed by the path of
+   `npx -y conport@^0.13.0 agent model-reviewer` followed by the path of
    `<dir>`, and writes its answer to a file:
 
    ```
-   PROMPT="$(npx -y conport@^0.11.0 agent model-reviewer)
+   PROMPT="$(npx -y conport@^0.13.0 agent model-reviewer)
 
    Input directory: <dir>"
    claude -p --add-dir <dir> "$PROMPT" > <answer.json>
@@ -1007,7 +1009,7 @@ it: no check of a portion runs on the server.
    reader; it keeps no other finding away.
 5. **Recheck once when something was fixed.** Write the findings with their
    resolutions to a file, build the directory again with the new draft —
-   `npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
+   `npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
    — and run the reviewer once more. It checks only the fixed findings: did the
    fix close the finding and break no neighbouring entity, relation or
    scenario. Resolve its findings the same way; they go into the same report,
@@ -1040,7 +1042,7 @@ goes through the review again, or the portion owes `unchecked_portion`.
 the portion: it carries `id` and `at`, and a portion sent back with it is
 refused as `review_reused` — run the reviewer again, or submit the portion
 without `review`. Never strip `id` and `at` to send the old report as new.
-`npx -y conport@^0.11.0 arch source <source>` prints `review` the same way, but
+`npx -y conport@^0.13.0 arch source <source>` prints `review` the same way, but
 with `-o <file>` it writes the portion without `review`: that file submitted
 back without a new review is accepted, and the portion owes `unchecked_portion`.
 
@@ -1427,7 +1429,7 @@ finding for that reason:
 | `scenario_malformed` | A rule of the scenario's kind is broken; the message names the rule and the place | Correct the scenario at the place its message names so that it keeps the rule. |
 | `scenario_name_taken` | The name is the name of a scenario of another source | Submit the scenario with `takes_over` naming it when this source changes that behaviour, or leave it out when the source repeats it. |
 | `scenario_too_large` | A limit of the scenario is passed | Split the scenario into parts within the limit, linked by an `action` whose `scenario` names the next part or by the name of the next part ending in (part 2). |
-| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.11.0 arch check`. |
+| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.13.0 arch check`. |
 | `dismissal_moved` | `dismissed` holds a finding of the kind `missing` or `invented` | Move the dismissal into `review.findings` with `resolution: dismissed` and its `reason`. |
 | `review_reused` | `review` is the report `arch_source` gave back: it carries `id` or `at` | Run the reviewer on the portion again and submit it with the new report, or submit it without `review`. |
 | `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
@@ -1498,20 +1500,18 @@ For a `code:` portion `portion_too_large` prescribes instead: Split the portion 
 
 A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
-`npx -y conport@^0.11.0 arch submit <file.json>`, then
-`npx -y conport@^0.11.0 arch check`.
+`npx -y conport@^0.13.0 arch submit <file.json>`, then
+`npx -y conport@^0.13.0 arch check`.
 
 ### The anchor check
 
-`npx -y conport@^0.11.0 arch check` in the repository root reads the anchors
+`npx -y conport@^0.13.0 arch check` in the repository root reads the anchors
 of the model — of its entities and of the scenarios of `code:` portions —
 checks `path` anchors on the file system and `symbol` anchors through the
 `codegraph` index when the repository has one (without it they are left
 unchecked, as are the other kinds), and sends the outcome with the commit it
-checked. Run it **on the main branch after an epic is merged into it** and
-**after submitting a `code` portion**. `/conport:epic` runs it itself after
-its merges and reports its lines under `anchor_check`; run it by hand
-otherwise, or when that report carries an `action`.
+checked. Run it by hand **on the main branch after an epic is merged into
+it** and **after submitting a `code` portion**.
 
 The check decides what an entity looks like: **planned** — no anchors;
 **declared** — anchors, none of them found by the latest check, or no check
@@ -1544,7 +1544,7 @@ the outcome of the anchors and the commit: the name of the branch; the dates
 of commits; the paths of files and directories under the anchors of the model
 (`recent_files`, `changes`, `symbol_files`); the paths of the hot directories
 and of the units; the patterns of `arch.ignore`; the numbers of commits and of
-index nodes. `npx -y conport@^0.11.0 arch check --no-git`, or the key
+index nodes. `npx -y conport@^0.13.0 arch check --no-git`, or the key
 `arch.git: false` in `.conport.json`, sends none of the facts: the server then
 knows no facts will come and owes nothing by them.
 
@@ -1613,9 +1613,9 @@ one. When `total` is above five, `arch_status` lists them all.
 | `code_portion_stale` | The latest check with git facts saw a file added, deleted or renamed under an anchor of an entity of the `code:` portion after it was submitted; `detail` names the paths | Read the changed paths, bring the portion code:<label> in line with the code and submit it again; if the model does not change, submit it as it is. |
 | `unchecked_portion` | The document's portion was submitted without the reviewer's report (`review`) | Run the reviewer on the portion and submit it again with `review`. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
-| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.11.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.11.0 arch check` in the repository root on main or master. |
+| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.13.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.13.0 arch check` in the repository root on main or master. |
 | `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
-| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.11.0 arch check`. |
+| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.13.0 arch check`. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names is removed or replaced at the document source position (current state for code), or the scenario an action runs was deleted | Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history. |
 
@@ -1658,9 +1658,13 @@ The key `backfill` of the section `arch` of `init` carries `state`
 The task tree is **two levels** and the database enforces it:
 
 - `kind='task'` — ordinary work (the default), a leaf node. May have `parent_task_id` pointing to an epic. Cannot have children.
-- `kind='bug'` — a defect: a review's Critical or Important, a gap hunt's
-  Blocker or Should-fix, or a confirmed behaviour defect. It is a leaf with
-  the same parent rules as an ordinary task, and it cannot have children. It
+- `kind='bug'` — a confirmed behaviour defect found outside the fix rounds of
+  an epic that has a plan: outside an epic, in an epic without a plan, a plan
+  section labelled `kind: bug`, or an approved exception. A finding inside the
+  epic's goal is fixed in its fix round and never becomes a Bug; one outside
+  the goal goes to the tails epic of the release, where a defect is a Bug. It
+  is a leaf with the same parent rules as an ordinary task, and it cannot have
+  children. It
   differs from an ordinary task in two ways only: it never counts toward the
   epic's ordinary-task growth ceiling, and an open Bug goes first among the
   children of its epic and nowhere else.
@@ -1967,7 +1971,7 @@ claim it was posted.
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
-- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.11.0 arch check` run on the main branch (after `/conport:epic`, only when its `anchor_check` carries an `action`)? `init` returned `arch` → the action of each debt taken?
+- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.13.0 arch check` run on the main branch? `init` returned `arch` → the action of each debt taken?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] A problem of the service itself → showed the user the title and body and posted only after they agreed (a run with no person: the report in its summary, nothing posted), searched the open `[agent-report]` issues first, no project content, and told the user the URL — or gave the search and form links and said the report is not sent until they submit it?

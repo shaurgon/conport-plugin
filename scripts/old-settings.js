@@ -11,12 +11,11 @@ const ENV_PLACE = 'CONPORT_PROJECT_NAME in the environment';
 const LOCAL_CLAUDE_PLACE = 'env.CONPORT_PROJECT_NAME in .claude/settings.local.json';
 const CLAUDE_PLACE = 'env.CONPORT_PROJECT_NAME in .claude/settings.json';
 const OVERLAY_PLACE = 'conport in .superpowers/config.json';
-const UNITS_PLACE = '.conport/units.json';
 
 // Places named only by the line that asks for the move: the variable is a
-// source for good, and units.json stays until the release that drops the old
-// places.
-const MOVE_ONLY = new Set([ENV_PLACE, UNITS_PLACE]);
+// source for good. `.conport/units.json` is no old place: no ConPort component
+// reads `units`, so there is nothing to move.
+const MOVE_ONLY = new Set([ENV_PLACE]);
 
 const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -43,14 +42,6 @@ function overlayKey(root) {
   return Boolean(data && has(data, 'conport'));
 }
 
-function isFile(file) {
-  try {
-    return fs.statSync(file).isFile();
-  } catch (_) {
-    return false;
-  }
-}
-
 // The old places that still hold ConPort settings for the project at `root`
 // (the root of the current worktree; `mainRoot` the root of the main one, or
 // null), in the order the line names them.
@@ -62,7 +53,6 @@ function findOldPlaces({ root, mainRoot, env }) {
   if (claudeSettingsName(path.join(root, '.claude', 'settings.local.json'))) places.push(LOCAL_CLAUDE_PLACE);
   if (claudeSettingsName(path.join(root, '.claude', 'settings.json'))) places.push(CLAUDE_PLACE);
   if (overlayKey(root) || (mainRoot && mainRoot !== root && overlayKey(mainRoot))) places.push(OVERLAY_PLACE);
-  if (isFile(path.join(root, '.conport', 'units.json'))) places.push(UNITS_PLACE);
   return places;
 }
 

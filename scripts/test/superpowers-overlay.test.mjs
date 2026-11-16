@@ -259,7 +259,7 @@ const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.ad
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.11\.0 plan import/)
+  assert.match(text, /npx -y conport@\^0\.13\.0 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
@@ -318,9 +318,9 @@ test('a task comes before the design, the epic with the uploaded spec, the plan 
   assert.ok(upload.indexOf('documents upload') < upload.indexOf("kind='epic'"), 'the epic follows the upload')
 
   const plan = step('Plan')
-  assert.match(plan, /npx -y conport@\^0\.11\.0 plan import <draft> --spec doc-N --epic <id>` /)
+  assert.match(plan, /npx -y conport@\^0\.13\.0 plan import <draft> --spec doc-N --epic <id>` /)
   assert.match(plan, /the epic is not created again/)
-  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.11\.0 plan import <draft> \[--milestone <id>\]`/)
+  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.13\.0 plan import <draft> \[--milestone <id>\]`/)
   assert.doesNotMatch(plan, /\[--epic <id>\]/, 'the epic of a designed plan is not optional')
 })
 

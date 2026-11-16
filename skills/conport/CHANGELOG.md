@@ -1,6 +1,47 @@
 # conport changelog
 
-## Unreleased
+## 25.0.0
+
+`/conport:task`, `/conport:epic` and their helper are removed; lead an epic by
+subagent-driven development with the plugin's agents (`docs/agents.md`).
+Update Orca's conport plugin to 0.8.0 and the Herdr mod to 0.3.0 together with
+this release.
+
+**The person gives the consent to grow an epic in their own words.** The
+`UserPromptSubmit` hook records a one-time consent when the person's message is,
+as a whole, `allow epic <N> in <project>` — or `allow epic <N>` in a session
+with a project; the short form in a session without one is answered with the
+full form to say. The project is kept by its handle: a name or `team/project`
+is looked up on the server, and without an answer it is kept as named; a
+project the server does not know records nothing and names the form with the
+handle to say instead. The
+consent lives in `epic-growth-allow.json` in the plugin's data folder, and the
+person's message is the only way to give it. A start text that only contains
+the phrase gives no consent, and the Bash hook refuses any command that names
+the consent file: `BLOCKED: only the person gives this consent; ask them to
+reply: allow epic <N> in <project>.`
+
+**A plan ends with a Final review section; the bridge refuses a plan without one.**
+The section holds the final whole-branch review, the end gap hunt and the one
+fix round of their findings, led by the session itself and ready only when
+every other task of the plan is closed. The execution contract and the finish
+mode of `superpowers-conport` make a finding a fix round instead of a new task,
+and the Superpowers overlay files an approved new task through `add_task`
+before its section is imported. Pull your open plans again.
+
+**A hook holds a new task in an epic that has a plan.** A new `PreToolUse`
+hook on `add_task` and `update_task` of the ConPort server holds a new task in
+an epic whose plan has started or that a plan document clarifies, and an
+`update_task` that attaches a task with no epic to one; an epic without a plan,
+the tails epic of a release and a move between epics pass. Without
+`Why not a fix round:` at the start of the description it says a finding is a
+fix round; with it, it asks for the person's reply `allow epic <N> in
+<project>` and lets one call through per reply; a subagent is told to hand the
+task to the session that dispatched it; when ConPort does not say whether the
+epic has a plan, it says to call again in a minute and writes why to
+`epic-growth-guard.log` in the plugin's data folder. A hook that does not answer
+refuses the call on Claude Code 2.1.295 or later.
+`CONPORT_EPIC_GROWTH_GUARD=off` in the environment of Claude Code turns it off.
 
 **The spec review comes before the gap hunt.** Step 2 of the Superpowers
 overlay no longer runs the spec reviewer and the gap hunter together. The
@@ -21,6 +62,46 @@ condition and action match the server: later documents may replace earlier
 owners, while equal-precedence conflicts are refused, including when an empty
 resubmission, withdrawal or document change would expose them. Correct or
 withdraw the conflicting claims; an old document need not invent `removed`.
+
+`.conport/units.json` is no longer named as an old place to move; the `units` key stays valid.
+
+**`epic_progress` says whether the plan started and has a plan document.**
+The command list names two more fields of `epic_progress`: `plan_started`
+(`true` once the epic's plan has started) and `plan_document` (`true` when a
+document of type `plan` clarifies the epic).
+
+**`plan import` names its two new refusals.** The command list describes
+`plan_missing_final_review` (a first import whose last section is not `Final
+review`) and `plan_section_needs_task` (a new section without a task marker
+once the plan has started), each with its one action; step 7 of the
+Superpowers overlay names the second one.
+
+**A finding is fixed, not filed.** BACKLOG DISCIPLINE, its reference, the
+roadmap skill and the final reviewer and gap hunter agents now route every
+finding to a fix round: a task review's to a fix round of that task, a final
+review's or end gap hunt's to one fix round of the epic's final-review task, a
+gap hunt of the spec to an edit of the spec, one outside the epic's goal to the
+tails epic of the release. A new task in an epic that has a plan is the
+exception: only new work the goal needs, its description starting with
+`Why not a fix round:`, and the person's reply `allow epic <N> in <project>`
+for each one; in Claude Code the plugin's hook holds it, elsewhere the agent
+asks in one line and waits for an explicit yes.
+`CONPORT_EPIC_GROWTH_GUARD=off` turns the hook off; the rule and the server
+ceiling stay. A Bug is now a confirmed behaviour defect found outside the fix
+rounds of an epic that has a plan; the server's growth ceiling is unchanged
+and bounds the approved exceptions.
+
+**The execution contract makes a finding a fix round.** The contract the
+bridge and `conport plan pull` write into a plan says one text: a finding is
+fixed, not filed; the plan ends with a Final review section the controller
+leads itself by its task journal; a new task in an epic that has a plan is an
+exception the person approves, filed with `add_task` and then given its
+section with its marker. The lead text `conport prompt epic` prints for Orca
+and Herdr says the same.
+
+**Every command the plugin prescribes runs `npx -y conport@^0.13.0`.** The
+skills, the install pages, the hooks' hints and the server's own hints name the
+CLI that brings the plan section check and the lead text above.
 
 ## 24.0.2
 

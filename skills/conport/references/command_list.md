@@ -614,7 +614,9 @@ mcp__conport__add_task({
 `estimated_seconds` and `milestone_id`. Creating a child under an epic also
 returns `epic_progress`: `epic_id`, `epic_title`, `open_children`,
 `total_children`, `closable` (no open children and the epic still open),
-`plan_tasks`, `ordinary_added`, `bugs` and `growth_ceiling`. Read the ceiling
+`plan_tasks`, `ordinary_added`, `bugs`, `growth_ceiling`, `plan_started`
+(`true` once the epic's plan has started) and `plan_document` (`true` when a
+document of type `plan` clarifies the epic). Read the ceiling
 from `epic_progress.growth_ceiling`; `null` means no ceiling applies, not zero
 or a request to calculate one locally. When a ceiling applies, the server
 summary includes `ordinary after plan N of C, bugs B`.
@@ -635,6 +637,10 @@ whether it was found or created: ask the person and attach it to the chosen
 milestone. Do not infer a milestone or count growth locally. The same
 refusal can apply when re-parenting, converting a Bug to an ordinary task,
 or reopening a cancelled ordinary task through `update_task`.
+
+**Plan import refusals:** `plan import` refuses before it writes anything:
+- `plan_missing_final_review`: a first import of a plan whose last section is not `Final review` — add a last section `### Task N: Final review` and import again.
+- `plan_section_needs_task`: a new section without a task marker in an epic whose plan has started — file the task with `add_task` first (the person approves it), then put its marker under the heading.
 
 **Refusals:** the hierarchy invariants come back as structured errors:
 `parent_not_epic` (with `suggestions` naming the promote / attach call to make
@@ -1428,7 +1434,7 @@ document from `list_blocks`. To change a portion, read it (`arch_source`),
 edit it and submit it again.
 
 A document portion is reviewed before every submission: the reviewer
-(`conport:model-reviewer`, or the prompt `npx -y conport@^0.11.0 agent model-reviewer`
+(`conport:model-reviewer`, or the prompt `npx -y conport@^0.13.0 agent model-reviewer`
 in a separate process) compares the draft with the document, the author
 resolves each finding as `fixed` or `dismissed`, and the report goes with the
 portion in `review`. The server stores the report, trusts it and runs no check
@@ -1439,18 +1445,18 @@ A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.11.0 arch submit <file.json>`,
-`npx -y conport@^0.11.0 arch withdraw <source>`,
-`npx -y conport@^0.11.0 arch source <source> [-o <file>]` (printed, the portion
+`npx -y conport@^0.13.0 arch submit <file.json>`,
+`npx -y conport@^0.13.0 arch withdraw <source>`,
+`npx -y conport@^0.13.0 arch source <source> [-o <file>]` (printed, the portion
 comes with `review` as from `arch_source`; the file of `-o` holds it without
 `review`) — and three things no tool
-does: `npx -y conport@^0.11.0 arch check` in the repository root checks the
+does: `npx -y conport@^0.13.0 arch check` in the repository root checks the
 anchors of the model against the code there and sends the outcome, and on
 `main` or `master` the facts of git as well (`--no-git` sends none of them);
-`npx -y conport@^0.11.0 arch suggest --json` proposes the units and their
+`npx -y conport@^0.13.0 arch suggest --json` proposes the units and their
 parts from git history and, with a `codegraph` index, the imports between the
 parts, and submits nothing; and
-`npx -y conport@^0.11.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
+`npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
 writes the reviewer's input directory — the document, its blocks, the draft,
 the names and scenarios of the model, the previous report — outside the
 working tree. No code, no commit message and no author leaves the machine;
@@ -1469,7 +1475,7 @@ portions. The procedure gives every document its role with `update_document`
 (`in_progress`, `completed`, `declined`), and reads the active decisions
 without an entity from `arch_status` while the backfill runs
 (`unlinked_decisions`, page by page with `unlinked_after`).
-`npx -y conport@^0.11.0 arch withdraw --all` reports every source of the project
+`npx -y conport@^0.13.0 arch withdraw --all` reports every source of the project
 and removes nothing; with `--apply` it withdraws them all, documents and code,
 and returns the backfill to its start. It runs only on the user's word.
 

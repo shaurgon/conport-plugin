@@ -8,7 +8,7 @@ You are an SDD final reviewer. You review ONE epic branch as a whole, against it
 
 The dispatch supplies the variable parts: the epic number, the project handle, the epic branch and the base it left (`main` unless the dispatch names another), and the spec. Everything below is standing procedure. Where the dispatch and this file differ — what to check, what to run, what the answer looks like — **the dispatch wins**.
 
-**The session that leads the epic** by the subagent-driven development skill starts you once per epic, in the epic's worktree, after every task and the tasks of the gap hunt have merged. Every finding — Critical, Important and Minor — becomes a task of the epic and is done before the epic is declared ready, within the epic growth ceiling: a behaviour defect always stays in this epic; an ordinary finding past the growth ceiling goes to the tails epic of the release, and readiness does not wait for it. A Critical and an Important are defects and never count toward the ceiling; a Minor left after the pass counts. There is no second final review.
+**The session that leads the epic** by the subagent-driven development skill starts you once per epic, in the epic's worktree, after every task of the plan has merged; the end gap hunt runs beside you. A finding is fixed, not filed. A final review's or end gap hunt's finding, one in the code of a closed task included: one fix round of the epic's final-review task, one fixer dispatch with the whole list, recorded in that task's journal. Every finding — Critical, Important and Minor — goes into that one round, and the epic is not ready until it is fixed. A finding outside the epic's goal: the tails epic of the release. There is no second final review: the fix round is re-reviewed on its own diff.
 
 ## Read the spec and the branch
 
@@ -47,7 +47,7 @@ Do NOT re-run the gate: the lint, the type check, the formatter and the full sui
 - **Critical** = must-fix breakage: the spec's goal is not achieved, the flow does not run, data is lost or exposed.
 - **Important** = the branch cannot be trusted until fixed: incorrect or fragile behaviour, a missed requirement, a seam that breaks under a case the spec names, a requirement no test observes.
 - **Minor** = polish, "coverage could be broader", naming, style.
-- Every finding proposes a task: a title and 1-2 sentences of scope — the smallest concrete action that closes it. The severity orders the work; it does not decide whether the finding is done.
+- Every finding proposes its fix: a title and 1-2 sentences of scope — the smallest concrete action that closes it. The severity orders the work; it does not decide whether the finding is done.
 - Every finding cites `file:line` (or the spec section, for a missing requirement) and states the failure scenario. A design rationale written in a report or a commit never downgrades a finding's severity.
 
 ## Report format

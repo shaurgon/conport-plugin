@@ -141,14 +141,14 @@ test('the procedure tells how to build a code label and when to split it', () =>
   assert.match(skeleton, /more than 400 entities/)
   assert.match(skeleton, /`code:<unit-name>\.<part>`/)
   assert.match(skeleton, /the portion with the unit itself goes first/)
-  assert.match(skeleton, /npx -y conport@\^0\.11\.0 arch check/)
+  assert.match(skeleton, /npx -y conport@\^0\.13\.0 arch check/)
   assert.match(skeleton, /no tool of its own builds the skeleton/i)
 })
 
 test('the skeleton step runs arch suggest --json and names the version files', () => {
   const skeleton = step(1)
   // The proposal of units, parts and links comes from git history; it submits nothing.
-  assert.match(skeleton, /`npx -y conport@\^0\.11\.0 arch suggest --json`/)
+  assert.match(skeleton, /`npx -y conport@\^0\.13\.0 arch suggest --json`/)
   assert.match(skeleton, /submits nothing/)
   // The rule of units is the CLI's own (spec doc-224 §3.4), so the list the agent
   // writes and the one `arch suggest` proposes are the same.
@@ -188,7 +188,7 @@ test('the pass reviews every document portion before it is submitted', () => {
   const pass = step(3)
   assert.match(pass, /reviewed before it is submitted/)
   assert.match(pass, /\*The review of a document portion\*/)
-  assert.match(pass, /npx -y conport@\^0\.11\.0 arch review-input/)
+  assert.match(pass, /npx -y conport@\^0\.13\.0 arch review-input/)
   // A check refused by the team's usage is gone with the check itself.
   assert.doesNotMatch(pass, /not admitted|team's usage/)
 })
@@ -258,7 +258,7 @@ test("the procedure allows the rollback only on the user's word", () => {
   const rollback = oneLine(section(text, '## Rollback'))
   assert.match(rollback, /only on the user's word/)
   // `withdraw --all` came with the CLI 0.7.3.
-  assert.match(rollback, /`npx -y conport@\^0\.11\.0 arch withdraw --all`/)
+  assert.match(rollback, /`npx -y conport@\^0\.13\.0 arch withdraw --all`/)
   assert.match(rollback, /with `--apply` it withdraws every source of the project/i)
   assert.match(rollback, /without `--apply` it removes nothing/)
   // No refusal prescribes the rollback (spec doc-197 §13), and none is tied to it.
@@ -326,7 +326,7 @@ test('the overlay resubmits the skeleton only in a project whose model has code 
   const flow = read('references/superpowers-overlay.md').split('\n## The flow\n')[1].split('\n## ')[0]
   const finish = oneLine(flow.slice(flow.search(/^\d+\. \*\*Finish\.\*\*/m)))
   const condition = finish.indexOf('In a project whose model has `code` sources')
-  const check = finish.indexOf('npx -y conport@^0.11.0 arch check')
+  const check = finish.indexOf('npx -y conport@^0.13.0 arch check')
   const debt = finish.indexOf('`code_portion_stale`')
   assert.ok(condition >= 0, 'the finish step has no condition on code sources')
   assert.ok(check > condition, 'the anchor check runs without the condition')
@@ -340,7 +340,7 @@ test('the overlay resubmits the skeleton only in a project whose model has code 
   // The procedure says the same after the backfill.
   const after = oneLine(section(procedure(), '## After the backfill'))
   assert.match(after, /`code_portion_stale`/)
-  assert.match(after, /npx -y conport@\^0\.11\.0 arch check/)
+  assert.match(after, /npx -y conport@\^0\.13\.0 arch check/)
   assert.match(after, /`--no-ff`/)
 })
 
@@ -367,8 +367,8 @@ test('the skill teaches the git facts of the anchor check and what leaves the ma
   assert.match(check, /`git_pass`/)
   // The table of commands at the head of the section names both new forms of the CLI.
   const table = model.slice(0, model.indexOf('### What goes into the model'))
-  assert.match(table,/`npx -y conport@\^0\.11\.0 arch suggest --json`/)
-  assert.match(table, /`npx -y conport@\^0\.11\.0 arch check --no-git`/)
+  assert.match(table,/`npx -y conport@\^0\.13\.0 arch suggest --json`/)
+  assert.match(table, /`npx -y conport@\^0\.13\.0 arch check --no-git`/)
 })
 
 test('the tool reference describes git_pass of arch_status and activity of the graph and the card', () => {

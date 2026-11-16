@@ -108,7 +108,7 @@ This works immediately, **no harness restart needed**.
 1. Verify connectivity with the public docs command (no key required):
 
    ```bash
-   npx -y conport@^0.11.0 docs
+   npx -y conport@^0.13.0 docs
    ```
 
    You should see a docs index (a `docs_version:` line and a list of pages). If
@@ -119,22 +119,22 @@ This works immediately, **no harness restart needed**.
    the full surface yourself:
 
    ```bash
-   npx -y conport@^0.11.0 api __schema            # every resource + operation
-   npx -y conport@^0.11.0 api tasks --help        # operations under one resource
-   npx -y conport@^0.11.0 api tasks list --help   # flags for one operation
+   npx -y conport@^0.13.0 api __schema            # every resource + operation
+   npx -y conport@^0.13.0 api tasks --help        # operations under one resource
+   npx -y conport@^0.13.0 api tasks list --help   # flags for one operation
    ```
 
    Common operations (all read `CONPORT_API_KEY` from the env):
 
    ```bash
-   npx -y conport@^0.11.0 api projects list
-   npx -y conport@^0.11.0 api tasks list --project <project_name from .conport.json>
-   npx -y conport@^0.11.0 api decisions list --project <project_name from .conport.json>
-   npx -y conport@^0.11.0 api search ...      # see: conport api search --help
+   npx -y conport@^0.13.0 api projects list
+   npx -y conport@^0.13.0 api tasks list --project <project_name from .conport.json>
+   npx -y conport@^0.13.0 api decisions list --project <project_name from .conport.json>
+   npx -y conport@^0.13.0 api search ...      # see: conport api search --help
    ```
 
-   Browse deep reference any time with `npx -y conport@^0.11.0 docs <topic>` or
-   `npx -y conport@^0.11.0 docs --search <query>`.
+   Browse deep reference any time with `npx -y conport@^0.13.0 docs <topic>` or
+   `npx -y conport@^0.13.0 docs --search <query>`.
 
 3. (Agent-framework runtimes only — Hermes, Pi, and similar multi-agent
    harnesses with persistent agent identity.) The agent-memory line is a
@@ -208,13 +208,13 @@ Notes:
      one: for a project that does not exist yet it answers
      `project_not_found`. Ask the user, and only when they say so call
      `create_project` with the same name, then call `init` again.
-   - **CLI host:** run `npx -y conport@^0.11.0 api projects list`, then list this
+   - **CLI host:** run `npx -y conport@^0.13.0 api projects list`, then list this
      project's tasks with
-     `npx -y conport@^0.11.0 api tasks list --project <project_name from .conport.json> --status TODO,IN_PROGRESS,REVIEW`
+     `npx -y conport@^0.13.0 api tasks list --project <project_name from .conport.json> --status TODO,IN_PROGRESS,REVIEW`
      — the flag takes the name as the file has it, `k7m2qx9d/<project>` included.
      A project that does not exist yet is not created by reading it: ask the
      user, and only when they say so run
-     `npx -y conport@^0.11.0 api projects create --name <project>` — for a team's project
+     `npx -y conport@^0.13.0 api projects create --name <project>` — for a team's project
      add `--team-id k7m2qx9d`; the name itself never contains `/`.
 
 2. Report the result to the user in plain language: confirm the connection

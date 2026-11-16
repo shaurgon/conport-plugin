@@ -275,7 +275,7 @@ test("the commit guard reads the settings of the command's folder", () => withSe
   const res = await bash(ctx, session, `cd ${word(other)} && git commit -m x`)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.11.0 documents upload ${file} --doc-type spec\`, then remove the file.\n`)
+    `run \`npx -y conport@^0.13.0 documents upload ${file} --doc-type spec\`, then remove the file.\n`)
 
   // The other way round: the session's overlay is on, the command's folder has none.
   const on = repo({ '.conport.json': '{"plugins": {"superpowers": true}}' })
@@ -291,20 +291,23 @@ test('old places without .conport.json give the move line', () => withSession(as
     '.claude/settings.local.json': '{"env": {"CONPORT_PROJECT_NAME": "prk7m2qx9d"}, "permissions": {}}',
     '.claude/settings.json': '{"env": {"CONPORT_PROJECT_NAME": "prk7m2qx9d"}}',
     '.superpowers/config.json': '{"conport": {"superpowers": false}}',
-    '.conport/units.json': '[]',
   })
   const move = 'ConPort settings are in the old places (CONPORT_PROJECT_NAME in the environment, ' +
     'env.CONPORT_PROJECT_NAME in .claude/settings.local.json, env.CONPORT_PROJECT_NAME in .claude/settings.json, ' +
-    `conport in .superpowers/config.json, .conport/units.json): move them to .conport.json — ${MOVE_DOC}`
+    `conport in .superpowers/config.json): move them to .conport.json — ${MOVE_DOC}`
   const lines = `ConPort project: prk7m2qx9d (from CONPORT_PROJECT_NAME)\n${move}`
   assert.deepEqual(told(await start(ctx, dir, { vars: { CONPORT_PROJECT_NAME: 'prk7m2qx9d' } })), { user: lines, agent: lines })
 
-  // One old place is enough; a settings file without the key is none.
-  const one = repo({ '.conport/units.json': '[]', '.claude/settings.json': '{"env": {"OTHER": "1"}}' })
-  const moveUnits = `ConPort settings are in the old places (.conport/units.json): move them to .conport.json — ${MOVE_DOC}`
-  assert.deepEqual(told(await start(ctx, one, { session: 's2' })), { user: moveUnits, agent: moveUnits })
+  // One old place is enough; .conport/units.json is no old place.
+  const one = repo({ '.conport/units.json': '[]', '.claude/settings.json': '{"env": {"CONPORT_PROJECT_NAME": "prk7m2qx9d"}}' })
+  const moveOne = `ConPort settings are in the old places (env.CONPORT_PROJECT_NAME in .claude/settings.json): move them to .conport.json — ${MOVE_DOC}`
+  assert.deepEqual(told(await start(ctx, one, { session: 's2' })), { user: moveOne, agent: moveOne })
+  // .conport/units.json alone, beside a settings file without the key: nothing is said.
+  const units = repo({ '.conport/units.json': '[]', '.claude/settings.json': '{"env": {"OTHER": "1"}}' })
+  assert.deepEqual(told(await start(ctx, units, { session: 's3' })), { user: null, agent: null })
+  assert.deepEqual(findOldPlaces({ root: units, mainRoot: null, env: {} }), [])
   // No old place, no .conport.json: nothing is said.
-  assert.deepEqual(told(await start(ctx, repo(), { session: 's3' })), { user: null, agent: null })
+  assert.deepEqual(told(await start(ctx, repo(), { session: 's4' })), { user: null, agent: null })
 
   // The old overlay flag counts in the main worktree too.
   const main = isolatedDir({ '.superpowers/config.json': '{"conport": {}}' })
@@ -314,24 +317,22 @@ test('old places without .conport.json give the move line', () => withSession(as
   assert.equal(oldSettingsLine({ hasShared: false, places: [] }), null)
 }))
 
-test('old personal places beside .conport.json give the leftover line without units.json', () => withSession(async (ctx) => {
+test('old personal places beside .conport.json give the leftover line', () => withSession(async (ctx) => {
   const dir = repo({
     '.conport.json': '{"project_name": "prk7m2qx9d"}',
     '.claude/settings.local.json': '{"env": {"CONPORT_PROJECT_NAME": "prk7m2qx9d"}}',
     '.superpowers/config.json': '{"conport": {"superpowers": false}}',
-    '.conport/units.json': '[]',
   })
   const lines = 'ConPort project: prk7m2qx9d (from .conport.json)\n' +
     'Old ConPort settings left (env.CONPORT_PROJECT_NAME in .claude/settings.local.json, ' +
     `conport in .superpowers/config.json): remove them — ${MOVE_DOC}`
   assert.deepEqual(told(await start(ctx, dir, { vars: { CONPORT_PROJECT_NAME: 'prk7m2qx9d' } })), { user: lines, agent: lines })
-  assert.equal(oldSettingsLine({ hasShared: true, places: ['CONPORT_PROJECT_NAME in the environment', '.conport/units.json'] }), null)
+  assert.equal(oldSettingsLine({ hasShared: true, places: ['CONPORT_PROJECT_NAME in the environment'] }), null)
 }))
 
 test('after the move only the project line is said', () => withSession(async (ctx) => {
   const dir = repo({
     '.conport.json': '{"$schema": "https://conport.app/schema/conport.json", "project_name": "prk7m2qx9d", "units": []}',
-    '.conport/units.json': '[]',
     '.claude/settings.local.json': '{"permissions": {"allow": []}}',
   })
   const line = 'ConPort project: prk7m2qx9d (from .conport.json)'

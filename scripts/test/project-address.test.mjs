@@ -13,7 +13,6 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileS
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { projectAddress } from '../../workflows/wf-helper.mjs'
 import { isolatedDir, isolatedEnv } from './support/isolated.mjs'
 import { realGit } from './support/real-git.mjs'
 
@@ -323,15 +322,7 @@ test('a handle in CONPORT_PROJECT_NAME is the path segment, with no team header'
   ])
 }))
 
-// The workflow helper cannot import the hooks' module, so the rule lives in
-// two places; the same names must come out the same from both.
-test('the hooks and the workflow helper split a name by one rule', () => {
-  const names = ['my-proj', '99', ' my-proj ', 'pers/my-proj', 'k7m2qx9d/my-proj',
-    '', '   ', '/', '/my-proj', 'pers/', 'a/b/c', 'a//b', undefined, null]
-  for (const name of names) {
-    const hook = parseProject(name)
-    assert.deepEqual(projectAddress(name), hook && { team: hook.team, project: hook.project }, JSON.stringify(name))
-  }
+test('the hooks split a team/project name and refuse a deeper path', () => {
   assert.deepEqual(parseProject('k7m2qx9d/my-proj'), { raw: 'k7m2qx9d/my-proj', team: 'k7m2qx9d', project: 'my-proj' })
   assert.equal(parseProject('a/b/c'), null)
 })

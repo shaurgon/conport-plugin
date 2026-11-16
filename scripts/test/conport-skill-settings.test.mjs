@@ -97,9 +97,11 @@ test('the skill sends old places to the move document', () => {
   assert.ok(text.includes(`\`Old ConPort settings left (<list>): remove them — ${MOVE_DOC}\``))
   // Agents without hooks look at the same places themselves.
   const own = flat(WITHOUT_HOOKS)
-  for (const place of ['`.claude/settings.local.json`', '`.claude/settings.json`', '`.superpowers/config.json`', '`.conport/units.json`']) {
+  for (const place of ['`.claude/settings.local.json`', '`.claude/settings.json`', '`.superpowers/config.json`']) {
     assert.ok(own.includes(place), `the rule for agents without hooks does not check ${place}`)
   }
+  // `units` stays a valid key, but no ConPort component reads it: its old file is no old place.
+  assert.ok(!text.includes('.conport/units.json'), 'step 1 names .conport/units.json as an old place')
   assert.ok(own.includes(MOVE_DOC), 'the rule for agents without hooks does not name the move document')
   // The document is carried out before the user's task, both ways.
   assert.match(text, /carry out the document [^.]*before the user's task/)
@@ -164,10 +166,10 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
       if (patch === undefined || version[0] * 1e6 + version[1] * 1e3 + version[2] < 11 * 1e3) below.push(found[0])
     }
     assert.deepEqual(below, [], `${name} runs a CLI that does not read .conport.json`)
-    assert.ok(body.includes('npx -y conport@^0.11.0 '), `${name} runs no npx -y conport@^0.11.0`)
+    assert.ok(body.includes('npx -y conport@^0.13.0 '), `${name} runs no npx -y conport@^0.13.0`)
   }
   const fails = flat(read('references/superpowers-overlay.md').split('## When the CLI fails')[1])
-  assert.match(fails, /a `npx -y conport@\^0\.11\.0 …` command fails/)
+  assert.match(fails, /a `npx -y conport@\^0\.13\.0 …` command fails/)
 })
 
 // The entry ships in 24.0.0; before the release step it sits under Unreleased.
@@ -187,7 +189,6 @@ test('the changelog names the settings move in the release that ships it', () =>
     '`plugins.superpowers`',
     '`.superpowers/config.json`',
     '`units`',
-    '`.conport/units.json`',
     MOVE_DOC,
     'session',
   ]) {

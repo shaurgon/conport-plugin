@@ -90,20 +90,18 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 | `recipes` | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage`, `render_current_architecture` |
 | `routine` | `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 
-## What each skill and workflow needs
+## What each part of the plugin needs
 
-The skills, the workflows and the hooks of the plugin name tools by name. A
-connection narrowed below the groups of those tools does not list them, so
-connect with the profile of what you run:
+The skills and the hooks of the plugin name tools by name. A connection
+narrowed below the groups of those tools does not list them, so connect with
+the profile of what you run:
 
 | What you run | Profile |
 |---|---|
 | Skill `conport` | `full` |
 | Skill `conport-routine` | `core,tasks,milestones,agenda,routine` |
 | Skill `conport-roadmap` | `tasks,milestones` |
-| Skill `superpowers-conport` | `core,milestones,links` |
-| Workflow `task` | `core,tasks,milestones,documents,links` |
-| Workflow `epic` | `core,tasks,milestones,documents,arch` |
+| Skill `superpowers-conport` | `core,tasks,milestones,links` |
 | Hooks | `core,tasks,milestones` |
 
 Each profile is the fewest groups that list every tool the files of that part

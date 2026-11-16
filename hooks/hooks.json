@@ -19,6 +19,17 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/check-command.js"
           }
         ]
+      },
+      {
+        "matcher": "^mcp__.*[Cc]on[Pp]ort.*__(add_task|update_task)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/guard-epic-growth.js",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
       }
     ],
     "PostToolUse": [

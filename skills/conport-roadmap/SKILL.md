@@ -2,7 +2,7 @@
 name: conport-roadmap
 description: "Use when about to take a task into work, file an epic or a task, move a task between epics, call a task waiting, close an epic or a milestone, talk about a release, a version bump or a deploy, and before every report to the user with open tasks. The ConPort roadmap rules — milestones, the release point, the make-up of epics, work after a release, waiting on someone else's work. Requires the conport skill for base tool discipline."
 metadata:
-  version: 24.0.2
+  version: 25.0.0
 ---
 
 # ConPort Roadmap
@@ -75,8 +75,13 @@ which release.
    among the children of its epic; outside its epic it has no precedence — it
    lifts neither its epic nor itself over the milestone order or over other
    epics, and a Bug without an epic ranks by its priority like an ordinary
-   task. File confirmed defects with `kind='bug'`, polish and new work with
-   `kind='task'`.
+   task. File a Bug (`kind='bug'`) only for a confirmed behaviour defect found
+   outside the fix rounds of an epic that has a plan; new work is
+   `kind='task'`. A finding inside the epic's goal is a fix round, never a
+   task; one outside the goal goes to the tails epic of the release, where a
+   defect is a Bug. A new task in an epic that has a plan is the exception of
+   the conport skill's BACKLOG DISCIPLINE: its description starts with
+   `Why not a fix round:` and the person approves it.
 6. **Attachment.** Every epic is attached to a milestone (`milestone_id`), and
    the milestone is chosen by one question: it ships in a release — that
    release's milestone; it is the tails epic of a release — the milestone right
@@ -126,8 +131,8 @@ which release.
   milestone. It holds no waiting work and is never closed as CANCELLED because
   it waits. Its title is `Tails of release <title of the release milestone>`,
   written literally and never translated: look for an epic with that title
-  before filing one, so a session and the epic workflow never start two. It is
-  filed with priority 1. Inspect the next open milestone after the release: if
+  before filing one, so two sessions never start two. It is filed with
+  priority 1. Inspect the next open milestone after the release: if
   it is a release, find the oldest open tails epic with the exact title in
   that milestone, or create it there; otherwise find or create it without a
   milestone, file the work, and ask the user which milestone it goes to.
@@ -140,10 +145,7 @@ which release.
   unit under `## Unreleased`. The version is bumped once, at the release step,
   after every epic of the release milestone has merged — that bump is the
   freeze. Which units carry a version and how each is bumped follows the
-  project's own rules (its instructions and memory). The release step is not
-  run through `/conport:task` or `/conport:epic`: they refuse a version that
-  differs from the published default branch, so run them only after the
-  release is pushed.
+  project's own rules (its instructions and memory).
 - A release milestone closes only after the actual release, with the version
   in the resolution (`update_milestone` with `status='DONE'` and
   `resolution`). "Every epic is closed" is not yet a release.
@@ -199,5 +201,5 @@ The number of open children is recounted after every close and every move.
 | "I'll make an ordinary milestone for the work and a release point after it" | The preferred shape is one release milestone with its epics. Two milestones only on the user's word. |
 | "The waiting epic spoils the release picture — I'll detach it or cancel the waiting milestone" | The waiting and backlog milestones are standing lists; their epics belong there. Leave them. |
 | "I'll attach the measurement to the release milestone, it is about this release" | Waiting work in a release milestone cannot close before the release. The waiting milestone only. |
-| "The epic is ready, here are N findings for the report" | The findings are tasks of this epic — an ordinary one past the growth ceiling goes to the tails epic of the release; the epic is not ready, the work goes on. |
+| "The epic is ready, here are N findings for the report" | A finding is fixed, not filed. Each one goes into a fix round — of its task, or of the epic's final-review task; one outside the epic's goal goes to the tails epic of the release. The epic is not ready, the work goes on. |
 | "This is after the release, I'll put it into the next milestone or the backlog" | A finding or a check right after the push — into the tails epic of the release, taken first after the push. Work that waits on someone else, a date or a measurement — the waiting milestone. |

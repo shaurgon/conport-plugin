@@ -2,15 +2,18 @@
 // UserPromptSubmit: restore context on first prompt, remind to save every N
 // messages, and surface the project's rotting epic tails — only when their
 // composition changed since this session last saw them, and never on the
-// first prompt, where init prints the same tails itself.
+// first prompt, where init prints the same tails itself. Before all of that,
+// a message that is exactly the consent phrase records the person's consent
+// to grow an epic that has a plan.
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 const {
-  CONPORT_URL, dataDir, detectProject, projectRoute,
+  CONPORT_URL, dataDir, detectProject, parseProject, projectRoute,
   authHeader, request, readStdin, fingerprintChanged, epicTailsCachePath,
 } = require('./_common.js');
+const { parseConsentPhrase, writeConsent, isHandle, withinBudget } = require('./epic-growth-consent.js');
 
 const MESSAGES_BEFORE_REMINDER = 5;
 const REMINDER_COOLDOWN_MINUTES = 15;
@@ -21,6 +24,7 @@ const TAILS_CACHE_TTL_MS = 10 * 60 * 1000;
 // transient outage or a project that only just got created recovers fast.
 const TAILS_NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000;
 const TAILS_REQUEST_TIMEOUT_MS = 500;
+const CONSENT_LOOKUP_TIMEOUT_MS = 3000;
 
 function sessionFlagPath(sessionId) {
   const dir = path.join(dataDir(), 'session_logs');
@@ -176,12 +180,67 @@ function tailsChanged(sessionId, lines) {
   return fingerprintChanged('tails_shown', sessionId, lines.join('\n'));
 }
 
+// The project a consent is kept under: { project } with the handle, or
+// { missing: true } when the server says there is no such project. A name or
+// `team/project` is looked up (GET /projects/<name>, the team as a header). A
+// 404 is an answer: a consent under that name could never match. Without an
+// answer — no key, a network failure, the budget spent, any other status, no
+// handle in the body — the project is kept as named, and only a call whose
+// project is answered under that same spelling matches it.
+async function consentProject(raw) {
+  if (isHandle(raw)) return { project: raw };
+  const project = parseProject(raw);
+  const auth = authHeader();
+  if (!project || !auth.Authorization) return { project: raw };
+  try {
+    const route = projectRoute(project);
+    const res = await withinBudget(request('GET', `${CONPORT_URL}/api/v1/projects/${route.segment}`,
+      { headers: { ...auth, ...route.headers }, timeoutMs: CONSENT_LOOKUP_TIMEOUT_MS }),
+    CONSENT_LOOKUP_TIMEOUT_MS);
+    if (res && res.status === 404) return { missing: true };
+    if (!res || res.status !== 200) return { project: raw };
+    const handle = JSON.parse(res.body).handle;
+    return { project: isHandle(handle) ? handle.toLowerCase() : raw };
+  } catch (_) {
+    return { project: raw };
+  }
+}
+
+// The context line for a message that is the consent phrase, or null. The
+// phrase works in a session with no project too: then only its full form is
+// taken, and the short one is answered with the full form to say.
+async function recordConsent(input) {
+  const text = typeof input.prompt === 'string' ? input.prompt : '';
+  let consent = parseConsentPhrase(text, null);
+  if (!consent) return null;
+  if (consent.needsProject) consent = parseConsentPhrase(text, detectProject(input));
+  if (consent.needsProject) return `say: allow epic ${consent.epic} in <project>`;
+  const kept = await consentProject(consent.project);
+  if (kept.missing) {
+    return `consent not recorded: no project "${consent.project}"; ` +
+      `say: allow epic ${consent.epic} in <project handle>`;
+  }
+  try {
+    writeConsent({ project: kept.project, epic: consent.epic });
+  } catch (err) {
+    // The phrase is the only way to give the consent: a failed write is said.
+    const reason = (err && (err.code || err.name)) || 'error';
+    return `consent for epic task-${consent.epic} not recorded: ${reason}`;
+  }
+  return `consent for epic task-${consent.epic} recorded`;
+}
+
 async function main() {
   let input;
   try { input = JSON.parse(await readStdin()); } catch (_) { process.exit(0); }
   const sessionId = input.session_id || 'unknown';
 
   const messages = [];
+  try {
+    const consentLine = await recordConsent(input);
+    if (consentLine) messages.push(consentLine);
+  } catch (_) {}
+
   const restoring = shouldRestoreContext(sessionId);
   if (restoring) {
     messages.push('ConPort: run mcp__conport__init() before responding.');

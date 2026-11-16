@@ -1,8 +1,8 @@
 # Backlog discipline
 
 The rules behind the *BACKLOG DISCIPLINE* section of the conport skill: what
-goes into ConPort, when a piece of work becomes a task, and how an epic is kept
-from growing without end. The roadmap itself — milestones, the release point,
+goes into ConPort, when a piece of work gets a task, what a finding becomes,
+and how an epic is kept from growing without end. The roadmap itself — milestones, the release point,
 what waits — is the **conport-roadmap** skill.
 
 ## What to record
@@ -16,10 +16,12 @@ what is already saved — search before writing.
 ## A decision with a list of work spawns tasks
 
 When the body of a `sync_decision` holds a list of things to do ("to remove:
-…", "to migrate: …", "remaining: …"), each item becomes a task in the same
+…", "to migrate: …", "remaining: …"), each item gets its own task in the same
 message — `add_task`, under an epic when there are two or more — and the task
-numbers are written into the decision (`update_decision`). A list in prose is
-read by no mechanism; a decision is not a place to store work.
+numbers are written into the decision (`update_decision`). Under an epic that
+has a plan, each such task is the exception of *A new task in an epic that has
+a plan* below. A list in prose is read by no mechanism; a decision is not a
+place to store work.
 
 This holds during a design session too. The tasks that implement a spec wait
 for its plan; the tasks that remove something or carry out a consequence of an
@@ -50,56 +52,116 @@ design: it is one task, and the design creates the epic with the spec — see th
 Planning rows *Work that needs a design, before the design* and *The spec is
 approved* of the conport skill.
 
-## Findings: check first, then file, then do
+## Findings: a finding is fixed, not filed
 
-A finding from a review, a gap hunt or your own work becomes a task after it
-is checked, not instead of checking it. "Cannot check it" or "only if X" is
-neither a reason to skip filing nor a reason to file blind: the check is the
-diagnosis. Then either file a task for a confirmed defect, with its acceptance
-criterion and `kind='bug'`, or write one line in the resolution of the task
-the finding came from. A symptom is not a task; a task is filed for an established cause.
+A finding from a review, a gap hunt or your own work is checked before
+anything is done with it. "Cannot check it" or "only if X" is no reason to skip
+it: the check is the diagnosis. A symptom is not a finding; the fix goes to an
+established cause.
 
-What is filed is done right away. The backlog shrinks by doing what was found,
-not by refusing to file it; a filed task is not deleted later as speculative
-and is not left hanging.
+A finding is fixed, not filed. Where each one goes:
 
-**An epic is not ready while a finding of it is open.** Every finding of the
-epic's work that is not fixed in the same pass becomes a task of the current
-epic and is done before the epic is declared ready:
+- A task review's finding: a fix round of that task by its implementer, every
+  finding at once (a Minor outside the task's diff is dropped). Important and
+  Minor go together; nothing is sorted into "later".
+- A final review's or end gap hunt's finding, one in the code of a closed task
+  included: one fix round of the epic's final-review task, one fixer dispatch
+  with the whole list, recorded in that task's journal. That task is the last
+  section of the plan, *Final review*, and the session that leads the epic
+  runs it.
+- A gap hunt of the spec: an edit of the spec.
+- A merge, a gate red after a merge, a re-submission, a manifest or skill
+  edit: done, never filed.
+- A finding outside the epic's goal: the tails epic of the release.
 
-| Source | A task of the current epic, done before the epic is ready |
-|---|---|
-| Gap hunt | Blocker, Should-fix, Note — every severity |
-| Code review, final review | Critical, Important, and a Minor not fixed in the same pass |
-| Anything else | A confirmed defect of behaviour |
-
-The *Epic growth ceiling* below bounds this table: a behaviour defect always
-stays in this epic; an ordinary finding past the growth ceiling goes to the
-tails epic of the release, and readiness does not wait for it.
-
-A Minor inside the diff under review is fixed by its author in the same pass;
-one left open after that pass becomes a task like any other finding. A Minor
-outside that diff — dead code nearby, style — is not a finding of that review.
 A Note is a question: when only the user can answer it, ask the user at once,
-and the answer becomes the task. A finding is never kept aside for the end of
-the run: the report and the readiness entry name the task numbers made from
-the findings, not the findings themselves.
+and the answer goes into the same fix round. A finding is never kept aside for
+the end of the run.
 
-A filed finding goes to an executor as the next action: a task nobody runs is
-the same list in another place. A report "after the epic I found N problems"
-as text, with no task numbers and no work started, is forbidden — those
-findings are tasks of this epic, or past the growth ceiling of the tails epic
-of the release, and the epic is not ready while one of its own is open.
+**An epic is not ready while a finding of it is open.** A finding goes to its
+fix round as the next action: a list nobody runs is the same list in another
+place. A report "after the epic I found N problems" as text, with no work
+started, is forbidden — those findings are fix rounds of this epic, and the
+epic is not ready while one is open.
+
+**A new task in an epic that has a plan is the exception: only new work the
+goal needs that no plan task and no fix round can hold.** Its description
+starts with `Why not a fix round:`, and the person approves each one (in Claude
+Code the plugin's hook asks for it; elsewhere ask in one line and wait for an
+explicit yes). The server still bounds what the epic takes after the plan
+(`epic_growth_ceiling`): on that refusal execute the calls in `suggestions`.
+How the hook holds it and how the person says yes: *A new task in an epic that
+has a plan* below.
+
+**What a Bug is.** File a Bug (`kind='bug'`) only for a confirmed behaviour
+defect found outside the fix rounds of an epic that has a plan; new work is
+`kind='task'`. That is a defect found outside an epic, in an epic without a
+plan, a plan section labelled `kind: bug`, or an approved exception. A finding
+inside the epic's goal is never a Bug: it is fixed in its fix round, or in the
+spec for a gap hunt of the spec. One outside the goal goes to the tails epic of
+the release, where a defect is a Bug. A defect is the work not doing what its
+spec, plan or contract says.
 
 ## Depth: one level
 
-A task filed from a finding is reviewed on its own diff, and that review
-reports every severity: its author fixes all of it, Minor included, in the
-task's own fix round, before the task merges. Nothing that review finds is
-filed as a new task, and nothing is dropped. Only a defect of behaviour found
-outside that task's diff becomes a new task — never polish. This is what keeps
-the rule above from looping: "the reviewer found nothing" never converges — the
-stronger the reviewer, the more it finds.
+The re-review after a fix round checks only that round's diff, and what it
+finds goes into the next fix round of the same task — nothing from it is filed
+or dropped. After the third failed fix round the task is BLOCKED, the finding
+stays in its journal, the epic is not ready, and the user is told one action.
+Work that waits on someone else (another party's service, a date, a
+measurement window) goes to an epic of the waiting milestone; a check after the
+deploy goes to the tails epic of the release. This is what keeps the rule from
+looping: "the reviewer found nothing" never converges — the stronger the
+reviewer, the more it finds.
+
+## A new task in an epic that has a plan
+
+The plan is the make-up of the epic. A new task in it is the exception of
+*Findings* above, and the person approves each one.
+
+**What the hook holds.** In Claude Code the plugin's hook stands before
+`add_task` and `update_task` of the ConPort MCP server. It holds only an epic
+that has a plan: a plan started (`epic_progress.plan_started`) or a plan
+document linked to the epic (`epic_progress.plan_document`). An epic without a
+plan is a container, and a direct request "add a task to the epic" passes. The
+tails epic of the release is not held: it is where a finding outside the goal
+goes. It holds `add_task` with a parent epic, and an `update_task` that
+attaches a task with no epic to an epic; moving a task between epics is free.
+
+**Its refusals.** Each names one action:
+
+| Refusal | When | The one action |
+|---|---|---|
+| R1 | The description does not start with `Why not a fix round:` | A finding is a fix round of the task it came from, or of the epic's final-review task (or, in an epic without one, of the task whose code it is in); one outside the goal goes to the tails epic of the release. Only for new work the goal needs: start the description with `Why not a fix round:` and call again. |
+| R2 | The prefix is there, the person has not said yes | Ask the person in a plain message, not with a question tool, in one line why this is not a fix round and to reply `allow epic <N> in <project>`; then call again — a refused call needs a new yes. |
+| R3 | The call comes from a subagent | Put the task you would file, with its `Why not a fix round:` line, into your answer; the session that dispatched you decides. |
+| R4 | ConPort did not say whether the epic has a plan (no answer, an error, an answer without the fields) | Call again in a minute. The cause is a line of `epic-growth-guard.log` in the plugin's data folder. |
+
+**The person's yes.** The person replies with a message that is exactly
+`allow epic <N> in <project>` (case and the spaces around it do not matter) —
+or `allow epic <N>` when the session has a project. `<project>` is the handle,
+the name or `team/project`; R2 prints the form with the handle. The hook
+records the yes for that project and that epic; the call it lets through
+removes it. One yes is one task, and it is spent before the server answers: a
+refused call needs a new yes. The reply is the only way to give it. Only the
+person gives it: never write that reply or the consent file yourself, by any
+tool — the plugin's command guard refuses a Bash command that names the
+consent file.
+
+**The switch.** `CONPORT_EPIC_GROWTH_GUARD=off` in the environment of Claude
+Code turns the hook off: it passes every call without asking ConPort. Any other
+value, or none, leaves it on. Turning it off removes only the hook: the text of
+the rule and the server ceiling stay. It is the person's decision; a refusal
+never names it.
+
+**What the hook does not see.** Hosts without hooks (Cursor, Codex, other
+agents), `conport api tasks create` with a parent epic run through the shell,
+and the switch turned off: there the rule is this text and the server ceiling —
+ask the person in one line in the chat and wait for an explicit yes before the
+call. `plan import` runs over REST and passes no hook: after the plan has
+started it refuses a new section without the marker of its task, so an
+approved exception is filed with `add_task` first and its marker then goes
+under the section's heading.
 
 ## A change to behaviour a spec describes changes the spec
 
@@ -119,41 +181,26 @@ When the work has no spec, this rule does not apply.
 
 ## Epic growth ceiling
 
-Where the server ceiling applies, an epic takes max(3, floor(0.3 × plan tasks))
-ordinary tasks added after the plan; the next ordinary task goes to the
-tails epic of the release. A plan of 10 tasks: 3 added ordinary tasks stay
-in the epic, the 4th goes to the tails epic of the release. A plan of 20
-tasks: 6 added ordinary tasks stay in the epic, the 7th goes to the tails
-epic of the release.
+Where the ceiling applies, the server takes at most
+max(3, floor(0.3 × plan tasks)) ordinary tasks into an epic after its plan,
+approved exceptions included; a Bug never counts. A plan of 10 tasks: the
+server takes 3 added ordinary tasks and refuses the 4th. A plan of 20 tasks:
+the server takes 6 added ordinary tasks and refuses the 7th. The ceiling bounds
+the exceptions of *A new task in an epic that has a plan*; it is no allowance
+for filing findings, which are fix rounds.
 
-- **A defect never counts and always stays in this epic: a review's Critical
-  and Important, a gap hunt's Blocker and Should-fix, a confirmed behaviour
-  defect.** A defect — the work does not do what its spec, plan or contract
-  says, or the goal is not reached — is fixed in the epic whatever the count; a
-  Should-fix is a defect, never polish. File these with `kind='bug'`.
-- **Polish from findings counts: a review's Minor left after the pass, a task
-  from a Note's answer.** Style, a duplicate, a missing test left as a Minor is
-  an ordinary task, and so is new scope: a new capability, a new step, a new
-  consumer. File polish and new work with `kind='task'`. The `kind` field,
-  not whether the task came from a finding, determines the count.
-  An epic is not polished without end.
-- **Past the ceiling, the tails epic of the release.** It is the one tails
-  epic of the release described under *The release epic is frozen at the
-  version bump*: attached to the milestone right after the release and taken
-  into work first after the push; there is no second tails epic per epic. The
-  work is neither added to this epic nor dropped, the user is not asked whether
-  to go on in this epic, and the epic's readiness does not wait for it.
-- The server counts the ceiling itself. On `epic_growth_ceiling`, take one
-  action: execute the call in `suggestions[].call`. The tails epic is the one
-  named by that refusal; do not calculate the ceiling or pick another epic.
-- A report of the epic's progress names the ordinary tasks added (counted) and
-  the defect fixes (not counted) as two numbers. Read `epic_progress.plan_tasks`,
-  `ordinary_added`, `bugs` and `growth_ceiling`. The server summary with a ceiling
-  is "ordinary after plan N of C, bugs B".
-- The ceiling is `epic_progress.growth_ceiling`; `null` means no ceiling (the
-  epic is outside its scope). Never count locally; on `epic_growth_ceiling`,
-  execute the ordered calls in `suggestions`. `ask_user_milestone` is present
-  whenever the target tails epic has no milestone, whether found or created.
+- The ceiling is the server's. Never recount it locally: read
+  `epic_progress.plan_tasks`, `ordinary_added`, `bugs` and `growth_ceiling`;
+  `null` means no ceiling (the epic is outside its scope). The server summary
+  with a ceiling is "ordinary after plan N of C, bugs B", and a report of the
+  epic's progress gives the ordinary tasks added and the Bugs as two numbers.
+- On `epic_growth_ceiling`, take one action: execute the call in
+  `suggestions[].call`, then the rest of the ordered calls in `suggestions`.
+  The tails epic is the one named by that refusal — the one tails epic of the
+  release described under *The release epic is frozen at the version bump*;
+  there is no second tails epic per epic. Do not pick another epic.
+  `ask_user_milestone` is present whenever the target tails epic has no
+  milestone, whether found or created.
 
 ## Epic progress is counted by its children
 
@@ -178,10 +225,10 @@ The make-up of a release epic is frozen at the moment the version is bumped.
   milestone has merged: `## Unreleased` becomes the number. That one bump is the freeze.
   Parallel epics of one milestone that each bumped would ship diverging
   numbers.
-- Before the freeze, the findings of the epic (see above: every severity) go
-  into this epic as tasks and are closed before the bump: a behaviour defect
-  always stays in this epic; an ordinary finding past the growth ceiling goes
-  to the tails epic of the release, and readiness does not wait for it.
+- Before the freeze the rule of *Findings* above holds. A finding is fixed,
+  not filed. The findings of the epic go to their fix rounds and are closed
+  before the bump; one outside the epic's goal goes to the tails epic of the
+  release, and readiness does not wait for it.
 - A finding made after the freeze goes into the tails epic of the release as a
   task — not into the release epic, not into an epic of a later milestone with
   work of its own, not into a report line — except a defect in code that is
@@ -204,12 +251,11 @@ a date — and is taken into work first after the push, before any other
 milestone. It holds no waiting work, is never held waiting and never closed as
 CANCELLED because it waits. Its title is `Tails of release <title of the
 release milestone>`, written literally and never translated: look for an epic
-with that title before filing one, so a session and the epic workflow never
-start two. It is filed with priority 1. Inspect the next open milestone after
-the release: if it is a release, find the oldest open tails epic with the
-exact title in that milestone, or create it there; otherwise find or create it
-without a milestone, file the work, and ask the user which milestone it goes
-to.
+with that title before filing one, so two sessions never start two. It is
+filed with priority 1. Inspect the next open milestone after the release: if
+it is a release, find the oldest open tails epic with the exact title in that
+milestone, or create it there; otherwise find or create it without a
+milestone, file the work, and ask the user which milestone it goes to.
 
 "An epic closes only with its children closed" applies to the frozen make-up.
 Without a freeze, a tail becomes a child, the epic cannot close, there is no
