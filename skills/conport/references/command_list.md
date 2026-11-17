@@ -641,6 +641,8 @@ or reopening a cancelled ordinary task through `update_task`.
 **Plan import refusals:** `plan import` refuses before it writes anything:
 - `plan_missing_final_review`: a first import of a plan whose last section is not `Final review` — add a last section `### Task N: Final review` and import again.
 - `plan_section_needs_task`: a new section without a task marker in an epic whose plan has started — file the task with `add_task` first (the person approves it), then put its marker under the heading.
+- `spec_has_epic`: an import with `--spec` and no `--epic` of a spec that already clarifies an open epic — import again with the `--epic <id>` the refusal names.
+- `milestone_required`: an import that would create a new epic without `--milestone` — ask the person which milestone the epic goes to and import again with `--milestone <id>`.
 
 **Refusals:** the hierarchy invariants come back as structured errors:
 `parent_not_epic` (with `suggestions` naming the promote / attach call to make
@@ -1434,7 +1436,7 @@ document from `list_blocks`. To change a portion, read it (`arch_source`),
 edit it and submit it again.
 
 A document portion is reviewed before every submission: the reviewer
-(`conport:model-reviewer`, or the prompt `npx -y conport@^0.13.0 agent model-reviewer`
+(`conport:model-reviewer`, or the prompt `npx -y conport@^0.14.0 agent model-reviewer`
 in a separate process) compares the draft with the document, the author
 resolves each finding as `fixed` or `dismissed`, and the report goes with the
 portion in `review`. The server stores the report, trusts it and runs no check
@@ -1445,18 +1447,18 @@ A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.13.0 arch submit <file.json>`,
-`npx -y conport@^0.13.0 arch withdraw <source>`,
-`npx -y conport@^0.13.0 arch source <source> [-o <file>]` (printed, the portion
+`npx -y conport@^0.14.0 arch submit <file.json>`,
+`npx -y conport@^0.14.0 arch withdraw <source>`,
+`npx -y conport@^0.14.0 arch source <source> [-o <file>]` (printed, the portion
 comes with `review` as from `arch_source`; the file of `-o` holds it without
 `review`) — and three things no tool
-does: `npx -y conport@^0.13.0 arch check` in the repository root checks the
+does: `npx -y conport@^0.14.0 arch check` in the repository root checks the
 anchors of the model against the code there and sends the outcome, and on
 `main` or `master` the facts of git as well (`--no-git` sends none of them);
-`npx -y conport@^0.13.0 arch suggest --json` proposes the units and their
+`npx -y conport@^0.14.0 arch suggest --json` proposes the units and their
 parts from git history and, with a `codegraph` index, the imports between the
 parts, and submits nothing; and
-`npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
+`npx -y conport@^0.14.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
 writes the reviewer's input directory — the document, its blocks, the draft,
 the names and scenarios of the model, the previous report — outside the
 working tree. No code, no commit message and no author leaves the machine;
@@ -1475,7 +1477,7 @@ portions. The procedure gives every document its role with `update_document`
 (`in_progress`, `completed`, `declined`), and reads the active decisions
 without an entity from `arch_status` while the backfill runs
 (`unlinked_decisions`, page by page with `unlinked_after`).
-`npx -y conport@^0.13.0 arch withdraw --all` reports every source of the project
+`npx -y conport@^0.14.0 arch withdraw --all` reports every source of the project
 and removes nothing; with `--apply` it withdraws them all, documents and code,
 and returns the backfill to its start. It runs only on the user's word.
 
@@ -1691,7 +1693,15 @@ anchor check found, built — a `path` or `symbol` anchor found) and `maturity`
 done tasks of the epics of the document that introduced it).
 
 `composition` shows the units, external systems, persons and stores without
-an owner, and the parts of the units in `expand`; `neighbourhood` shows
+an owner, and the parts of the units in `expand`; the relations of the parts
+of a collapsed unit are raised onto it (`lifted`, `count`). With `full` it
+shows every entity of the model of any state with its `parent_id` and every
+relation of any state, none raised. Each entity of `composition` carries
+`introduced_by` — the source of its earliest `introduced` claim (`source`
+`doc-N` or `code:<label>`, `document_id`, `title`), documents by age first,
+then the code by label — or null. Each relation carries `count_active`: of
+the relations it stands for, those active between two active entities (1 or
+0 on a relation not raised). `neighbourhood` shows
 `entity` and what is related to it `depth` steps away; `contribution` shows
 what one to three `documents` claim; `data` shows the data entities and their
 references, under `unit` when it is given. `graph` takes no other parameter:
@@ -1719,11 +1729,13 @@ mcp__conport__arch_get({
 | depth | integer | no | neighbourhood: 1 or 2 (default 1) |
 | documents | integer[] | no | contribution: one to three document numbers |
 | unit | integer | no | data: the unit to keep to |
+| full | boolean | no | composition: every entity and relation of the model, of any state, none raised (default false) |
 
 **Returns:** `view`, `entities` (`id`, `type`, `name`, `technologies`,
 `state`, `stage`, `maturity`, `parent_id`, `expandable`, `expanded`,
-`documents`), `relations` (`id`, `type`, `source_id`, `target_id`, `label`,
-`state`, `weight`, `lifted`, `count`, `documents`); `graph` also
+`documents`; `composition` also `introduced_by`), `relations` (`id`,
+`type`, `source_id`, `target_id`, `label`, `state`, `weight`, `lifted`,
+`count`, `count_active`, `documents`); `graph` also
 `decisions` (`id`, `summary`, `entity_ids`), `truncated`,
 `decisions_omitted`, `hint` and `activity_as_of` (the `head_at` of the latest
 anchor check with facts of git, or null), each of its entities `activity`
@@ -1737,7 +1749,8 @@ progress, blocked and TODO) over their tasks and bugs; null without an open
 epic. The other views carry neither `activity` nor `progress`.
 
 **Refusals:** `entity_not_found`, `unit_not_found`, `invalid_depth`,
-`too_many_documents`, `document_has_no_portion`.
+`too_many_documents`, `document_has_no_portion`, `full_with_expand` (`full`
+with `expand`), `full_only_composition` (`full` with another view).
 
 ### arch_entity
 

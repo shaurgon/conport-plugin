@@ -1,5 +1,24 @@
 # conport changelog
 
+## 25.1.0
+
+**Every command the plugin prescribes runs `npx -y conport@^0.14.0`.** The skills, the install pages, the hooks' hints and the server's own hints name the release that brings `plan import --spec --milestone`, `sdd list`, `prompt idea|spec` and `proposal`; an older cached CLI is not taken.
+
+The design no longer creates an epic: the approved spec is uploaded with the tag `awaiting-plan`, linked to its idea task with `clarifies`, and the idea is closed; `plan import --spec doc-N --milestone <id>` creates the epic with the plan. The Orca panel is now ConPort SDD, by stage; update Orca's conport plugin and the Herdr mod together with this release.
+
+The lead session of an epic, wherever it started, sets the epic `IN_PROGRESS` first and renews that lease with an edit of the epic after every closed task (the step *Execution* of the Superpowers overlay), so every panel and client sees the epic taken.
+
+The refusals of `plan import` in `references/command_list.md` now name `spec_has_epic` (a spec that already clarifies an open epic: import again with the `--epic <id>` it names) and `milestone_required` (a new epic without `--milestone`: ask the person for the milestone and pass `--milestone <id>`).
+
+**`arch_get` gives the full slice of `composition`, the source of each entity
+and the active count of a relation.** `full` shows every entity of the model
+of any state with its `parent_id` and every relation of any state, none
+raised; with `expand` it is refused `full_with_expand`, with another view
+`full_only_composition`. Each entity of `composition` carries
+`introduced_by` (`source`, `document_id`, `title` of its earliest
+`introduced` claim, or null), and each relation `count_active` — of the
+relations it stands for, those active between two active entities.
+
 ## 25.0.0
 
 `/conport:task`, `/conport:epic` and their helper are removed; lead an epic by

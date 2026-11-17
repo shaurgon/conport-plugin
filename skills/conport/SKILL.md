@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 25.0.0
+  version: 25.1.0
 ---
 
 # ConPort — Project Management System
@@ -359,8 +359,8 @@ semantics of a surface, fetch the live-docs page named in the table.
 | "Create an epic" / multi-step body of work | `add_task` with `kind='epic'` |
 | "Break it into subtasks" | `add_task` with `parent_task_id` (parent must be `kind='epic'`); in an epic that has a plan a new task is the exception of BACKLOG DISCIPLINE — `Why not a fix round:` and the person's yes |
 | Work that needs a design, before the design | `add_task` (`kind='task'`) — one task and no epic yet; never an epic of design tasks before the spec |
-| The spec is approved | `add_task` with `kind='epic'` (description: the goal and the acceptance criterion from the spec; `milestone_id` by the project's roadmap rules), then `link_items` from the spec (`source_type='doc'`) to the epic (`target_type='task'`) with `relationship='clarifies'` — one spec per epic; close the task the design started from with a `resolution` naming the spec and the epic. An epic with no plan and no tasks is a normal state |
-| The plan is approved | the plan's tasks, its last section *Final review* among them, go into that epic before the work starts: `add_task` with `parent_task_id`, or with the Superpowers overlay `plan import <draft> --spec doc-N --epic <id>` — the epic is not created again |
+| The spec is approved | upload it with the tag `awaiting-plan` (with the Superpowers overlay `documents upload <draft> --doc-type spec --tags awaiting-plan`), then `link_items` from the spec (`source_type='doc'`) to the idea task the design started from (`target_type='task'`) with `relationship='clarifies'`, and close the idea task with a resolution naming the spec (`update_task` with `status='DONE'`). There is no epic yet: the spec waits for its plan |
+| The plan is approved | the import of the plan creates the epic, in the milestone chosen by the project's roadmap rules, with the plan's tasks, its last section *Final review* among them: with the Superpowers overlay `plan import <draft> --spec doc-N --milestone <id>`; without it `add_task` with `kind='epic'` and `milestone_id`, `link_items` from the spec to it with `relationship='clarifies'`, the tasks with `parent_task_id` and the tag `awaiting-plan` taken off the spec. A spec that already clarifies an epic takes its plan there (`--epic <id>`) |
 | "Move task X under epic Y" / re-parent | `update_task` with `parent_task_id` (target must be `kind='epic'`; `0` detaches to root) |
 | Taking a task into work, filing or moving an epic or a task, calling a task waiting, closing an epic or a milestone, talking about a release, a bump or a deploy, reporting open work to the user | the **conport-roadmap** skill first — its rules decide the milestone, the epic and what may be said about the release |
 | "Roadmap" / "milestones" / "what ships in the release" | `list_milestones` (roadmap view, `include_closed=true` for history) |
@@ -729,8 +729,9 @@ epic or reporting an epic's progress.
 - **A question from the user** is not an instruction, a decision or a task:
   answer it first, checked; file a task only when the answer showed a defect;
   record a decision as the user's only for what the user stated.
-- **Two or more related tasks** — an epic first; work before a design is one
-  task (the Planning rows above).
+- **Two or more related tasks** — an epic first; work before a plan is one
+  idea task, and the import of the plan creates the epic (the Planning rows
+  above).
 - **A finding** is checked first, then fixed. A finding is fixed, not filed.
   A task review's finding: a fix round of that task by its implementer, every
   finding at once (a Minor outside the task's diff is dropped). A final
@@ -827,16 +828,16 @@ below.
 | The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; all active entities, their active relations and bound current decisions, without a node limit) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
-| Review a document portion before submitting it | `npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
-| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.13.0 arch submit <file.json>`) |
-| Change a portion | `arch_source` (or `npx -y conport@^0.13.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
-| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.13.0 arch withdraw <source>`) |
+| Review a document portion before submitting it | `npx -y conport@^0.14.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
+| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.14.0 arch submit <file.json>`) |
+| Change a portion | `arch_source` (or `npx -y conport@^0.14.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
+| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.14.0 arch withdraw <source>`) |
 | "Which behaviour scenarios does the project have?" | `arch_scenarios` |
 | One scenario with its participants, states or nodes and steps | `arch_scenario` |
 | "What does the model owe?" | `arch_status` |
-| Check the anchors against the code | `npx -y conport@^0.13.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*) |
-| Check the anchors and send no facts of git | `npx -y conport@^0.13.0 arch check --no-git` |
-| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.13.0 arch suggest --json` (any branch; it submits nothing) |
+| Check the anchors against the code | `npx -y conport@^0.14.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*) |
+| Check the anchors and send no facts of git | `npx -y conport@^0.14.0 arch check --no-git` |
+| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.14.0 arch suggest --json` (any branch; it submits nothing) |
 | Fill the model of a project that lived before it | the procedure `references/model-backfill.md` |
 | Start, complete or decline the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`, `declined` |
 | The role of a document in the model | `update_document` with `model_role` — `structure`, `history`, `none` |
@@ -910,13 +911,13 @@ with the block that states it.
   whenever it is written or changed.
 - **The code.** Write the skeleton yourself, reading the code through
   `codegraph` or the files: one unit per source `code:<label>`.
-  `npx -y conport@^0.13.0 arch suggest --json` proposes the units with their
+  `npx -y conport@^0.14.0 arch suggest --json` proposes the units with their
   labels and their parts from git history and, with a `codegraph` index, the
   imports between the parts; it
   submits nothing, and what goes into the portion is yours to decide.
   Submitting one label leaves the others as they are; to add to a skeleton,
   read its portion, edit it and submit it again. Then run
-  `npx -y conport@^0.13.0 arch check`. A debt `code_portion_stale` asks for a
+  `npx -y conport@^0.14.0 arch check`. A debt `code_portion_stale` asks for a
   `code` portion again once files under its anchors were added, deleted or
   renamed.
 
@@ -945,7 +946,7 @@ runs or after it is completed; before that it owes nothing.
    below. A `code:` portion is not reviewed: the anchor check checks it.
 5. **Submit it** with `arch_submit(project, portion)`, the report of the
    reviewer in `review` of the portion, or write it to a file and run
-   `npx -y conport@^0.13.0 arch submit <file.json>`. The answer carries
+   `npx -y conport@^0.14.0 arch submit <file.json>`. The answer carries
    `review_id`, the number of the stored report (null without one).
 6. **A refusal** is `portion_rejected` with every error at once, each with its
    `code`, `subject` and `action`; nothing was written. Take the action of each
@@ -969,18 +970,18 @@ it: no check of a portion runs on the server.
 
 1. **Write the draft** of the portion to a file.
 2. **Build the input directory**:
-   `npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir>`,
+   `npx -y conport@^0.14.0 arch review-input doc-N --portion <draft> -o <dir>`,
    with `<dir>` outside the working tree. It holds `document.md`,
    `blocks.json`, `portion.json`, `names.json`, `scenarios.json`, `meta.json`
    and, when the document has a report, `previous-review.json`.
 3. **Run the reviewer** on `<dir>`. In Claude Code dispatch the subagent
    `conport:model-reviewer` with the path of `<dir>`. A client without
    subagents starts a separate process whose prompt is the output of
-   `npx -y conport@^0.13.0 agent model-reviewer` followed by the path of
+   `npx -y conport@^0.14.0 agent model-reviewer` followed by the path of
    `<dir>`, and writes its answer to a file:
 
    ```
-   PROMPT="$(npx -y conport@^0.13.0 agent model-reviewer)
+   PROMPT="$(npx -y conport@^0.14.0 agent model-reviewer)
 
    Input directory: <dir>"
    claude -p --add-dir <dir> "$PROMPT" > <answer.json>
@@ -1009,7 +1010,7 @@ it: no check of a portion runs on the server.
    reader; it keeps no other finding away.
 5. **Recheck once when something was fixed.** Write the findings with their
    resolutions to a file, build the directory again with the new draft —
-   `npx -y conport@^0.13.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
+   `npx -y conport@^0.14.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
    — and run the reviewer once more. It checks only the fixed findings: did the
    fix close the finding and break no neighbouring entity, relation or
    scenario. Resolve its findings the same way; they go into the same report,
@@ -1042,7 +1043,7 @@ goes through the review again, or the portion owes `unchecked_portion`.
 the portion: it carries `id` and `at`, and a portion sent back with it is
 refused as `review_reused` — run the reviewer again, or submit the portion
 without `review`. Never strip `id` and `at` to send the old report as new.
-`npx -y conport@^0.13.0 arch source <source>` prints `review` the same way, but
+`npx -y conport@^0.14.0 arch source <source>` prints `review` the same way, but
 with `-o <file>` it writes the portion without `review`: that file submitted
 back without a new review is accepted, and the portion owes `unchecked_portion`.
 
@@ -1429,7 +1430,7 @@ finding for that reason:
 | `scenario_malformed` | A rule of the scenario's kind is broken; the message names the rule and the place | Correct the scenario at the place its message names so that it keeps the rule. |
 | `scenario_name_taken` | The name is the name of a scenario of another source | Submit the scenario with `takes_over` naming it when this source changes that behaviour, or leave it out when the source repeats it. |
 | `scenario_too_large` | A limit of the scenario is passed | Split the scenario into parts within the limit, linked by an `action` whose `scenario` names the next part or by the name of the next part ending in (part 2). |
-| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.13.0 arch check`. |
+| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.14.0 arch check`. |
 | `dismissal_moved` | `dismissed` holds a finding of the kind `missing` or `invented` | Move the dismissal into `review.findings` with `resolution: dismissed` and its `reason`. |
 | `review_reused` | `review` is the report `arch_source` gave back: it carries `id` or `at` | Run the reviewer on the portion again and submit it with the new report, or submit it without `review`. |
 | `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
@@ -1500,12 +1501,12 @@ For a `code:` portion `portion_too_large` prescribes instead: Split the portion 
 
 A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
-`npx -y conport@^0.13.0 arch submit <file.json>`, then
-`npx -y conport@^0.13.0 arch check`.
+`npx -y conport@^0.14.0 arch submit <file.json>`, then
+`npx -y conport@^0.14.0 arch check`.
 
 ### The anchor check
 
-`npx -y conport@^0.13.0 arch check` in the repository root reads the anchors
+`npx -y conport@^0.14.0 arch check` in the repository root reads the anchors
 of the model — of its entities and of the scenarios of `code:` portions —
 checks `path` anchors on the file system and `symbol` anchors through the
 `codegraph` index when the repository has one (without it they are left
@@ -1544,7 +1545,7 @@ the outcome of the anchors and the commit: the name of the branch; the dates
 of commits; the paths of files and directories under the anchors of the model
 (`recent_files`, `changes`, `symbol_files`); the paths of the hot directories
 and of the units; the patterns of `arch.ignore`; the numbers of commits and of
-index nodes. `npx -y conport@^0.13.0 arch check --no-git`, or the key
+index nodes. `npx -y conport@^0.14.0 arch check --no-git`, or the key
 `arch.git: false` in `.conport.json`, sends none of the facts: the server then
 knows no facts will come and owes nothing by them.
 
@@ -1613,9 +1614,9 @@ one. When `total` is above five, `arch_status` lists them all.
 | `code_portion_stale` | The latest check with git facts saw a file added, deleted or renamed under an anchor of an entity of the `code:` portion after it was submitted; `detail` names the paths | Read the changed paths, bring the portion code:<label> in line with the code and submit it again; if the model does not change, submit it as it is. |
 | `unchecked_portion` | The document's portion was submitted without the reviewer's report (`review`) | Run the reviewer on the portion and submit it again with `review`. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
-| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.13.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.13.0 arch check` in the repository root on main or master. |
+| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.14.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.14.0 arch check` in the repository root on main or master. |
 | `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
-| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.13.0 arch check`. |
+| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.14.0 arch check`. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names is removed or replaced at the document source position (current state for code), or the scenario an action runs was deleted | Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history. |
 
@@ -1971,7 +1972,7 @@ claim it was posted.
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
-- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.13.0 arch check` run on the main branch? `init` returned `arch` → the action of each debt taken?
+- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.14.0 arch check` run on the main branch? `init` returned `arch` → the action of each debt taken?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] A problem of the service itself → showed the user the title and body and posted only after they agreed (a run with no person: the report in its summary, nothing posted), searched the open `[agent-report]` issues first, no project content, and told the user the URL — or gave the search and form links and said the report is not sent until they submit it?

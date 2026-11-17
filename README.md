@@ -100,7 +100,7 @@ to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
 they call the `conport` CLI, which takes the project from `.conport.json` from
-0.11 on: `npx -y conport@^0.13.0`. The CLI does not see the plugin's `api_key`:
+0.11 on: `npx -y conport@^0.14.0`. The CLI does not see the plugin's `api_key`:
 it needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`.
 
 | Command | Does |

@@ -144,19 +144,19 @@ function assertRefusedSpec(res, path) {
   const file = shown(path)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err.trimEnd().split('\n').length, 1, 'the reason is one line')
-  assert.ok(res.err.includes(`npx -y conport@^0.13.0 documents upload ${file} --doc-type spec`), res.err)
+  assert.ok(res.err.includes(`npx -y conport@^0.14.0 documents upload ${file} --doc-type spec --tags awaiting-plan\``), res.err)
   assert.match(res.err, /remove the file/)
 }
 
-// The refusal names the spec and its epic, so the import neither leaves the
-// plan without a spec nor starts a second epic; `doc-N` and `<id>` are left
-// for the agent to fill.
+// The refusal names the spec and the milestone of the epic the import creates,
+// so the import neither leaves the plan without a spec nor the new epic without
+// a milestone; `doc-N` and `<id>` are left for the agent to fill.
 function assertRefusedPlan(res, path) {
   const file = shown(path)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on ` +
-    `plans live in ConPort: run \`npx -y conport@^0.13.0 plan import ${file} --spec doc-N --epic <id>\` ` +
-    "with doc-N the plan's spec and <id> the spec's epic, then remove the file.\n")
+    `plans live in ConPort: run \`npx -y conport@^0.14.0 plan import ${file} --spec doc-N --milestone <id>\` ` +
+    "with doc-N the plan's spec and <id> the milestone of the epic the import creates, then remove the file.\n")
 }
 
 function assertAllowed(res) {

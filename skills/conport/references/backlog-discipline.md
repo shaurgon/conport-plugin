@@ -48,9 +48,10 @@ recorded at once, in the same message and in the user's words: `add_task` or
 Planning or filing two or more related tasks starts with `add_task` with
 `kind='epic'`; the tasks go under it with `parent_task_id`. Related tasks are
 never left loose at the root of the backlog. The exception is work before a
-design: it is one task, and the design creates the epic with the spec — see the
-Planning rows *Work that needs a design, before the design* and *The spec is
-approved* of the conport skill.
+plan: an idea is one task, the approved spec closes it and waits with the tag
+`awaiting-plan`, and the import of the plan creates the epic with its tasks —
+see the Planning rows *Work that needs a design, before the design*, *The spec
+is approved* and *The plan is approved* of the conport skill.
 
 ## Findings: a finding is fixed, not filed
 

@@ -166,10 +166,10 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
       if (patch === undefined || version[0] * 1e6 + version[1] * 1e3 + version[2] < 11 * 1e3) below.push(found[0])
     }
     assert.deepEqual(below, [], `${name} runs a CLI that does not read .conport.json`)
-    assert.ok(body.includes('npx -y conport@^0.13.0 '), `${name} runs no npx -y conport@^0.13.0`)
+    assert.ok(body.includes('npx -y conport@^0.14.0 '), `${name} runs no npx -y conport@^0.14.0`)
   }
   const fails = flat(read('references/superpowers-overlay.md').split('## When the CLI fails')[1])
-  assert.match(fails, /a `npx -y conport@\^0\.13\.0 …` command fails/)
+  assert.match(fails, /a `npx -y conport@\^0\.14\.0 …` command fails/)
 })
 
 // The entry ships in 24.0.0; before the release step it sits under Unreleased.

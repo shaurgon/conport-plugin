@@ -126,7 +126,7 @@ is on and names the file of its rules, which Claude reads; Claude prints
 folder of each commit and refuses one that adds a new file under
 `docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules call the `conport` CLI (`documents get`, `plan import`, `plan pull`,
 `superpowers migrate`), which takes the project from `.conport.json` from 0.11
-on — `npx -y conport@^0.13.0` — so Node.js and network access are needed. The
+on — `npx -y conport@^0.14.0` — so Node.js and network access are needed. The
 CLI does not see the plugin's `api_key`: put `CONPORT_API_KEY` in the
 environment or in `~/.config/conport/.env`. See the
 [README](../../README.md#superpowers-overlay). To turn the overlay off, set

@@ -344,8 +344,15 @@ test('no conport prompt fixture grants consent', async () => {
 
 // The test's own timeout turns a budget that never ends into a failure, not a hang.
 test('withinBudget answers null for a promise that never settles, within the budget', { timeout: 2000 }, async () => {
+  // The budget's timer is unref'd so a hook never holds its process; on Node 22
+  // nothing else would keep the test's event loop alive while it waits.
+  const keepAlive = setTimeout(() => {}, 1000)
   const started = Date.now()
-  assert.equal(await withinBudget(new Promise(() => {}), 50), null)
+  try {
+    assert.equal(await withinBudget(new Promise(() => {}), 50), null)
+  } finally {
+    clearTimeout(keepAlive)
+  }
   const elapsed = Date.now() - started
   assert.ok(elapsed >= 40 && elapsed < 1000, `took ${elapsed} ms`)
 })

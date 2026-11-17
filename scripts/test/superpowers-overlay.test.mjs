@@ -259,7 +259,7 @@ const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.ad
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.13\.0 plan import/)
+  assert.match(text, /npx -y conport@\^0\.14\.0 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
@@ -289,9 +289,10 @@ test('the spec is reviewed and gap-hunted as a draft, approved, then uploaded on
   assert.match(texts[review], /goal\s+as\s+the\s+user\s+stated\s+it/, 'the gap hunter gets the goal from the user, not from the draft')
 })
 
-// The cycle of a piece of work: one task before the design, the epic made with
-// the approved spec, the plan and its tasks put into that epic.
-test('a task comes before the design, the epic with the uploaded spec, the plan into that epic', () => {
+// The cycle of a piece of work: an idea task before the design, the approved spec
+// uploaded with the tag awaiting-plan and closing the idea, the epic created by
+// the import of the plan.
+test('an idea task comes before the design, the spec closes it with awaiting-plan, the plan import creates the epic', () => {
   const oneLine = (text) => text.replace(/\s+/g, ' ')
   const flow = rulesText().split('## The flow')[1].split('\n## ')[0]
   const steps = [...flow.matchAll(/^(\d+)\. \*\*([^*]+)\*\*/gm)]
@@ -307,20 +308,27 @@ test('a task comes before the design, the epic with the uploaded spec, the plan 
   assert.match(brainstorming, /the design needs none/)
 
   const upload = step('Upload the spec')
-  assert.match(upload, /add_task\(project=<project>, kind='epic'/)
-  assert.match(upload, /goal and the acceptance criterion/)
-  assert.match(upload, /roadmap rules/)
-  assert.match(upload, /link_items\(project=<project>, source_type='doc', source_id=N, target_type='task', target_id=<id>, relationship='clarifies'\)/)
-  assert.match(upload, /exactly one spec per epic/)
-  assert.match(upload, /update_task\(project=<project>, task_id=<the task>, status='DONE', resolution=/)
-  assert.match(upload, /names `doc-N` and the epic/)
-  assert.match(upload, /an epic with no plan and no tasks is a normal state/)
-  assert.ok(upload.indexOf('documents upload') < upload.indexOf("kind='epic'"), 'the epic follows the upload')
+  assert.match(upload, /`npx -y conport@\^0\.14\.0 documents upload <draft> --doc-type spec --tags awaiting-plan`/)
+  assert.match(upload, /link_items\(project=<project>, source_type='doc', source_id=N, target_type='task', target_id=<the idea task>, relationship='clarifies'\)/)
+  assert.match(upload, /update_task\(project=<project>, task_id=<the idea task>, status='DONE', resolution=/)
+  assert.match(upload, /close the idea task with a resolution naming the spec/)
+  assert.match(upload, /Writing the plan means building right after it\. Plan and build now\?/)
+  assert.match(upload, /the import of the plan creates the epic/)
+  assert.doesNotMatch(upload, /kind='epic'/, 'no epic is created with the spec')
+  assert.doesNotMatch(upload, /add_task\(/, 'no task is created with the spec')
+  assert.doesNotMatch(upload, /no plan and no tasks is a normal state/i)
+  assert.ok(upload.indexOf('documents upload') < upload.indexOf("relationship='clarifies'"), 'the link follows the upload')
+  assert.ok(upload.indexOf("relationship='clarifies'") < upload.indexOf("status='DONE'"), 'the idea is closed after the link')
+  assert.ok(upload.indexOf("status='DONE'") < upload.indexOf('Plan and build now?'), 'the question comes last')
 
   const plan = step('Plan')
-  assert.match(plan, /npx -y conport@\^0\.13\.0 plan import <draft> --spec doc-N --epic <id>` /)
-  assert.match(plan, /the epic is not created again/)
-  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.13\.0 plan import <draft> \[--milestone <id>\]`/)
+  assert.match(plan, /`npx -y conport@\^0\.14\.0 plan import <draft> --spec doc-N --milestone <id>`/)
+  assert.match(plan, /the import of the plan creates the epic/)
+  assert.match(plan, /roadmap rules/)
+  assert.match(plan, /`spec_has_epic`/)
+  assert.match(plan, /`npx -y conport@\^0\.14\.0 plan import <draft> --spec doc-N --epic <id>`/, 'the epic of the former chain takes its plan by --epic')
+  assert.ok(plan.indexOf('--milestone <id>`') < plan.indexOf('--epic <id>`'), 'the new epic comes first')
+  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.14\.0 plan import <draft> \[--milestone <id>\]`/)
   assert.doesNotMatch(plan, /\[--epic <id>\]/, 'the epic of a designed plan is not optional')
 })
 
@@ -335,16 +343,22 @@ test('the skill and the bridge follow the same cycle', () => {
   }
   assert.match(row(/^\| Work that needs a design/), /`add_task` \(`kind='task'`\).*no epic/)
   const spec = row(/^\| The spec is approved/)
-  assert.match(spec, /`add_task` with `kind='epic'`/)
-  assert.match(spec, /`link_items`.*`relationship='clarifies'`/)
-  assert.match(spec, /one spec per epic/)
-  assert.match(row(/^\| The plan is approved/), /`parent_task_id`.*--epic <id>/)
+  assert.match(spec, /--doc-type spec --tags awaiting-plan/)
+  assert.match(spec, /`link_items`.*the idea task.*`relationship='clarifies'`/)
+  assert.match(spec, /close the idea task with a resolution naming the spec/)
+  assert.match(spec, /no epic/)
+  assert.doesNotMatch(spec, /kind='epic'/)
+  const planRow = row(/^\| The plan is approved/)
+  assert.match(planRow, /plan import <draft> --spec doc-N --milestone <id>/)
+  assert.match(planRow, /the import of the plan creates the epic/)
 
-  // Every `plan import` the bridge prescribes for a plan with a spec names the spec's epic.
+  // Every `plan import` the bridge prescribes with the overlay on for a plan with a spec
+  // names the milestone of the epic it creates.
   const bridge = readFileSync(join(SCRIPTS, '..', 'skills', 'superpowers-conport', 'SKILL.md'), 'utf8')
-  const withSpec = oneLine(bridge).match(/plan import <plan(?:_path)?> --spec doc-N\S*( --epic <id>)?/g) ?? []
+  const withSpec = oneLine(bridge).match(/plan import <plan(?:_path)?> --spec doc-N\S*( --(?:epic|milestone) <id>)?/g) ?? []
   assert.ok(withSpec.length >= 4, `expected the import answer and the finish prescriptions, got ${withSpec.length}`)
-  for (const cmd of withSpec) assert.match(cmd, / --epic <id>$/, cmd)
+  for (const cmd of withSpec) assert.match(cmd, / --milestone <id>$/, cmd)
+  assert.match(oneLine(bridge), /the import of the plan creates the epic/)
   // With the overlay off the bridge takes the epic the spec already has instead of a second one.
   const epicStep = oneLine(bridge.slice(bridge.indexOf('### 4. Import plan as epic + tasks'), bridge.indexOf('**Tasks:**')))
   assert.match(epicStep, /get_linked\(\{ project, item_type: 'doc', item_id: <doc_id>, relationship: 'clarifies', direction: 'outgoing' \}\)/)
@@ -359,12 +373,27 @@ test('the skill and the bridge follow the same cycle', () => {
   assert.doesNotMatch(anchorFound, /get_linked/, 'the clarifies link step 5 writes cannot tell the spec epic from the bridge epic')
   assert.match(anchorFound, /get_task\(\{ project, task_id: <epic_id> \}\)/)
   assert.match(anchorFound, /description carries `Full plan: <plan_path>`: the bridge made this epic.*update_task\(\{ project, task_id: <epic_id>, title: <H1>, description: <short summary, ending with `See spec: doc-<doc_id>\. Full plan: <plan_path>\.`, ≤ 2000 chars> \}\)/)
-  assert.match(anchorFound, /description carries no `Full plan: <plan_path>`: the epic was created with the spec.*leave its title and description as they are; no `update_task` on the epic/)
+  assert.match(anchorFound, /description carries no `Full plan: <plan_path>`: an epic of the earlier chain, made with its spec before this flow.*leave its title and description as they are; no `update_task` on the epic/)
   // The bridge's own epic carries the sign from its creation; the spec's epic never gets it.
   const created = epicStep.slice(epicStep.indexOf('- Anchor not found, and the spec has no epic'))
   assert.match(created, /add_task\(\{ project, title: <H1>, description: <short summary, ending with `See spec: doc-<doc_id>\. Full plan: <plan_path>\.`>, kind: 'epic'/)
-  const specEpic = epicStep.slice(epicStep.indexOf('- Anchor not found, and the spec already has its epic'), epicStep.indexOf('- Anchor not found, and the spec has no epic'))
+  const specEpic = epicStep.slice(epicStep.indexOf('- Anchor not found, and the spec already clarifies an epic — one made with its spec before this flow'), epicStep.indexOf('- Anchor not found, and the spec has no epic'))
   assert.match(specEpic, /title and description stay as they are, and no `Full plan: <plan_path>` is added to them/)
+})
+
+// Whoever leads an epic — from Start, from Plan & build or from another client —
+// marks it taken first and keeps the server's IN_PROGRESS lease alive.
+test('the lead session takes the epic and renews its lease after every closed task', () => {
+  const flow = rulesText().split('## The flow')[1].split('\n## ')[0]
+  const execution = flow.slice(flow.search(/^6\. \*\*Execution\.\*\*/m), flow.search(/^7\. /m)).replace(/\s+/g, ' ')
+  const at = execution.indexOf('**The lead session of the epic**')
+  assert.ok(at >= 0, `no lead-session rule in the step Execution: ${execution}`)
+  const lead = execution.slice(at)
+  assert.match(lead, /update_task\(project=<project>, task_id=<epic>, status='IN_PROGRESS'\)/)
+  assert.match(lead, /first thing/)
+  assert.match(lead, /renews its lease after every closed task/)
+  assert.match(lead, /an edit of the epic/)
+  assert.match(lead, /Closing the epic, or returning it to `TODO` when the work stops, clears the mark/)
 })
 
 test('the rules and the skill name every agent type the plugin ships, the final reviewer for the whole branch', () => {

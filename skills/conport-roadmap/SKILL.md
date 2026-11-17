@@ -2,7 +2,7 @@
 name: conport-roadmap
 description: "Use when about to take a task into work, file an epic or a task, move a task between epics, call a task waiting, close an epic or a milestone, talk about a release, a version bump or a deploy, and before every report to the user with open tasks. The ConPort roadmap rules — milestones, the release point, the make-up of epics, work after a release, waiting on someone else's work. Requires the conport skill for base tool discipline."
 metadata:
-  version: 25.0.0
+  version: 25.1.0
 ---
 
 # ConPort Roadmap
@@ -89,11 +89,13 @@ which release.
    without a date. An epic without a milestone is an attachment error, not a
    way to take it off the roadmap. When a waiting or undated epic gets a
    release, it moves whole into that release milestone. Two or more related
-   tasks — an epic first. The exception is work before a design: it is one
-   task, the design creates the epic together with the spec, and the plan puts
-   the tasks into the epic. A task carries no milestone, so such work shows on
-   the roadmap once the design has created the epic; an epic with a spec and no
-   tasks waits for its plan, and that is a normal state. The hierarchy has two
+   tasks — an epic first. The exception is work before a plan: an idea is one
+   root task; the approved spec closes it and waits with the tag
+   `awaiting-plan`, with no epic and no milestone; the import of the plan
+   creates the epic, with its tasks, in the milestone chosen by this rule. A
+   task carries no milestone, so such work shows on the roadmap once the plan
+   is imported: work with a design never gets an epic before its plan is
+   imported. The hierarchy has two
    levels: a task has no subtasks. A dependency is written with `add_task_dep`;
    no mechanism reads one written in prose.
 
