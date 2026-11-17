@@ -12,6 +12,7 @@ const { execFileSync } = require('child_process');
 const {
   dataDir, detectProject, denyListPath, readStdin, overlayEnabled, worktreeRoot, gitIn, isForbiddenRoot,
 } = require('./_common.js');
+const { budgetMs } = require('./hook-time.js');
 
 // Only the person's message gives the consent (epic-growth-consent.js); no
 // command writes its file. A file system that ignores case reaches it in any case.
@@ -247,7 +248,7 @@ function porcelainStatus(root) {
     return execFileSync('git', [
       '--no-optional-locks', '-C', root, 'status', '--porcelain', '-z', '--untracked-files=all',
       '--', SPECS_DIR, PLANS_DIR,
-    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 })
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: budgetMs(5000) })
       .split('\0');
   } catch (_) {
     return null;

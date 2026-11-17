@@ -40,25 +40,37 @@ mkdirSync(join(SHARED, 'bin'))
 writeFileSync(join(SHARED, 'bin', 'git'),
   `#!/bin/sh\necho "$*" >> "$GUARD_TEST_GIT_LOG"\nexec '${REAL_GIT}' "$@"\n`)
 chmodSync(join(SHARED, 'bin', 'git'), 0o755)
-// A PATH with no git on it, and a git whose `status` fails while every other
-// call goes through.
+// A PATH with no git on it, a git whose `status` fails while every other
+// call goes through, and a logging git whose `status` answers only after
+// SLOW_STATUS_S (the sleep holds none of git's pipes, so the hook does not
+// wait for it once it has given up on that git; it is named by its path, as
+// the PATH of the hook holds only the folder of this git).
+const SLOW_STATUS_S = 4
 mkdirSync(join(SHARED, 'nogit'))
 mkdirSync(join(SHARED, 'failstatus'))
 writeFileSync(join(SHARED, 'failstatus', 'git'),
   `#!/bin/sh\nfor a in "$@"; do [ "$a" = status ] && exit 128; done\nexec '${REAL_GIT}' "$@"\n`)
 chmodSync(join(SHARED, 'failstatus', 'git'), 0o755)
+mkdirSync(join(SHARED, 'slowstatus'))
+writeFileSync(join(SHARED, 'slowstatus', 'git'),
+  `#!/bin/sh\necho "$*" >> "$GUARD_TEST_GIT_LOG"\n` +
+  `for a in "$@"; do [ "$a" = status ] && /bin/sleep ${SLOW_STATUS_S} </dev/null >/dev/null 2>&1; done\n` +
+  `exec '${REAL_GIT}' "$@"\n`)
+chmodSync(join(SHARED, 'slowstatus', 'git'), 0o755)
 
 // An environment free of git and ConPort variables a calling shell may have
-// exported, with this repository forbidden as a settings root and no global or
-// system git config, so every git command reads only the repository it is
-// pointed at. A PATH in `extra` replaces the inherited one under any spelling
-// (`Path` on Windows), so only one reaches git.
+// exported, with this repository forbidden as a settings root, the hook
+// budgets stretched as isolatedEnv stretches them, and no global or system git
+// config, so every git command reads only the repository it is pointed at. A
+// PATH in `extra` replaces the inherited one under any spelling (`Path` on
+// Windows), so only one reaches git.
 const BASE_ENV = isolatedEnv()
+const KEPT_CONPORT_VARS = new Set(['CONPORT_SETTINGS_FORBID_ROOT', 'CONPORT_HOOK_TIME_SCALE'])
 function cleanEnv(tmp, extra = {}) {
   const env = {}
   for (const [k, v] of Object.entries(BASE_ENV)) {
     if (k.toUpperCase() === 'PATH' && 'PATH' in extra) continue
-    if (k.startsWith('CONPORT_') && k !== 'CONPORT_SETTINGS_FORBID_ROOT') continue
+    if (k.startsWith('CONPORT_') && !KEPT_CONPORT_VARS.has(k)) continue
     if (k !== 'CLAUDE_PLUGIN_OPTION_API_KEY') env[k] = v
   }
   return {
@@ -530,5 +542,26 @@ describe('commit guard', { concurrency: true }, () => {
       const res = await runHook(tmp, { command: 'git commit -m x', cwd: repo, env: { PATH: join(SHARED, bin) } })
       assertAllowed(res)
     }
+  }))
+
+  // The budget of git status is scaled like every hook budget: shrunk to a
+  // fifth (1 s) it is spent long before a status that takes SLOW_STATUS_S,
+  // and the commit passes unchecked; unscaled (5 s) the late status would
+  // refuse it. Each git call before the status has its own budget at the same
+  // scale, so the scale stays at a fifth, where those calls have a second each,
+  // and the margin comes from the sleep. The log shows the status was asked:
+  // the commit passed because it came too late, not because the hook never
+  // got that far.
+  test('a git status slower than its budget leaves the commit unchecked', { skip: !LOGGING_GIT }, () => withRepo(async ({ tmp, repo, log }) => {
+    overlayOn(repo)
+    put(repo, `${SPECS}/new.md`)
+    git(tmp, repo, 'add', `${SPECS}/new.md`)
+    // The first start of a new executable is scanned by the OS: spend it before the budget runs.
+    execFileSync(join(SHARED, 'slowstatus', 'git'), ['--version'], {
+      env: { ...cleanEnv(tmp), GUARD_TEST_GIT_LOG: join(tmp, 'warm-up') }, stdio: 'ignore',
+    })
+    const env = { PATH: join(SHARED, 'slowstatus'), CONPORT_HOOK_TIME_SCALE: '0.2' }
+    assertAllowed(await runHook(tmp, { command: 'git commit -m x', cwd: repo, env }))
+    assert.equal(statusCalls(log).length, 1, 'git status was asked')
   }))
 })

@@ -38,7 +38,8 @@ const BASE_ENV = isolatedEnv()
 function cleanEnv(extra = {}) {
   const env = {}
   for (const [k, v] of Object.entries(BASE_ENV)) {
-    if (k.startsWith('CONPORT_') && k !== 'CONPORT_SETTINGS_FORBID_ROOT') continue
+    // The forbidden root and the stretched hook budgets of isolatedEnv stay.
+    if (k.startsWith('CONPORT_') && k !== 'CONPORT_SETTINGS_FORBID_ROOT' && k !== 'CONPORT_HOOK_TIME_SCALE') continue
     if (k !== 'CLAUDE_PLUGIN_OPTION_API_KEY') env[k] = v
   }
   return { ...env, ...extra }
@@ -519,7 +520,7 @@ test('a missing rules file leaves the rules out and the session starting', () =>
   // The hook copied without the skill directory next to it.
   const scripts = join(tmp, 'plugin', 'scripts')
   mkdirSync(scripts, { recursive: true })
-  for (const f of ['session-start.js', '_common.js', 'project-config.js', 'old-settings.js']) {
+  for (const f of ['session-start.js', '_common.js', 'project-config.js', 'old-settings.js', 'hook-time.js']) {
     copyFileSync(join(SCRIPTS, f), join(scripts, f))
   }
   const { code, out } = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, scripts })

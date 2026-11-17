@@ -18,9 +18,15 @@ const TOOL_ADD = 'mcp__plugin_conport_conport__add_task'
 const TOOL_UPDATE = 'mcp__plugin_conport_conport__update_task'
 
 // Fake API: `children` is the task table (parent_task_id per row), `tails`
-// the body of GET /epic-tails. Every request is recorded.
+// the body of GET /epic-tails, sent after `tailsDelayMs`. Every request is
+// recorded. An epic read whose failure is `hang` is never answered; one whose
+// failure is `held` is kept open until `holdUntil` reads are held at once, and
+// then all of them get 500; `mostHeld` is the most held at once.
 async function startApi() {
-  const api = { children: [], progress: {}, detailFailures: {}, tails: [], milestones: null, requests: [] }
+  const api = {
+    children: [], progress: {}, detailFailures: {}, tails: [], tailsDelayMs: 0, milestones: null, requests: [],
+    held: [], holdUntil: 0, mostHeld: 0,
+  }
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://x')
     api.requests.push(url)
@@ -33,7 +39,19 @@ async function startApi() {
       res.end(JSON.stringify({ tasks: rows.slice(offset, offset + limit), total: rows.length }))
     } else if (/^\/api\/v1\/projects\/prk7m2qx9d\/tasks\/\d+$/.test(url.pathname)) {
       const id = Number(url.pathname.split('/').at(-1))
-      if (api.detailFailures[id] === 'hang') return
+      if (api.detailFailures[id] === 'hang') {
+        return
+      }
+      if (api.detailFailures[id] === 'held') {
+        api.held.push(res)
+        api.mostHeld = Math.max(api.mostHeld, api.held.length)
+        if (api.held.length < api.holdUntil) return
+        for (const r of api.held.splice(0)) {
+          r.statusCode = 500
+          r.end('{}')
+        }
+        return
+      }
       if (api.detailFailures[id]) {
         res.statusCode = api.detailFailures[id]
         res.end('{}')
@@ -46,7 +64,9 @@ async function startApi() {
     } else if (url.pathname === '/api/v1/projects/prk7m2qx9d/milestones' && api.milestones) {
       res.end(JSON.stringify(api.milestones))
     } else if (url.pathname === '/api/v1/projects/prk7m2qx9d/epic-tails') {
-      res.end(JSON.stringify({ tails: api.tails }))
+      const body = JSON.stringify({ tails: api.tails })
+      if (api.tailsDelayMs) setTimeout(() => res.end(body), api.tailsDelayMs)
+      else res.end(body)
     } else {
       res.statusCode = 404
       res.end('{}')
@@ -59,13 +79,14 @@ async function startApi() {
 }
 
 // The project comes from CONPORT_PROJECT_NAME: the folder the hook runs in
-// holds no settings.
-function runHook(script, payload, { api, dataDir, cwd }) {
+// holds no settings. `vars` is laid over the environment.
+function runHook(script, payload, { api, dataDir, cwd }, vars = {}) {
   const env = isolatedEnv({
     CLAUDE_PLUGIN_DATA: dataDir,
     CONPORT_URL: api.url,
     CONPORT_API_KEY: 'cport_test_key',
     CONPORT_PROJECT_NAME: 'prk7m2qx9d',
+    ...vars,
   })
   delete env.CLAUDE_PLUGIN_OPTION_API_KEY
   return new Promise((resolve, reject) => {
@@ -106,8 +127,8 @@ const addUnderEpic = (ctx, session, epicId, taskId, title = `Epic ${epicId}`) =>
     }),
   }, ctx)
 
-const stop = (ctx, session, extra = {}) =>
-  runHook('stop-epic-tails.js', { session_id: session, stop_hook_active: false, ...extra }, ctx)
+const stop = (ctx, session, extra = {}, vars = {}) =>
+  runHook('stop-epic-tails.js', { session_id: session, stop_hook_active: false, ...extra }, ctx, vars)
 
 test('a session that grew its epic past three open children gets the whole list at Stop', () => withEnv(async (ctx) => {
   for (const id of [51, 52, 53, 54, 55]) await addUnderEpic(ctx, 's1', 50, id, 'Review follow-ups')
@@ -601,14 +622,19 @@ for (const [label, progress, marked] of [
   }))
 }
 
-for (const failure of [500, 'hang']) {
-  test('Stop retains all open tails when parallel epic reads fail: ' + failure, () => withEnv(async ctx => {
+// The epic reads run side by side, so together they take one read's budget,
+// not three. `held` pins it without a stopwatch: the server answers none of
+// the three until all three are open at once, which reads one after another
+// never are — those would wait out the stretched budget of the first, and the
+// test's own timeout fails them.
+for (const failure of [500, 'held']) {
+  test('Stop retains all open tails when parallel epic reads fail: ' + failure, { timeout: 30000 }, () => withEnv(async ctx => {
     for (const id of [60, 70, 80]) {
       await addUnderEpic(ctx, 's1', id, id + 1)
       ctx.api.children.push(child(id + 1, id, 'TODO'))
       ctx.api.detailFailures[id] = failure
     }
-    const started = Date.now()
+    ctx.api.holdUntil = 3
     const { out } = await stop(ctx, 's1')
     const verdict = JSON.parse(out)
     assert.equal(verdict.decision, 'block')
@@ -617,6 +643,33 @@ for (const failure of [500, 'hang']) {
       assert.ok(ctx.api.requests.some(u => u.pathname.endsWith('/tasks/' + id)))
     }
     assert.doesNotMatch(verdict.reason, /grew after work started/)
-    assert.ok(Date.now() - started < 5500, 'parallel reads finish inside the total hook budget')
+    if (failure === 'held') assert.equal(ctx.api.mostHeld, 3, 'the three epic reads were open at once')
   }))
 }
+
+// An epic read that never answers is ended by its own budget, and the open
+// child is still listed. The budgets are shrunk to half (1.5 s a read, 3 s in
+// all) so the wait stays short; the reads before it are answered at once. The
+// test's own timeout turns a read the budget does not end into a failure, not
+// a hang.
+test('Stop lists the open tails when an epic read never answers', { timeout: 30000 }, () => withEnv(async ctx => {
+  await addUnderEpic(ctx, 's1', 60, 61)
+  ctx.api.children.push(child(61, 60, 'TODO'))
+  ctx.api.detailFailures[60] = 'hang'
+  const { out } = await stop(ctx, 's1', {}, { CONPORT_HOOK_TIME_SCALE: '0.5' })
+  const verdict = JSON.parse(out)
+  assert.equal(verdict.decision, 'block')
+  assert.ok(verdict.reason.includes('child 61'))
+  assert.ok(ctx.api.requests.some(u => u.pathname.endsWith('/tasks/60')))
+  assert.doesNotMatch(verdict.reason, /grew after work started/)
+}))
+
+// The tails budget is scaled like every hook budget: stretched (the default of
+// the tests) it waits for an answer that takes longer than the 500 ms the hook
+// has unscaled, and the block is printed.
+test('a stretched tails budget waits for an answer the unscaled one would miss', () => withEnv(async (ctx) => {
+  ctx.api.tails = [closableTail(60)]
+  await pastFirstPrompt(ctx)
+  ctx.api.tailsDelayMs = 1000
+  assert.deepEqual(tailLines(await promptContext(ctx)), ['[TAILS] task-60 Epic 60 — Close epic task-60 with a resolution'])
+}))

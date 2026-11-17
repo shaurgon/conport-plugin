@@ -14,6 +14,7 @@ const {
   authHeader, request, readStdin, fingerprintChanged, epicTailsCachePath,
 } = require('./_common.js');
 const { parseConsentPhrase, writeConsent, isHandle, withinBudget } = require('./epic-growth-consent.js');
+const { budgetMs } = require('./hook-time.js');
 
 const MESSAGES_BEFORE_REMINDER = 5;
 const REMINDER_COOLDOWN_MINUTES = 15;
@@ -23,8 +24,8 @@ const TAILS_CACHE_TTL_MS = 10 * 60 * 1000;
 // re-spend the request budget on every single prompt, short enough that a
 // transient outage or a project that only just got created recovers fast.
 const TAILS_NEGATIVE_CACHE_TTL_MS = 2 * 60 * 1000;
-const TAILS_REQUEST_TIMEOUT_MS = 500;
-const CONSENT_LOOKUP_TIMEOUT_MS = 3000;
+const TAILS_REQUEST_TIMEOUT_MS = budgetMs(500);
+const CONSENT_LOOKUP_TIMEOUT_MS = budgetMs(3000);
 
 function sessionFlagPath(sessionId) {
   const dir = path.join(dataDir(), 'session_logs');

@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 const { loadSettings } = require('./project-config.js');
+const { budgetMs } = require('./hook-time.js');
 
 const CONPORT_URL = process.env.CONPORT_URL || 'https://api.conport.app';
 
@@ -156,7 +157,7 @@ function authHeader() {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
-function request(method, urlStr, { headers = {}, body = null, timeoutMs = 10000 } = {}) {
+function request(method, urlStr, { headers = {}, body = null, timeoutMs = budgetMs(10000) } = {}) {
   const url = new URL(urlStr);
   const lib = url.protocol === 'http:' ? require('http') : require('https');
   return new Promise((resolve, reject) => {
@@ -257,7 +258,7 @@ function fingerprintChanged(name, sessionId, fingerprint) {
 function gitIn(dir, args) {
   try {
     const out = execFileSync('git', ['-C', dir, ...args], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000,
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: budgetMs(5000),
     }).trim();
     return out || null;
   } catch (_) {

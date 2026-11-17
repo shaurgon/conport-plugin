@@ -21,8 +21,9 @@ const {
 const {
   takeConsent, isHandle, withinBudget,
 } = require('./epic-growth-consent.js');
+const { budgetMs } = require('./hook-time.js');
 
-const REQUEST_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = budgetMs(3000);
 const PREFIX = 'Why not a fix round:';
 const TAILS_TITLE = 'Tails of release ';
 const LOG_FILE = 'epic-growth-guard.log';
@@ -204,4 +205,7 @@ async function main() {
   process.exit(0);
 }
 
-main();
+// Run as a hook; a test reads the budget without running it.
+if (require.main === module) main();
+
+module.exports = { REQUEST_TIMEOUT_MS };

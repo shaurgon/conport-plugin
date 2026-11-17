@@ -32,9 +32,11 @@ const REFUSAL = 'BLOCKED: only the person gives this consent; ask them to reply:
 // Records every request and answers the routes the prompt hook reads: the
 // project `api` resolves to one handle in the Private Team and to another in
 // the team the header names, `my project` (a name with a space) to the first
-// handle; `silent` accepts the request and never answers; `broken` fails
+// handle; `silent` accepts the request and never answers, `late` answers the
+// first handle only after LATE_MS; `broken` fails
 // with 500 (its body carries a handle, which is not to be taken) and
 // `nohandle` answers 200 with no handle; any other project is unknown (404).
+const LATE_MS = 2000
 async function startApi() {
   const api = { requests: [] }
   const server = createServer((req, res) => {
@@ -45,6 +47,9 @@ async function startApi() {
       res.setHeader('content-type', 'application/json')
       if (req.url.endsWith('/epic-tails')) return res.end('{"tails": []}')
       if (req.url === '/api/v1/projects/silent') return undefined
+      if (req.url === '/api/v1/projects/late') {
+        return setTimeout(() => res.end(JSON.stringify({ handle: HANDLE, canonical_name: 'late' })), LATE_MS)
+      }
       if (req.url === '/api/v1/projects/broken') {
         res.statusCode = 500
         return res.end(JSON.stringify({ detail: 'boom', handle: TEAM_HANDLE }))
@@ -193,17 +198,34 @@ test('allow epic 7 in api without an answer from the server stores the project a
   })
 })
 
-// The lookup has its own budget: a server that takes the request and never
-// answers neither holds the person's message past it nor loses the consent.
-test('allow epic 7 in a project the server never answers for stores it as named within the budget', async () => {
+// The lookup has its own budget, scaled like every hook budget: shrunk to a
+// twentieth (150 ms) it is spent long before LATE_MS; unscaled (3 s) the late
+// answer would be taken and its handle stored.
+const SHRUNK = { CONPORT_HOOK_TIME_SCALE: '0.05' }
+const SHRUNK_BUDGET_MS = 150
+
+test('allow epic 7 in a project the server answers for too late stores it as named', async () => {
   await withApi(async (ctx) => {
     const started = Date.now()
-    const res = await prompt(ctx, 'allow epic 7 in silent')
-    const elapsed = Date.now() - started
+    const res = await prompt(ctx, 'allow epic 7 in late', SHRUNK)
+    // A timer never fires early: the hook waited out the whole budget.
+    const took = Date.now() - started
+    assert.ok(took >= SHRUNK_BUDGET_MS, `the hook took ${took} ms`)
+    assert.ok(ctx.api.requests.some((r) => r.url === '/api/v1/projects/late'), 'the name is looked up')
+    assert.deepEqual(storedConsent(ctx), { project: 'late', epic: 7 })
+    assert.ok(res.context.includes('consent for epic task-7 recorded'), res.context)
+  })
+})
+
+// A server that takes the request and never answers neither holds the
+// person's message past the budget nor loses the consent. The test's own
+// timeout turns a wait the budget does not end into a failure, not a hang.
+test('allow epic 7 in a project the server never answers for stores it as named', { timeout: 30000 }, async () => {
+  await withApi(async (ctx) => {
+    const res = await prompt(ctx, 'allow epic 7 in silent', SHRUNK)
     assert.ok(ctx.api.requests.some((r) => r.url === '/api/v1/projects/silent'), 'the name is looked up')
     assert.deepEqual(storedConsent(ctx), { project: 'silent', epic: 7 })
     assert.ok(res.context.includes('consent for epic task-7 recorded'), res.context)
-    assert.ok(elapsed < 5000, `the hook took ${elapsed} ms`)
   })
 })
 
@@ -342,8 +364,12 @@ test('no conport prompt fixture grants consent', async () => {
 
 // --- the consent module ------------------------------------------------------
 
-// The test's own timeout turns a budget that never ends into a failure, not a hang.
-test('withinBudget answers null for a promise that never settles, within the budget', { timeout: 2000 }, async () => {
+// A promise that never settles: only the budget can end the wait, so an answer
+// at all shows it fired, and a timer never fires early, so the wait is at
+// least the budget. No upper bound is measured — on a busy machine the wait
+// runs long without anything being wrong; the test's own timeout, far from
+// the 50 ms, turns a budget that never ends into a failure, not a hang.
+test('withinBudget answers null for a promise that never settles, after the budget', { timeout: 10000 }, async () => {
   // The budget's timer is unref'd so a hook never holds its process; on Node 22
   // nothing else would keep the test's event loop alive while it waits.
   const keepAlive = setTimeout(() => {}, 1000)
@@ -354,7 +380,7 @@ test('withinBudget answers null for a promise that never settles, within the bud
     clearTimeout(keepAlive)
   }
   const elapsed = Date.now() - started
-  assert.ok(elapsed >= 40 && elapsed < 1000, `took ${elapsed} ms`)
+  assert.ok(elapsed >= 40, `took ${elapsed} ms`)
 })
 
 test('withinBudget passes a value through and turns a rejection into null', async () => {

@@ -11,6 +11,7 @@ import { createServer } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { isolatedDir, isolatedEnv } from './support/isolated.mjs'
 
 const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -50,9 +51,9 @@ function leaf(id, { parent = null, description = '', project = HANDLE } = {}) {
 }
 
 // Answers GET /api/v1/projects/<segment>/tasks/<id> from `api.tasks`, keyed
-// by `<segment>/<id>`: a value is a body (200), or { status, raw, hang }, or
-// { delayMs, body } — the body answered after a delay. Records every request
-// with its team header and key.
+// by `<segment>/<id>`: a value is a body (200), or { status, raw, hang, drop }
+// (`drop` closes the connection unanswered), or { delayMs, body } — the body
+// answered after a delay. Records every request with its team header and key.
 async function startApi() {
   const api = { requests: [], tasks: {} }
   const server = createServer((req, res) => {
@@ -62,6 +63,7 @@ async function startApi() {
       const m = /^\/api\/v1\/projects\/([^/]+)\/tasks\/(\d+)$/.exec(req.url)
       const entry = m ? api.tasks[`${m[1]}/${m[2]}`] : undefined
       if (entry && entry.hang) return undefined
+      if (entry && entry.drop) return req.socket.destroy()
       if (entry && entry.delayMs) {
         return setTimeout(() => {
           res.setHeader('content-type', 'application/json')
@@ -375,29 +377,46 @@ test('no server at the address is R4', async () => {
   })
 })
 
-test('a slow server is R4 well before the hook timeout', async () => {
+// A read has its own budget, scaled like every hook budget. Shrunk to a
+// twentieth (150 ms) it is spent long before an answer sent after LATE_MS;
+// unscaled (3 s) that answer would be read, and the call refused as R1, not R4.
+const SHRUNK = { CONPORT_HOOK_TIME_SCALE: '0.05' }
+const SHRUNK_BUDGET_MS = 150
+const LATE_MS = 2000
+
+test('an answer later than the request budget is R4', async () => {
   await withApi(async (ctx) => {
-    ctx.api.tasks[`${HANDLE}/7`] = { hang: true }
+    ctx.api.tasks[`${HANDLE}/7`] = { delayMs: LATE_MS, body: epic(7, { plan_document: true }) }
     const started = Date.now()
-    assert.equal(reason(await runGuard(add({ parent_task_id: 7, description: PREFIX }), ctx)), R4(7))
-    assert.ok(Date.now() - started < 7000, `took ${Date.now() - started} ms`)
+    assert.equal(reason(await runGuard(add({ parent_task_id: 7 }), ctx, SHRUNK)), R4(7))
+    // A timer never fires early: the hook waited out the whole budget, it did not fail at once.
+    const took = Date.now() - started
+    assert.ok(took >= SHRUNK_BUDGET_MS, `took ${took} ms`)
     // The log of R4 names the cause.
     const log = readFileSync(join(ctx.dataDir, 'epic-growth-guard.log'), 'utf8')
     assert.match(log, / epic 7: no answer for task 7\n$/)
   })
 })
 
-test('update_task reads twice and still refuses a slow server within 7 seconds', async () => {
+// The test's own timeout turns a wait the budget does not end into a failure, not a hang.
+test('a server that never answers is R4 once the request budget is spent', { timeout: 30000 }, async () => {
   await withApi(async (ctx) => {
-    // The task answers just inside its budget, then the epic never answers.
-    ctx.api.tasks[`${HANDLE}/3`] = { delayMs: 2500, body: leaf(3) }
     ctx.api.tasks[`${HANDLE}/7`] = { hang: true }
-    const started = Date.now()
+    assert.equal(reason(await runGuard(add({ parent_task_id: 7, description: PREFIX }), ctx, SHRUNK)), R4(7))
+    const log = readFileSync(join(ctx.dataDir, 'epic-growth-guard.log'), 'utf8')
+    assert.match(log, / epic 7: no answer for task 7\n$/)
+  })
+})
+
+test('update_task reads the task, then the epic, and refuses when the epic gets no answer', async () => {
+  await withApi(async (ctx) => {
+    ctx.api.tasks[`${HANDLE}/3`] = leaf(3)
+    ctx.api.tasks[`${HANDLE}/7`] = { drop: true }
     assert.equal(reason(await runGuard(update({ task_id: 3, parent_task_id: 7 }), ctx)), R4(7))
-    const took = Date.now() - started
     assert.deepEqual(ctx.api.requests.map((r) => r.url),
       [`/api/v1/projects/${HANDLE}/tasks/3`, `/api/v1/projects/${HANDLE}/tasks/7`])
-    assert.ok(took < 7000, `took ${took} ms`)
+    const log = readFileSync(join(ctx.dataDir, 'epic-growth-guard.log'), 'utf8')
+    assert.match(log, / epic 7: no answer for task 7\n$/)
   })
 })
 
@@ -632,4 +651,29 @@ test('hooks.json sends ConPort add_task and update_task to the hook, with a time
     'mcp__plugin_conport_conport__add_linked_task', 'mcp__other__add_task']) {
     assert.doesNotMatch(tool, matcher)
   }
+})
+
+// update_task reads twice, each read within its own budget: the worst case,
+// both budgets spent, still ends inside the hook timeout with time left for
+// Node to start. Read as the hook runs it outside a test run — with a user's
+// stretch in the environment, which hook-time.js cuts to 1.
+test('two spent request budgets fit the hook timeout, whatever scale a user sets', () => {
+  const hooks = JSON.parse(readFileSync(join(dirname(SCRIPTS), 'hooks', 'hooks.json'), 'utf8'))
+  const [handler] = hooks.hooks.PreToolUse.flatMap((e) => e.hooks)
+    .filter((h) => h.command.includes('guard-epic-growth.js'))
+  const saved = { scale: process.env.CONPORT_HOOK_TIME_SCALE, mark: process.env.CONPORT_SETTINGS_FORBID_ROOT }
+  process.env.CONPORT_HOOK_TIME_SCALE = '20'
+  delete process.env.CONPORT_SETTINGS_FORBID_ROOT
+  let REQUEST_TIMEOUT_MS
+  try {
+    ({ REQUEST_TIMEOUT_MS } = createRequire(import.meta.url)('../guard-epic-growth.js'))
+  } finally {
+    for (const [name, value] of [['CONPORT_HOOK_TIME_SCALE', saved.scale], ['CONPORT_SETTINGS_FORBID_ROOT', saved.mark]]) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+  const START_MS = 2000
+  assert.ok(2 * REQUEST_TIMEOUT_MS + START_MS <= handler.timeout * 1000,
+    `${2 * REQUEST_TIMEOUT_MS} ms of reads and ${START_MS} ms to start pass ${handler.timeout} s`)
 })

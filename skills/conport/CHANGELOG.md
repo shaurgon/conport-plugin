@@ -1,5 +1,9 @@
 # conport changelog
 
+## 25.1.1
+
+The hooks keep their time budgets on a busy machine in tests: every budget goes through one place, and `CONPORT_HOOK_TIME_SCALE` can only shorten them outside the plugin's own test run. Nothing changes for a user who does not set it.
+
 ## 25.1.0
 
 **Every command the plugin prescribes runs `npx -y conport@^0.14.0`.** The skills, the install pages, the hooks' hints and the server's own hints name the release that brings `plan import --spec --milestone`, `sdd list`, `prompt idea|spec` and `proposal`; an older cached CLI is not taken.

@@ -10,13 +10,14 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { budgetMs } = require('./hook-time.js');
 
 const SETTINGS_FILE = '.conport.json';
 const LOCAL_SETTINGS_FILE = '.conport.local.json';
 const SCHEMA_URL = 'https://conport.app/schema/conport.json';
 const MIGRATION_URL = 'https://conport.app/docs/projects/project-settings.md';
 
-const GIT_TIMEOUT_MS = 5000;
+const GIT_TIMEOUT_MS = budgetMs(5000);
 const FORBID_VAR = 'CONPORT_SETTINGS_FORBID_ROOT';
 const API_KEY_NAMES = new Set(['api_key', 'apikey', 'conport_api_key']);
 const API_KEY_PREFIX = 'cport_';

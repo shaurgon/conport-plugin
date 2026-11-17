@@ -13,11 +13,14 @@ const {
   CONPORT_URL, authHeader, request, readStdin, loadSessionEpics, fingerprintChanged,
   parseProject, detectProject, projectRoute,
 } = require('./_common.js');
+const { budgetMs } = require('./hook-time.js');
 
 const PAGE_LIMIT = 200;
 const MAX_PAGES = 5;
-const REQUEST_TIMEOUT_MS = 3000;
-const TOTAL_BUDGET_MS = 6000;
+const REQUEST_TIMEOUT_MS = budgetMs(3000);
+const TOTAL_BUDGET_MS = budgetMs(6000);
+// Left of the whole budget for printing the open children already fetched.
+const PRINT_RESERVE_MS = budgetMs(250);
 
 function isOpen(status) {
   return status !== 'DONE' && status !== 'CANCELLED';
@@ -51,7 +54,7 @@ async function fetchChildren(route, epicIds, auth) {
 // times. An epic outside the ceiling scope never gets the growth marker.
 async function grewAfterStart(route, epicId, auth, deadline) {
   // The marker is optional: leave time to print already-fetched open children.
-  const timeoutMs = Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now() - 250);
+  const timeoutMs = Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now() - PRINT_RESERVE_MS);
   if (timeoutMs <= 0) return false;
   let timer;
   try {

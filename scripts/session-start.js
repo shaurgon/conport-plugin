@@ -15,6 +15,7 @@ const {
 } = require('./_common.js');
 const { projectLine } = require('./project-config.js');
 const { findOldPlaces, oldSettingsLine } = require('./old-settings.js');
+const { budgetMs } = require('./hook-time.js');
 
 const OVERLAY_RULES = path.join(
   __dirname, '..', 'skills', 'conport', 'references', 'superpowers-overlay.md');
@@ -103,7 +104,7 @@ async function main() {
   try {
     const res = await request('GET', url, {
       headers: { Accept: 'application/json', ...authHeader() },
-      timeoutMs: 5000,
+      timeoutMs: budgetMs(5000),
     });
     if (res.status >= 200 && res.status < 300 && res.body) {
       fs.writeFileSync(target, res.body);
