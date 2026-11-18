@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -62,7 +62,7 @@ jobs:
 
       - name: Publish rolling release (on branch push)
         if: github.ref_type == 'branch'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: skills-latest
           name: Skills (latest)
@@ -83,7 +83,7 @@ jobs:
 
       - name: Publish versioned release (on tag push)
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: v${{ steps.version.outputs.plugin_version }}
