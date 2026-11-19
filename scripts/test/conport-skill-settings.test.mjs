@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sectionWith } from './support/changelog.mjs'
 
 const SKILL_DIR = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), 'skills', 'conport')
 const MOVE_DOC = 'https://conport.app/docs/projects/project-settings.md'
@@ -213,14 +214,9 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
   assert.match(fails, /a `npx -y conport@\^0\.14\.0 …` command fails/)
 })
 
-// The entry ships in 24.0.0; before the release step it sits under Unreleased.
+// The entry is the section that links the move document, under whatever heading the release gave it.
 test('the changelog names the settings move in the release that ships it', () => {
-  const changelog = read('CHANGELOG.md')
-  const headings = changelog.split('\n').filter((line) => line.startsWith('## '))
-  const heading = headings.includes('## 24.0.0') ? '## 24.0.0' : '## Unreleased'
-  assert.ok(headings.includes(heading), 'the changelog has neither a 24.0.0 nor an Unreleased section')
-  const next = headings[headings.indexOf(heading) + 1]
-  const unreleased = flat(changelog.slice(changelog.indexOf(heading), next ? changelog.indexOf(`\n${next}`) : undefined))
+  const entry = flat(sectionWith(read('CHANGELOG.md'), MOVE_DOC))
   for (const needle of [
     '`.conport.json`',
     '`.conport.local.json`',
@@ -233,7 +229,7 @@ test('the changelog names the settings move in the release that ships it', () =>
     MOVE_DOC,
     'session',
   ]) {
-    assert.ok(unreleased.includes(needle), `## Unreleased does not name ${needle}`)
+    assert.ok(entry.includes(needle), `the settings entry of the changelog does not name ${needle}`)
   }
-  assert.doesNotMatch(unreleased, /\b(task|decision|doc|progress)-\d+\b/)
+  assert.doesNotMatch(entry, /\b(task|decision|doc|progress)-\d+\b/)
 })

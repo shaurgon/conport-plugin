@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sectionWith } from './support/changelog.mjs'
 
 const PLUGIN_DIR = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const SKILL_DIR = join(PLUGIN_DIR, 'skills', 'conport')
@@ -337,13 +338,11 @@ test('cursor install replaces the whole skills/conport folder with references/',
   assert.doesNotMatch(updating, /Pull the latest `skills\/conport\/SKILL\.md`/)
 })
 
-// The entry ships in 26.0.0; before the release step it sits under Unreleased.
+// The entry is the section that names the document type, under whatever heading the release gave it.
 test('the changelog names the breaking changes and the rollback in the release that ships them', () => {
-  const changelog = read('CHANGELOG.md')
-  const headings = changelog.split('\n').filter((line) => line.startsWith('## '))
-  const heading = headings.includes('## 26.0.0') ? '## 26.0.0' : '## Unreleased'
-  assert.ok(headings.includes(heading), 'the changelog has neither a 26.0.0 nor an Unreleased section')
-  const unreleased = oneLine(section(changelog, heading))
+  const entry = oneLine(
+    sectionWith(read('CHANGELOG.md'), 'name the document type: spec, architecture, runbook, api_docs, tutorial, meeting_notes, plan or other'),
+  )
   for (const needle of [
     '**Breaking',
     '`doc_type`',
@@ -364,8 +363,8 @@ test('the changelog names the breaking changes and the rollback in the release t
     'npx -y conport@^0.15.0',
     '`references/project-onboarding.md`',
     '`projects/project-onboarding`',
-  ]) assert.ok(unreleased.includes(needle), `## Unreleased does not name ${needle}`)
+  ]) assert.ok(entry.includes(needle), `the onboarding entry of the changelog does not name ${needle}`)
   // While the server is rolled back, the steps that need the new form are not run.
-  assert.match(unreleased, /steps 2 and 7 of the onboarding are not run/)
-  assert.doesNotMatch(unreleased, /\b(task|decision|doc|progress)-\d+\b/)
+  assert.match(entry, /steps 2 and 7 of the onboarding are not run/)
+  assert.doesNotMatch(entry, /\b(task|decision|doc|progress)-\d+\b/)
 })

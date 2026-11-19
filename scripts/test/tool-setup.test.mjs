@@ -419,8 +419,12 @@ test('codegraph is installed when its command is on PATH and indexed with .codeg
   writeFileSync(join(bin, 'codegraph'), '')
   // A file that cannot run is no command.
   assert.equal(onPath('codegraph', { PATH: bin }, 'linux'), false)
-  chmodSync(join(bin, 'codegraph'), 0o755)
-  assert.equal(onPath('codegraph', { PATH: `${isolatedDir()}${delimiter}${bin}` }, 'linux'), true)
+  // The bit that makes a file run exists only on a POSIX file system: chmod
+  // sets no such bit on Windows, so the found case is checked off Windows.
+  if (process.platform !== 'win32') {
+    chmodSync(join(bin, 'codegraph'), 0o755)
+    assert.equal(onPath('codegraph', { PATH: `${isolatedDir()}${delimiter}${bin}` }, 'linux'), true)
+  }
   assert.equal(onPath('codegraph', {}, 'linux'), false)
   // On Windows the command is found by its PATHEXT ending.
   const win = isolatedDir({ 'codegraph.cmd': '' })

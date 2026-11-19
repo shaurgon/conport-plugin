@@ -8,10 +8,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { sectionWith } from './support/changelog.mjs'
 
 const SKILL_DIR = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))), 'skills', 'conport')
 const read = (path) => readFileSync(join(SKILL_DIR, path), 'utf8')
 const oneLine = (text) => text.replace(/\s+/g, ' ')
+// The changelog entry that shipped the backfill, found by its words under whatever heading it has.
+const backfillEntry = () => oneLine(sectionWith(read('CHANGELOG.md'), 'The conport skill ships the procedure `references/model-backfill.md`'))
 
 /** The text from a heading to the next heading of the same or a higher level. */
 function section(text, heading) {
@@ -287,7 +290,7 @@ test('the reference tells a repeated completion keeps its date', () => {
 })
 
 test('the changelog runs the full withdrawal with the CLI that has it', () => {
-  const changelog = oneLine(section(read('CHANGELOG.md'), '## 20.6.0'))
+  const changelog = backfillEntry()
   assert.match(changelog, /`npx -y conport@\^0\.7\.3 arch withdraw --all`/)
   assert.doesNotMatch(changelog, /conport@\^0\.7 arch withdraw/)
 })
@@ -397,8 +400,7 @@ test("the parameter questions of init says false drops the offer line", () => {
   assert.match(row, /`instructions` carries no offer to fill the project model \(the key `arch\.backfill\.offer` stays\)/)
 })
 
-test('the changelog of 20.6.0 says only a session with a person gets the offer', () => {
-  const log = oneLine(read('CHANGELOG.md'))
-  const entry = log.slice(log.indexOf('## 20.6.0'), log.indexOf('## 20.5.0'))
+test('the backfill entry of the changelog says only a session with a person gets the offer', () => {
+  const entry = backfillEntry()
   assert.match(entry, /only a session with a person — `init` called with `questions=true` — gets the line that offers it; a routine or a subagent gets the key `offer` alone/)
 })
