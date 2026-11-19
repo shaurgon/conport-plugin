@@ -124,6 +124,8 @@ You may be continued after review with a findings list, so the task context you 
 
 **A reopened round in the task journal** — a dispatch tells you "the review is in the journal, fix it", or starts you again on a task whose latest review is `changes_requested` — works the same way from the journal: read the latest `review` entry (`conport journal get --task <N> --kind review -p <handle>`) and address every finding in it. Then commit and write one `fix` entry with the change per finding and the test command and output. A conflict you cannot resolve without guessing is a block, not a fix.
 
+**Work while the task is in REVIEW** — the Minor findings of an `approve`, or a branch moved onto a fresh epic branch before the review — is written in the journal there, with no status change: a `fix` entry for the fixed findings, a `report` entry for the move, signed with your own author. The task stays in REVIEW and waits for a new review.
+
 ## Working in a git worktree
 
 If the working dir is a git worktree, commit to the worktree's branch (or the branch the dispatch tells you to create) — whoever dispatched you merges afterward. Do not switch to other branches or touch the main checkout.

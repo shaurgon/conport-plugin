@@ -1,22 +1,37 @@
 # Bootstrapping a fresh ConPort project
 
-Use this guide right after the first `mcp__conport__init` in a repo that has
-no prior ConPort context. Goal: give Claude enough baseline to be useful in
-future sessions without asking the same questions every time.
+**A repository with a history of git is not bootstrapped: it is onboarded.**
+When the root is a repository of git, not a shallow clone, whose main branch
+has at least 20 commits on its first-parent line and the first of them is
+older than 30 days, follow the onboarding procedure
+`references/project-onboarding.md` instead of this guide. This guide is for
+the rest: a folder outside git, or a repository with almost no history.
+
+Use this guide right after `mcp__conport__init` for a project ConPort knows
+nothing about yet. Goal: give Claude enough baseline to be useful in future
+sessions without asking the same questions every time.
 
 ---
 
 ## When to trigger
 
-Offer the bootstrap flow when **all** of the following hold after `init`:
+Offer the bootstrap flow when **both** of the following hold after `init`:
 
-1. `stats.decisions_total` is `0` **and** `stats.patterns_total` is `0`.
-2. `active_context.product_context` is empty or missing the `vision`/`tech_stack`/`goals` fields.
-3. No existing `CONSTITUTION.md` / `.specify/memory/constitution.md` / `docs/ADR/` / similar onboarding doc is already in the repo.
+1. `onboarding.offer` of `init` is true — the project has no product context
+   (or an empty one) and no portion of its model. The decisions, progress
+   entries and documents it already has do not matter. An agent without the
+   MCP server reads `offer` from `GET /api/v1/projects/{project}/onboarding`
+   (`npx -y conport@^0.15.0 api arch onboarding --project <project>`).
+2. The repository has no history to onboard from (the condition above).
 
-If a constitution-like document exists, **skip the interactive flow** and instead:
+The onboarding procedure sends a project here at its step 0 by the same
+condition; then run this guide without checking anything else.
+
+If a constitution-like document exists (`CONSTITUTION.md`, `docs/ADR/` or a
+similar onboarding doc), **skip the interactive flow** and instead:
 - Read the doc.
-- Call `update_product_context` with its key sections (vision, goals, stack).
+- Write its key sections (vision, goals, stack) into the product context, by
+  the request of *Persisting the answers* below.
 - Log a decision: "Bootstrapped from `<path>`".
 
 ---
@@ -44,19 +59,22 @@ Optional follow-ups (only if the user engages):
 
 After the user responds:
 
-1. **Product context** — one call, all answers at once:
+1. **Product context** — one request, all answers at once:
+   `PATCH /api/v1/projects/{project}/context/product` with
+   `{"patch": {…}}`, run through the CLI:
    ```
-   mcp__conport__update_product_context({
-     project: <project>,
-     content: {
-       vision:       "<answer 1>",
-       tech_stack:   "<answer 2>",
-       target_users: "<answer 3>",
-       success_metrics: "<answer 4>",
-       bootstrapped_at: "<ISO date>"
-     }
-   })
+   npx -y conport@^0.15.0 api context update --project <project> --context_type product --patch '{
+     "vision":          "<answer 1>",
+     "tech_stack":      "<answer 2>",
+     "target_users":    "<answer 3>",
+     "success_metrics": "<answer 4>",
+     "bootstrapped_at": "<ISO date>"
+   }'
    ```
+   Without the CLI, `mcp__conport__update_product_context` writes one field
+   per call (`field`, `value`) and takes `vision`, `goals`, `features`,
+   `architecture`, `tech_stack` and `constraints` only: write `vision` and
+   `tech_stack` that way and leave the rest for a session with the CLI.
 
 2. **First decision** — record the bootstrap itself so future sessions know it happened:
    ```
@@ -70,7 +88,10 @@ After the user responds:
 
 3. **Link external docs** (only if the user pointed to any):
    - Read the doc(s) with the `Read` tool first (don't guess).
-   - Store the link as a document via `add_document`.
+   - Store the link as a document via `add_document` with its `doc_type`
+     (`spec`, `architecture`, `runbook`, `api_docs`, `tutorial`,
+     `meeting_notes`, `plan` or `other`): a document is created only with
+     its type.
 
 ---
 

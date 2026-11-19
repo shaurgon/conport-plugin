@@ -312,18 +312,39 @@ function overlaySwitch(result) {
   const flag = result && result.settings && result.settings.plugins && result.settings.plugins.superpowers;
   if (typeof flag === 'boolean') return { on: flag, from: 'settings' };
   const off = { on: false, from: null };
-  const root = result && result.root;
-  if (!root) return off;
   try {
-    let raw = readOverlayConfig(root);
-    const main = result && result.mainRoot;
-    // Asked only when the current worktree has no file of its own.
-    if (raw === null && main && main !== root) raw = readOverlayConfig(main);
-    if (raw === null) return off;
-    const config = JSON.parse(raw);
+    const config = oldOverlayConfig(result);
+    if (config === null) return off;
     return { on: Boolean(config && config.conport && config.conport.superpowers === true), from: 'old' };
   } catch (_) {
     return off;
+  }
+}
+
+// The parsed old overlay config of the settings worked out for a folder: the
+// file in the root of the current worktree, else in the root of the main one;
+// null when there is no root or no file. Throws when the file found cannot be
+// read or is not JSON.
+function oldOverlayConfig(result) {
+  const root = result && result.root;
+  if (!root) return null;
+  let raw = readOverlayConfig(root);
+  const main = result && result.mainRoot;
+  // Asked only when the current worktree has no file of its own.
+  if (raw === null && main && main !== root) raw = readOverlayConfig(main);
+  return raw === null ? null : JSON.parse(raw);
+}
+
+// The old flag as a value the user set: `conport.superpowers` of the old
+// overlay config when it is true or false, else undefined — a file without
+// that key, an unreadable one or none at all sets nothing. Never throws.
+function oldOverlayFlag(result) {
+  try {
+    const config = oldOverlayConfig(result);
+    const value = config && config.conport && config.conport.superpowers;
+    return typeof value === 'boolean' ? value : undefined;
+  } catch (_) {
+    return undefined;
   }
 }
 
@@ -411,6 +432,6 @@ module.exports = {
   RETIRED_PROJECT_ID, retiredProjectIdNotice,
   projectRoute, denyListPath, authHeader, request, readStdin, sessionEpicsPath, loadSessionEpics,
   epicTailsCachePath, dropEpicTailsCaches, fingerprintChanged, gitIn, worktreeRoot, mainWorktreeRoot,
-  overlayEnabled, overlayFromSettings, overlaySwitch, OVERLAY_SOURCES, overlayNoticeText,
+  overlayEnabled, overlayFromSettings, overlaySwitch, oldOverlayFlag, OVERLAY_SOURCES, overlayNoticeText,
   START_CONTEXT_BUDGET, startContext,
 };

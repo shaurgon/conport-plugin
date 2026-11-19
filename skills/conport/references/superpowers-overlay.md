@@ -181,7 +181,10 @@ creates).
      `kind="review"` with `verdict="approve"` or `verdict="changes_requested"`,
      the fixer's report `kind="fix"`. The entry moves the task: a report or a
      fix puts it in REVIEW (a report starts a TODO task first), a review that
-     requests changes returns it to IN_PROGRESS for the next round. Without
+     requests changes returns it to IN_PROGRESS for the next round. A report
+     or a fix on a task already in REVIEW — the Minor findings of an approve
+     fixed, a branch moved before the review — keeps it there, waiting for a
+     new review. Without
      `author` the entry is signed by its role — `implementer` for a report or a
      fix, `reviewer` for a review — so a review never signs as the report's
      author. The subagent's final message is only the status and the entry's

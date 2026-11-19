@@ -218,6 +218,15 @@ files), not only in the skeleton: the skeleton is two levels deep. Found —
 name the entity of the skeleton by its name, or introduce a new one with an
 anchor. Not found — submit it without an anchor; step 4 decides its fate.
 
+**A mention needs an entity the model already has.** The pass goes oldest
+first, so an early document may name a thing that only a later document
+introduces. Write `mentioned` only for an entity `arch_names` lists (or one
+an earlier portion of this same document held); a mention of anything else is
+refused `entity_without_ground`, since a mention introduces nothing. When the
+document speaks of the thing, introduce it in this document with
+`introduced` and the block that names it; the later document then mentions or
+changes it.
+
 **A history source** (role `history`) submits entities and relations, and no
 scenarios. Its claims set no current state: they go into the history of the
 card. A portion of a document with the role `history` that carries a
@@ -276,6 +285,25 @@ document:**
 The user is not asked about each one: the user reads the result as a whole; a
 row they disagree with is edited, and the portion of the result is submitted
 again.
+
+**Each debt `orphan_entity` is a thing of this step**: an entity only a
+history, archived or replaced document introduced, or one only mentioned, with
+no anchor, no relation and no scenario. Claim it in the portion of the result
+by the rules above; a thing that exists without an anchor (an external system
+the code reaches) is introduced there instead, with a relation when the
+documents name one. The fold orders an archived or replaced document by its
+moment of creation and skips a `history` one: the result must be created
+after the document the debt names, so when the debt names one created after
+the result, create the next result document, `Model backfill: result N`. At
+most 12 debts of the kind are listed at a time; the last one counts the rest,
+and they come in as these are paid.
+
+**Each debt `part_without_owner`** is a component, interface, data or setting
+nothing active contains. Claim the relation `contains` to it from the unit or
+component that holds it, in the portion of a living source that names it, or
+claim it `removed` there if it is gone. At most 12 debts of the kind are
+listed at a time, the parts with the most relations first; the last one
+counts the rest, and they come in as these are paid.
 
 **A document submitted again after this step** keeps its original relation
 actions and scenario participants when they are valid at the document source

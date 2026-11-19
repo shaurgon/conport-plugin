@@ -21,6 +21,7 @@ const TESTS = join(SCRIPTS, 'test')
 const MOVE_DOC = 'https://conport.app/docs/projects/project-settings.md'
 const { findOldPlaces, oldSettingsLine } = createRequire(import.meta.url)('../old-settings.js')
 const { RETIRED_PROJECT_ID } = createRequire(import.meta.url)('../_common.js')
+const { TOOL_LINE_HEADS } = createRequire(import.meta.url)('../tool-setup.js')
 
 // A path as a word of a command and of a refusal: the hook reads commands by
 // shell rules, where `\` escapes, and quotes a refusal path that holds one —
@@ -103,14 +104,19 @@ const stop = (ctx, cwd, session = 's1') =>
   runHook(ctx, 'stop-epic-tails.js', { session_id: session, stop_hook_active: false, cwd }, { cwd })
 
 // What the session start said: the user's message and the agent's context,
-// each as lines (null: not said).
+// each as lines (null: not said). The lines about the tools of the project
+// (Superpowers, codegraph) depend on what the machine has installed and are
+// pinned word for word in tool-setup.test.mjs; here they are left out by the
+// heads they open with.
+const isToolLine = (line) => TOOL_LINE_HEADS.some((head) => line.startsWith(head))
+const withoutToolLines = (text) => (text == null ? null : text.split('\n').filter((l) => !isToolLine(l)).join('\n'))
 function told(res) {
   assert.equal(res.code, 0, res.err)
   if (!res.out) return { user: null, agent: null }
   const parsed = JSON.parse(res.out)
   return {
-    user: parsed.systemMessage ?? null,
-    agent: parsed.hookSpecificOutput?.additionalContext ?? null,
+    user: withoutToolLines(parsed.systemMessage ?? null),
+    agent: withoutToolLines(parsed.hookSpecificOutput?.additionalContext ?? null),
   }
 }
 

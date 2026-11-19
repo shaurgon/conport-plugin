@@ -725,9 +725,9 @@ task already has is not a transition and is never refused. The refusals carry
 | `review_on_epic` | REVIEW on an epic, or `kind: "epic"` on a task in REVIEW | Review the children instead |
 | `review_needs_report` | IN_PROGRESS → REVIEW with no `report` or `fix` in the current round | `add_task_journal_entry` with `kind: "report"` or `"fix"` |
 | `done_needs_review` | DONE from a status other than REVIEW on a task with a `report`, `fix` or `review` entry, a closed epic with one demoted to a task, or a childless epic with one closed | The action in `message`: IN_PROGRESS → REVIEW; from TODO, BLOCKED or CANCELLED → IN_PROGRESS, then REVIEW; demote an epic together with `status: "IN_PROGRESS"`, or give a childless epic child tasks |
-| `done_needs_approval` | REVIEW → DONE when the last `review` of the round is not `approve` | A reviewer's `review` with `verdict: "approve"` |
+| `done_needs_approval` | REVIEW → DONE when the last `review` of the round is not `approve`, or a `report` or `fix` was written after it | A reviewer's `review` with `verdict: "approve"` |
 | `done_needs_resolution` | REVIEW → DONE without `resolution` | Repeat with `resolution` |
-| `return_needs_review` | REVIEW → IN_PROGRESS when the last `review` of the round is not `changes_requested` | A reviewer's `review` with `verdict: "changes_requested"` |
+| `return_needs_review` | REVIEW → IN_PROGRESS when the last `review` of the round is not `changes_requested`, or a `report` or `fix` was written after it | A reviewer's `review` with `verdict: "changes_requested"` |
 | `review_exit_not_allowed` | REVIEW → TODO, BLOCKED or PARKED | Finish the review, or CANCELLED with `resolution` |
 
 REVIEW → IN_PROGRESS raises `review_round` by one, and so does reopening a
@@ -789,7 +789,8 @@ mcp__conport__get_task({
 `review_round`) plus `dependencies`, `dependents`, `subtasks_count` and
 `journal` — the summary of the task's journal: `counts` per kind (`brief`,
 `report`, `review`, `fix`), `last_verdict` and `last_verdict_round` — the
-round of that verdict (both `null` before the first review; a round below
+round of that verdict (both `null` before the first review and while a
+`report` or `fix` of that round written after it waits for a new review; a round below
 `review_round` means the verdict belongs to an earlier round). The entries themselves come
 from `list_task_journal`. An epic reports the `estimated_seconds` /
 `actual_seconds` summed across its children and `epic_progress` (the rollup
@@ -909,8 +910,8 @@ mcp__conport__add_task_journal_entry({
 | `kind` | Task status | What it is | How it moves the task |
 |---|---|---|---|
 | `brief` | TODO, IN_PROGRESS, BLOCKED, REVIEW | The assignment: for the executor, or in REVIEW for the reviewer | No move |
-| `report` | IN_PROGRESS (TODO and BLOCKED are started first) | The executor's report — the first round by convention | A TODO or BLOCKED task is moved to IN_PROGRESS before the entry; after it the task goes to REVIEW |
-| `fix` | IN_PROGRESS | The report on the fixes — the second round and later by convention | To REVIEW |
+| `report` | IN_PROGRESS (TODO and BLOCKED are started first), REVIEW | The executor's report — the first round by convention; in REVIEW, the addendum of a branch moved before the review | A TODO or BLOCKED task is moved to IN_PROGRESS before the entry; after it the task goes to REVIEW; in REVIEW no move |
+| `fix` | IN_PROGRESS, REVIEW | The report on the fixes — the second round and later by convention; in REVIEW, the addendum of the Minor findings of an `approve` | To REVIEW; in REVIEW no move |
 | `review` | REVIEW | The reviewer's verdict | `changes_requested`: back to IN_PROGRESS, the next round; `approve`: no move — close the task with `update_task` (DONE with a `resolution`) |
 
 The server stamps the entry with the task's current `review_round`, its own
@@ -918,6 +919,13 @@ The server stamps the entry with the task's current `review_round`, its own
 reviewer sign with different names: a `review` signed like a `report` or `fix`
 of the same round is refused (`reviewer_is_author`) — the default authors never
 are.
+
+A `report` or `fix` on a task in REVIEW is the implementer's addendum: the task
+stays in REVIEW in the same round and waits for a new `review` — a review
+written before the addendum opens neither DONE (`done_needs_approval`) nor a
+return (`return_needs_review`). An addendum signed `reviewer`,
+`reviewer:<agent>` or like a `review` of the round is refused
+(`addendum_by_reviewer`); the implementer writes it under its own name.
 
 **Returns:** a slim echo — `id`, `task_id`, `kind`, `round`, `verdict` and
 `summary`, plus `status` (the status the task is in now) when the entry moved
@@ -929,7 +937,7 @@ carries the refusal under `move_refused`, and the task keeps its status.
 (the task is DONE or CANCELLED — reopen the task, then write the entry),
 `journal_kind_not_allowed` (`context` carries `kind`, `status` and the kinds
 that fit), `invalid_verdict` (`verdict` missing on `review` or present on
-another kind; 422 over REST), `reviewer_is_author`, a refusal of the move
+another kind; 422 over REST), `reviewer_is_author`, `addendum_by_reviewer`, a refusal of the move
 before a report (the transition's own code) and `not_found`
 (`context.task_id` — the task is not in the project, a task of another team
 included; check the id with `list_tasks`).
@@ -1107,7 +1115,7 @@ mcp__conport__add_document({
 | project | string | yes | Project handle or name |
 | title | string | yes | Title (max 200 chars) |
 | content | string | yes | Content (max 50000 chars) |
-| doc_type | string | no | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| plan \| other |
+| doc_type | string | yes | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| plan \| other |
 | author | string | no | Author (max 100 chars) |
 | tags | array | no | Tags |
 | parent_document_id | integer | no | Per-project ID of parent document |
@@ -1115,6 +1123,23 @@ mcp__conport__add_document({
 **Returns:** a slim echo — `id` and `tags`, so you can confirm where the body
 landed. The body is split into blocks on the
 write itself; their embeddings and entity extraction follow in the background.
+
+**Errors:** a call without `doc_type` fails before anything is written, with
+the action `name the document type: spec, architecture, runbook, api_docs, tutorial, meeting_notes, plan or other`.
+REST answers the same action with 422 on `POST /api/v1/projects/{project}/documents`
+and on the upload below.
+
+**Uploading a file** — the `conport` CLI sends a Markdown file of the
+repository as a new document:
+`npx -y conport@^0.15.0 documents upload <file> --doc-type <type> [--title <title>] [--created-at <date>] [--tags <tags>] [--author <author>]`.
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--doc-type` | yes | spec \| runbook \| api_docs \| tutorial \| architecture \| meeting_notes \| plan \| other; without it the CLI refuses before any request: `--doc-type is required: name the document type: spec, architecture, runbook, api_docs, tutorial, meeting_notes, plan or other` |
+| `--title` | no | The title of the document; default: the first `#` heading of the file, else its name. An upload repeated after a lost answer is recognised by this title |
+| `--created-at` | no | A past date of creation with its offset, e.g. `2023-02-01T10:00:00+03:00` — the date of the file's first commit; it becomes the date of creation and of the last update |
+| `--tags` | no | Tags, comma-separated |
+| `--author` | no | Author |
 
 ### update_document
 
@@ -1412,6 +1437,51 @@ mcp__conport__delete_document({
 | document_id | integer | yes | Per-project document ID |
 
 **Returns:** a confirmation `message`. An unknown document is an error.
+
+---
+
+## History of git (CLI)
+
+No MCP tool reads the history of a repository: the server sees no local code.
+The `conport` CLI reads it on the machine and sends nothing to ConPort; the
+onboarding procedure of the conport skill (`references/project-onboarding.md`)
+runs it.
+
+### conport history
+
+```
+npx -y conport@^0.15.0 history [--since <YYYY-MM-DD>] [--to <sha>] [--ignore <path>]... [--json]
+npx -y conport@^0.15.0 history --stage <N> [--since …] [--to …] [--ignore …] [--json]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--to` | The top commit of the first-parent line; default `HEAD`. Pass the tip of the main branch and the same full hash on every later call, so new commits do not move the stages |
+| `--since` | Leaves out the commits before the date; the stages are counted after it |
+| `--ignore` | A path left out, as many as needed: at most 50 paths of 1 to 512 characters each; the noise and `arch.ignore` of the `.conport.json` committed in the tree of `--to` are left out anyway |
+| `--stage` | The summary of one stage of the table instead of the table |
+| `--json` | One JSON object on stdout |
+
+Without `--stage` the answer is the table of stages: `branch`, `to` (the full
+hash), `to_at`, `since`, `history_truncated` and `stages`, each with `n`,
+`from`, `to`, `first`, `last`, `commits`, `tags` and `units`. With `--stage N`
+it is that stage with `areas` (its hot areas), `structure` (the folders that
+appeared and went) and up to 200 `messages` (`sha`, `at`, `subject`, `body` cut
+to 500 characters, `units`), with `messages_more` for the rest. No author is in
+the answer in any form. The table is kept in `.conport/onboarding/`, out of
+git.
+
+**Refusals** (exit code 1, one line each): `not a git repository: connect without history — the first fill of the conport skill`;
+`no commits: connect without history — the first fill of the conport skill`;
+`shallow clone: run git fetch --unshallow and run conport history again`;
+`--since takes a date YYYY-MM-DD`;
+`--stage takes a stage number: 1, 2, …`;
+`--ignore takes at most 50 paths of 1 to 512 characters: drop or merge the paths and run conport history again`;
+`no commits after <date>: pass an earlier --since`;
+`no commit <sha>: the history was rewritten — run conport history without --to and start the history pass over`;
+`too many stages (<K>): pass a later --since`;
+`no stage <N>: the history has <K> stages`. A history cut by the limits of the
+CLI answers with `history_truncated: true` and a line on stderr, exit code 0.
 
 ---
 
@@ -1820,8 +1890,8 @@ mcp__conport__arch_status({
 
 **Returns:** `total`, `debts` (`kind` — no_portion \| portion_stale \|
 code_portion_stale \| unchecked_portion \| anchor_missing \| check_stale \|
-area_uncovered \| removed_but_present \| step_without_relation \|
-scenario_participant_gone, `subject`, `detail`, `action`, a `no_portion` debt
+area_uncovered \| removed_but_present \| orphan_entity \| part_without_owner \|
+step_without_relation \| scenario_participant_gone, `subject`, `detail`, `action`, a `no_portion` debt
 its `role`, an `area_uncovered` debt its `area` (`unit` — `""` for the root,
 `path`, `commits`, `share`, `nodes` — null without codegraph,
 `unit_entity_id` — the smallest number of an active `unit` entity anchored on
@@ -1929,6 +1999,48 @@ with every code source no newer than the last anchor check.
 `backfill_not_ready` (`blockers`: `debts` with their `count`,
 `code_source_unchecked` with its `subject`), `backfill_not_started`,
 `backfill_already_started`.
+
+### project_onboarding
+
+Move the onboarding of a project that lived without ConPort — run by the
+onboarding procedure of the conport skill — to a new state. Agents without the
+MCP server read the state with `GET /api/v1/projects/{project}/onboarding`
+(`state`, `offer`, `lead_is_caller`, `history`) and change it with `PUT` of
+the same path.
+
+```
+mcp__conport__project_onboarding({
+  project: <project>,
+  state: "in_progress",
+  history: {to: "<full commit hash>", since: null, ignore: []}
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| state | string | yes | in_progress \| completed \| declined |
+| history | object | no | With `in_progress` only: `to` (the full commit hash), `since` (a date or null), `ignore` (paths: at most 50 paths, each 1 to 512 characters) — the arguments of `conport history` |
+| take_over | boolean | no | Make the caller the lead of a running onboarding; only on the user's word (default false) |
+
+`in_progress` starts the onboarding from `not_started` or `declined` and makes
+the caller its lead; `completed` closes it from `in_progress` and is final —
+the project is then worked on as any other; `declined` — on the user's
+refusal, from `not_started` or `in_progress`. A repeat of the current state
+changes nothing; a repeated `in_progress` with `history` writes the history.
+While the onboarding is `in_progress`, only its lead moves it; no answer names
+the lead.
+
+**Returns:** `project`, `state`, `lead_is_caller` (whether the caller leads
+the onboarding; null without a lead), `history`, `summary` (the new state and
+the next action).
+
+**Refusals:** `{"error", "action", "blockers"}` (REST: 422) —
+`onboarding_transition_refused` (the action names the transitions the current
+state allows), `onboarding_in_progress_elsewhere` (another member leads it:
+wait for them, or pass `take_over` on the user's word),
+`onboarding_not_ready` (`blockers`, each with its `action`:
+`backfill_not_completed`, `product_context_empty`).
 
 ---
 
@@ -2229,8 +2341,8 @@ of that type from `project` to `target_project` that does not exist is refused
 with `project_link_not_found`, the message naming the link and pointing to
 `get_project_links`. A `link_type` outside the list of `link_project` is
 refused with `invalid_relationship`. Each reads `<code>: <sentence>`, the code
-the REST `DELETE /project-links` answers (404 and 422). The old `link_id`
-argument is refused: send `target_project` and `link_type`.
+the REST `DELETE /project-links` answers (404 and 422). The tool takes no
+`link_id`: a link has no number.
 
 ---
 
@@ -2870,7 +2982,7 @@ kept, or a decision tagged `error-solution` by hand.
 | Linking | `link_items`, `get_linked`, `link_project`, `get_project_links`, `unlink_project` |
 | History | `recent_activity`, `item_history`, `context_history` |
 | Context assembly | `assemble_context`, `list_context_recipes`, `render_current_architecture`, `audit_doc_l1_coverage` |
-| Project model | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill` |
+| Project model | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill`, `project_onboarding` |
 | Gaps | `gap_list`, `gap_stats`, `answer_question` |
 | Routine cycle | `get_agenda`, `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 | Guardrails | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |

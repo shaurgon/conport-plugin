@@ -46,9 +46,11 @@ export function isolatedDir(files = {}) {
 // A copy of process.env for a settings reader under test: no project from the
 // calling shell (CONPORT_PROJECT_NAME, CONPORT_PROJECT_ID), no session root a
 // calling harness set (CLAUDE_PROJECT_DIR) and no git variables a calling hook
-// exported, the repository forbidden as a settings root, the user config and
-// plugin data folders in fresh temporary folders, and every time budget of
-// the hooks stretched (HOOK_TIME_SCALE). `extra` is laid over the result.
+// exported, the repository forbidden as a settings root, the user config,
+// Claude Code's settings (CLAUDE_CONFIG_DIR, so no plugin the machine has
+// installed is seen) and plugin data folders in fresh temporary folders, and
+// every time budget of the hooks stretched (HOOK_TIME_SCALE). `extra` is laid
+// over the result.
 const DROPPED = new Set(['CONPORT_PROJECT_NAME', 'CONPORT_PROJECT_ID', 'CLAUDE_PROJECT_DIR'])
 // A hook budget (hook-time.js) is wall-clock time: on a busy machine a pause
 // of a few seconds spent a 500 ms or a 6 s budget before a local stand-in
@@ -65,6 +67,7 @@ export function isolatedEnv(extra = {}) {
   }
   env.CONPORT_SETTINGS_FORBID_ROOT = REPO_ROOT
   env.XDG_CONFIG_HOME = tempDir('conport-xdg-')
+  env.CLAUDE_CONFIG_DIR = tempDir('conport-claude-')
   env.CLAUDE_PLUGIN_DATA = tempDir('conport-data-')
   env.CONPORT_HOOK_TIME_SCALE = HOOK_TIME_SCALE
   return { ...env, ...extra }

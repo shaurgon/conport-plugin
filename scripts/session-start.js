@@ -2,20 +2,24 @@
 // SessionStart hook: work out the session's ConPort settings once and keep
 // them for the other hooks, tell the session the project, the lines of its
 // settings and where old settings are still kept, say that CONPORT_PROJECT_ID
-// is no longer read when it is set, tell the agent the Superpowers overlay is
-// on and which file holds its rules when it is, then fetch the deny-list from
-// ConPort. Graceful degradation on failure.
+// is no longer read when it is set, name each tool of the project
+// (Superpowers, codegraph) that is not connected with the one action that
+// connects it, tell the agent the Superpowers overlay is on and which file
+// holds its rules when it is, then fetch the deny-list from ConPort. Graceful
+// degradation on failure.
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const {
   CONPORT_URL, parseProject, sessionSettings, retiredProjectIdNotice, denyListPath, authHeader,
-  request, readStdin, overlaySwitch, overlayNoticeText, startContext,
+  request, readStdin, overlaySwitch, oldOverlayFlag, overlayNoticeText, startContext,
 } = require('./_common.js');
 const { projectLine } = require('./project-config.js');
 const { findOldPlaces, oldSettingsLine } = require('./old-settings.js');
 const { budgetMs } = require('./hook-time.js');
+const { toolFacts, toolLines } = require('./tool-setup.js');
 
 const OVERLAY_RULES = path.join(
   __dirname, '..', 'skills', 'conport', 'references', 'superpowers-overlay.md');
@@ -54,12 +58,28 @@ function oldPlacesLine(settings) {
   return oldSettingsLine({ hasShared, places });
 }
 
+// The lines about the tools the project works with (`toolLines`), said only
+// for a session with a ConPort project: without one the plugin has nothing to
+// connect them to. (When git does not answer, no file is read and no project
+// is named, so there is always a root here.) `plugins.superpowers` is the
+// Superpowers key; without it the old flag is, when it is true or false.
+function toolSetupLines(settings) {
+  if (!settings.project) return [];
+  const plugins = (settings.settings && settings.settings.plugins) || {};
+  const superpowers = typeof plugins.superpowers === 'boolean'
+    ? { key: plugins.superpowers, from: 'settings' }
+    : { key: oldOverlayFlag(settings), from: 'old' };
+  const facts = toolFacts({ root: settings.root, mainRoot: settings.mainRoot, env: process.env, home: os.homedir() });
+  return toolLines({ superpowers, codegraph: plugins.codegraph, facts });
+}
+
 // What the session start says about its settings: the project and its
-// source, then the lines of the settings and the line about old places.
+// source, then the lines of the settings, the line about old places and the
+// lines about the tools.
 function settingsLines(settings) {
   return {
     project: projectLine(settings),
-    lines: [...settings.lines, oldPlacesLine(settings)].filter(Boolean),
+    lines: [...settings.lines, oldPlacesLine(settings), ...toolSetupLines(settings)].filter(Boolean),
   };
 }
 

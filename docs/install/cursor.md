@@ -118,7 +118,7 @@ in `~/.config/conport/.env`. See the
 
 ## Updating
 
-Cursor doesn't ship plugin auto-update for skills, so the SKILL.md files
+Cursor doesn't ship plugin auto-update for skills, so the skill folders
 need to be replaced by hand.
 
 1. The server emits a one-line notice on session start when your installed
@@ -128,9 +128,14 @@ need to be replaced by hand.
    [SKILL UPDATE] conport 13.0.0 → 13.10.0 (minor). Changelog: <url> · Install: <url>
    ```
 
-2. Pull the latest `skills/conport/SKILL.md` from this repo.
-3. Replace your local copy (typically under your Cursor skills directory
-   or wherever you placed it on install).
+2. Pull the latest skills from this repo, or run the install command of
+   *2. Skills* again.
+3. Replace the whole `skills/conport/` folder of your local copy (typically
+   under your Cursor skills directory or wherever you placed it on install),
+   `SKILL.md` together with `references/`: the skill sends the agent to the
+   procedures in `references/`, and a `SKILL.md` without the files it names
+   leaves the agent without them. The other ConPort skills are folders the
+   same way.
 4. Restart Cursor or reload the MCP panel.
 
 > The MCP server itself doesn't need updating from your side — that lives

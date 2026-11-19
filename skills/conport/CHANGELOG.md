@@ -1,5 +1,115 @@
 # conport changelog
 
+## 26.0.0
+
+**The implementer's work in REVIEW is written in the journal.** A task in
+REVIEW now takes a `report` or `fix` entry of its implementer: the Minor
+findings of an `approve` fixed in the same pass (`fix`), or a branch moved
+onto a fresh epic branch before the review (`report`). The entry moves
+nothing: the task stays in REVIEW in the same round and waits for a new
+`review`, because a review written before the addendum no longer opens DONE
+(`done_needs_approval`) or a return (`return_needs_review`). An addendum
+signed `reviewer`, `reviewer:<agent>` or like a review of the round is refused
+with `addendum_by_reviewer`. The `journal` summary of `get_task` agrees: while
+an addendum waits for a new review, `last_verdict` and `last_verdict_round`
+are `null`. The skill, its references and the
+`sdd-implementer` agent say so; before, such an entry was refused with
+`journal_kind_not_allowed`, and a return to IN_PROGRESS with
+`return_needs_review`.
+
+**Breaking: a document is created only with its type.** `doc_type` has no
+default any more on every path that creates a document: REST
+`POST /api/v1/projects/{project}/documents` and
+`POST /api/v1/projects/{project}/documents/upload` answer 422, MCP
+`add_document` fails, and the CLI `documents upload` refuses before any
+request without `--doc-type` — each with the action `name the document type: spec, architecture, runbook, api_docs, tutorial, meeting_notes, plan or other`.
+Pass the type in every call that created a document without one (the upload
+used to take `spec`, `add_document` used to take `other`). The upload form
+takes `created_at` (a past date with its offset, written as the date of
+creation and of the last update) and `title` (in place of the first `#`
+heading or the file name); the CLI sends them as `--created-at` and `--title`,
+and finds an upload repeated after a lost answer by the `--title` it was given.
+An empty `--doc-type`, `--title` or `--created-at` is refused before any
+request. A title the project holds with another body is refused with the
+renewal of that document first —
+`conport api documents replace --document_id <N> --content …`, a spec with
+`--change_kind amend --reason …` — and a title of its own for another file
+second: a changed file is renewed in place, never uploaded again.
+
+**Onboarding an existing project.** A project that lived without ConPort — no
+documents at all, only code and the history of git — is connected by the new
+procedure `references/project-onboarding.md` of the skill: two interviews of
+the user, the documents of the repository uploaded with the dates of their
+first commits, the skeleton of the code, a chronicle of the history stage by
+stage, the decisions that can be recovered, an overview approved by the user,
+and the backfill of the model. Only a retelling of the history goes into
+ConPort: no raw commit message and no author.
+
+- New MCP tool `project_onboarding` (`project`, `state`, `history`,
+  `take_over`) in the group `arch`, and `GET /api/v1/projects/{project}/onboarding` and
+  `PUT /api/v1/projects/{project}/onboarding` on REST, with the refusals
+  `onboarding_in_progress_elsewhere`, `onboarding_transition_refused` and
+  `onboarding_not_ready`. `ProjectResponse` carries `onboarding_state`.
+- `init` carries the key `onboarding` (`state`, `offer`, `lead_is_caller`) and,
+  in a session with a person, a line that offers the onboarding, resumes it for
+  its lead or tells another member not to start a second one. While it runs,
+  `init` gives no line offering the backfill of the model and asks no question
+  about an unlinked document; `GET /api/v1/projects/{project}/questions` leaves
+  such a question out too, and an answer to one — over REST or MCP
+  `answer_question` — is `question_not_found`.
+- The dashboard's form *New document* chooses no type for the person: Create
+  waits until a type is picked.
+- The first fill (`references/bootstrap.md`) now follows `onboarding.offer`
+  instead of zero decisions and patterns, sends a repository with history to
+  the onboarding, and writes the product context with one
+  `PATCH /api/v1/projects/{project}/context/product`.
+- New local command conport history of the CLI,
+  `npx -y conport@^0.15.0 history`: the stages of the first-parent line of the
+  main branch, read on the machine; nothing is sent to ConPort. The procedure
+  runs `npx -y conport@^0.15.0` for it.
+- A new live docs page, `projects/project-onboarding` (connecting an existing
+  project: its state, the command history of the CLI, the routes and the
+  fields of the upload form), and its row in the table *Live docs* of the
+  skill.
+- `docs/install/cursor.md`: an update of the skill by hand replaces the whole
+  `skills/conport/` folder, `references/` included.
+
+**Order and rollback.** The server ships before the CLI that sends
+`--created-at` and `--title`. Rolling the server back keeps the new columns of
+the database and serves the old image; the old upload form ignores
+`created_at` and `title` without a word, so while the server is rolled back
+steps 2 and 7 of the onboarding are not run.
+
+**The session start no longer passes Superpowers and codegraph over in silence.** In a project with a ConPort project, while `plugins.superpowers` or `plugins.codegraph` is not set in `.conport.json`, or is `true` with its tool missing or turned off, the session-start hook says one line per tool with the one step that connects it: install Superpowers (`/plugin install superpowers@claude-plugins-official`), turn it on (`claude plugin enable superpowers@<its marketplace> --scope <user | project | local>`, the scope of the settings whose `false` wins; for `project` the line says it changes the team's shared `.claude/settings.json` and offers `--scope local`), install codegraph (`npm install -g @colbymchenry/codegraph`), build the index (`codegraph init` at the root of the working tree) or set the key to `true`. A key set to `false` is the user's refusal and silences the line — in `.conport.local.json` for one person, in `.conport.json` for the team; the old flag of `.superpowers/config.json` counts only when its `conport.superpowers` is `true` or `false`. The hook knows Superpowers from Claude Code's registry of installed plugins and its `enabledPlugins` (the user's, the project's and the personal settings), codegraph from the PATH and the index from `.codegraph/` at the root. Step 1 of the skill gives agents without hooks the same check.
+
+**`arch_entity` names a gone end of a relation.** Each relation of the card (`incoming`, `outgoing`) carries `count_active` — 1 when it is active between two active entities, else 0 — and `entity.state`, the state of the entity at its other end. A later removal of an end leaves the relation active, so `count_active` 0 with `entity.state` `removed` or `replaced` tells that end is gone.
+
+**The model owes `orphan_entity`.** An active entity with no anchor, no
+active relation to another active entity and no scenario, that no living
+source introduces or changes, is a debt: what a document with the role
+`history` left behind once its relations folded `removed`, or what outlived
+the withdrawal of the portion that introduced it. A document with the role
+`history`, archived, or replaced by another (`supersedes`) is history, and a
+mention introduces nothing. At most 12 are listed, the last one counting the rest. Its action: Claim it `removed`, or `replaced` by what replaced it, in the portion of a living document that names it and was created after the document the detail names, if it names one, else of a document `Model backfill: result` created after it (create the next one, `Model backfill: result N`, with the type `other` and the role `structure` when the project has none), or introduce it there if it exists or is still planned, then submit that portion.
+
+**The model owes `part_without_owner`.** An active component, interface, data
+or setting that no active entity contains by an active relation. With nothing
+containing it, the composition draws it nowhere, and the boxes of its
+neighbours now count its relations; under a removed owner it is drawn at the
+top level marked owner removed. At most 12 are listed, the part with the most
+relations first, the last one counting the rest. Its action:
+Claim the relation `contains` to it from the entity that holds it, or claim it `removed` if it is gone, in the portion of a living source that names it, then submit that portion.
+
+**A portion may no longer mention an entity the model does not have.** A
+mention introduces nothing: without an anchor, `mentioned` of a new entity is
+refused `entity_without_ground` with the action: Introduce the entity with the
+action `introduced` and the block that introduces it, or name it as
+`arch_names` lists it.
+
+The server no longer keeps the transition refusals of the addresses by row number that 21.0.0 retired: `unlink_project` called with `link_id` gets the schema error of any argument it does not take, and the REST paths `DELETE /projects/{project}/project-links/{link_id}` and `GET /projects/{project}/items/{item_type}/{item_id}/history` answer 404 like any path the service does not have. `references/command_list.md` says `unlink_project` takes no `link_id`. Nothing changes for a client of 21.0.0 or later.
+
+The server no longer keeps the transition refusals of the removed tools and routes either. A call of a removed tool — the manual review of gaps and proposals, `list_diagrams`, the tools of the entity graph and the semantic pass — gets the error of any tool the server does not have, not a hint on what replaced it; a tool call passing `project_id`, `project_ids`, `source_project_id` or `target_project_id` gets the schema error of any argument the tool does not take; the removed REST routes of the entity graph (`/graph/…`, `/projects/{project}/graph`), of the semantic pass (`/projects/{project}/semantic/…`) and the session reflection (`POST /hooks/reflect-session`) answer 404 instead of 410. Nothing changes for a client that does not call them.
+
 ## 25.1.1
 
 The hooks keep their time budgets on a busy machine in tests: every budget goes through one place, and `CONPORT_HOOK_TIME_SCALE` can only shorten them outside the plugin's own test run. Nothing changes for a user who does not set it.

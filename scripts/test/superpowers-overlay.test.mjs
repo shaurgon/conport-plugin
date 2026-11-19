@@ -255,7 +255,7 @@ function assertInjected(out) {
   assert.equal(parsed.hookSpecificOutput.additionalContext, `${MOVE_LINE}\n\n${overlayNotice('old')}`)
 }
 
-const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.additionalContext ?? '').includes('Superpowers overlay')
+const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.additionalContext ?? '').includes('ConPort Superpowers overlay: on')
 
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
@@ -520,7 +520,7 @@ test('a missing rules file leaves the rules out and the session starting', () =>
   // The hook copied without the skill directory next to it.
   const scripts = join(tmp, 'plugin', 'scripts')
   mkdirSync(scripts, { recursive: true })
-  for (const f of ['session-start.js', '_common.js', 'project-config.js', 'old-settings.js', 'hook-time.js']) {
+  for (const f of ['session-start.js', '_common.js', 'project-config.js', 'old-settings.js', 'hook-time.js', 'tool-setup.js']) {
     copyFileSync(join(SCRIPTS, f), join(scripts, f))
   }
   const { code, out } = await runSessionStart({ stdin: JSON.stringify({ cwd: main }), cwd: tmp, scripts })

@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 25.1.1
+  version: 26.0.0
 ---
 
 # ConPort — Project Management System
@@ -76,6 +76,22 @@ the action only with their consent:
   or `Old ConPort settings left (<list>): remove them — https://conport.app/docs/projects/project-settings.md` —
   fetch that document and carry out the document with the user before the
   user's task.
+- A line about a tool of the project — `Superpowers is not installed: …`,
+  `Superpowers is turned off in Claude Code: turn it on — claude plugin enable <id> --scope <user | project | local>`
+  (the scope of the settings whose `false` wins; run in a shell, the command
+  writes there —
+  `--scope project` changes the shared `.claude/settings.json` of the project,
+  usually a decision of the team: tell the user so before asking, and offer
+  `--scope local` to turn it on for them alone),
+  `codegraph is not installed: …`, `No codegraph index in this working tree: …`,
+  `` `plugins.superpowers` is not set while Superpowers is installed: … `` or
+  `` `plugins.codegraph` is not set while the codegraph index is built: … ``
+  (with the key `true`, the head goes on with `, while …` before the colon) —
+  names the one step that connects the tool. Never pass it over in silence:
+  tell the user, press for the tool to be connected and take the step with
+  their consent. When the user declines, set the key to `false` (in
+  `.conport.local.json` for one person or one working tree, in `.conport.json`
+  for the team): the line is not said again.
 
 `CONPORT_PROJECT_ID` is no longer read. While it is set, the session-start hook
 shows the user the line
@@ -123,6 +139,22 @@ yourself before `init`:
    document with the user before the user's task.
 7. **No name** — stop, do not call `init`, and ask the user to write
    `project_name` into `.conport.json` (the block above) and restart the agent.
+8. **The tools.** With a name, read `plugins.superpowers` and
+   `plugins.codegraph` of the files (the old switch of step 6 counts as
+   `plugins.superpowers` when its `conport.superpowers` is `true` or `false`).
+   A key set to `false` is the user's refusal: say nothing of that tool.
+   Otherwise a tool is connected when its key is `true` and the tool is there —
+   Superpowers when its skills (brainstorming, writing-plans) are available in
+   your session; codegraph when `codegraph --version` answers and `.codegraph/`
+   is at the root of the working tree. For each
+   tool not connected, never pass it over in silence: tell the user the first
+   step it misses and press for it, taken with their consent — install
+   or turn on Superpowers for your agent; install codegraph
+   (`npm install -g @colbymchenry/codegraph`); build the index (`codegraph init`
+   at the root); set the key to `true` (for Superpowers: turn the overlay on,
+   *Superpowers overlay* below). When the user declines, set the key to `false`
+   in `.conport.json` (in `.conport.local.json` for one person or one working
+   tree) and do not ask again.
 
 **Claude.ai Chat** — there are no settings files; the user names the
 project (its handle, `<project>`, or `k7m2qx9d/<project>` for a team's project).
@@ -160,7 +192,9 @@ trying another name.
 3. **Report backlog:** `N tasks in TODO, M in progress, K in review. Top 5:` — use `backlog.top` from the response; `K` is `backlog.total_review`, and `, K in review` is dropped when it is zero. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0`, `backlog.total_in_progress == 0` and `backlog.total_review == 0`. Tasks waiting in REVIEW need a reviewer, not more work: when the response carries `review_tasks` (`id`, `title`, `priority`; present only when some task waits), print them as `In review: #id title, …` and follow the instruction that comes with them — have them reviewed before taking new work.
 4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
 5. **If the response carries `questions`** — ask them before starting the user's work. See *Questions from init* below.
-6. **If the project is empty** (no decisions, no patterns, empty `product_context`) — offer the bootstrap flow from `references/bootstrap.md`. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
+6. **If `onboarding.offer` is true** — the project is not onboarded: no product context (or an empty one) and no portion of the model, whatever decisions, progress entries, documents and tasks it already has. A repository with history is connected by the onboarding procedure `references/project-onboarding.md`; a folder outside git or a repository with almost no history gets the first fill `references/bootstrap.md` instead (the procedure's step 0 tells which). Only a session with a person gets the line in `instructions` that offers it: show the offer once, and call `project_onboarding(project, state='declined')` only after the user declines it. The key `onboarding` (`state`, `offer`, `lead_is_caller`) comes whenever its `state` is not `not_started` or `offer` is true. While `state` is `in_progress`, the line for the lead (`lead_is_caller` true) says to resume the procedure from the step its draft names; the line for another member says not to start a second one and to take it over only on the user's word. A routine or a subagent (`questions=false`) gets the key alone and never starts the procedure. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
+
+   **An agent without the MCP server** (only this skill and the `conport` CLI) gets no `init`: at the start of the session it reads `GET /api/v1/projects/{project}/onboarding` with `npx -y conport@^0.15.0 api arch onboarding --project <project>` and, when `offer` is true, offers the onboarding the same way.
 7. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
 8. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
@@ -407,6 +441,15 @@ brief → IN_PROGRESS → work → report → REVIEW → review
   `review` with `changes_requested` returns it to IN_PROGRESS; a `brief` and an
   approval move nothing. `update_task` is not needed around an entry — only the
   close after an approval is one.
+- **The implementer's addendum in REVIEW.** Work the executor does while the
+  task is in REVIEW is written there too: the Minor findings of an `approve`
+  fixed in the same pass — a `fix` entry — or the branch moved onto a fresh
+  epic branch before the review — a `report` entry. The entry moves nothing:
+  the task stays in REVIEW in the same round and waits for a new `review`,
+  because a review written before the addendum no longer opens DONE
+  (`done_needs_approval`) or a return (`return_needs_review`). Never move the
+  task to IN_PROGRESS for it. A reviewer does not write an addendum
+  (`addendum_by_reviewer`).
 - **The reviewer is never the executor.** Whoever did the work writes the
   `report` or `fix`; someone else reads it and writes the `review`. The two
   sign their entries with different names in `author` (an agent role or a
@@ -423,14 +466,15 @@ brief → IN_PROGRESS → work → report → REVIEW → review
   | `kind` | Task status | What it is |
   |---|---|---|
   | `brief` | TODO, IN_PROGRESS, BLOCKED, REVIEW | The assignment: for the executor, or in REVIEW for the reviewer |
-  | `report` | IN_PROGRESS | The executor's report — the first round by convention |
-  | `fix` | IN_PROGRESS | The report on the fixes — the second round and later by convention |
+  | `report` | IN_PROGRESS, REVIEW | The executor's report — the first round by convention; in REVIEW, the addendum of a moved branch |
+  | `fix` | IN_PROGRESS, REVIEW | The report on the fixes — the second round and later by convention; in REVIEW, the addendum of fixed Minor findings |
   | `review` | REVIEW | The verdict, `verdict` required: `approve` or `changes_requested` |
 
 - **The journal only grows.** An entry is never edited or deleted — a
   correction is a new entry. `get_task` shows the task's `review_round` and a
   `journal` summary (`counts` per kind, `last_verdict` and its round
-  `last_verdict_round` — a round below `review_round` is an earlier round's verdict).
+  `last_verdict_round` — a round below `review_round` is an earlier round's verdict;
+  both are `null` while an addendum of that round waits for a new review).
 - **Review is opt-in, then binding.** A task nobody reviews still goes
   IN_PROGRESS → DONE. Once a task has a `report`, `fix` or `review` entry, it
   closes only through REVIEW — cancelling and reopening it, or closing it as an
@@ -456,14 +500,15 @@ answer carries `error`, a `message` that prescribes the action, and `context`
 | `review_on_epic` | An epic was sent to REVIEW, or a task in REVIEW was promoted to an epic | Review the epic's children; close the epic with a `resolution` once they are closed |
 | `review_needs_report` | No `report` or `fix` in the current round | Add a `report` (first round) or `fix` entry for the round in `context`, then REVIEW again |
 | `done_needs_review` | DONE was asked outside REVIEW for a task with a `report`, `fix` or `review` entry, a closed epic with one was demoted to a task, or a childless epic with one was closed | Do what the `message` names for the starting state: from IN_PROGRESS move to REVIEW; from TODO, BLOCKED or CANCELLED move to IN_PROGRESS, then REVIEW; a closed epic is demoted in the write that reopens it to IN_PROGRESS; a childless epic gets child tasks or is demoted the same way. Then get an `approve` |
-| `done_needs_approval` | The current round has no `approve` as its last verdict | A reviewer adds a `review` with `verdict='approve'` in this round, then DONE. Never write your own approval for your own work |
+| `done_needs_approval` | The current round has no `approve` as its last verdict, or a `report` or `fix` follows it | A reviewer adds a `review` with `verdict='approve'` in this round, then DONE. Never write your own approval for your own work |
 | `done_needs_resolution` | REVIEW → DONE without a `resolution` | Repeat the call with `resolution` |
-| `return_needs_review` | REVIEW → IN_PROGRESS without `changes_requested` in this round | A reviewer adds a `review` with `verdict='changes_requested'` first |
+| `return_needs_review` | REVIEW → IN_PROGRESS without `changes_requested` in this round | A reviewer adds a `review` with `verdict='changes_requested'` first. Work of the implementer in REVIEW needs no return: write it as a `fix` or `report` there |
 | `review_exit_not_allowed` | REVIEW → TODO, BLOCKED or PARKED | Finish the review (approve → DONE, changes requested → IN_PROGRESS) or CANCEL with a `resolution` |
 | `journal_on_epic` | A journal entry on an epic | Write it on the child task the work belongs to |
 | `journal_task_closed` | A journal entry on a DONE or CANCELLED task | Reopen the task to IN_PROGRESS only if there is new work; otherwise write nothing |
 | `journal_kind_not_allowed` | The `kind` does not fit the task's status; `context` lists the kinds that do | Write one of those kinds, or first move the task to the status the entry needs |
 | `reviewer_is_author` | A `review` signed with the `author` of a `report` or `fix` of the current round | The reviewer adds the `review` under its own name; never review your own work |
+| `addendum_by_reviewer` | A `report` or `fix` on a task in REVIEW signed `reviewer`, `reviewer:<agent>` or like a `review` of the current round | The implementer adds the entry under its own name |
 | `invalid_verdict` (422 over REST) | `verdict` on an entry that is not `review`, or a `review` without one | Pass `verdict` on `review` only, `approve` or `changes_requested` |
 
 **Epic in its own branch.** An epic whose tasks are worked in parallel, or
@@ -496,7 +541,9 @@ project turns it on.
   step 1: `.conport.json` at the root of the current worktree, with
   `.conport.local.json` over it (at the root of the current worktree, else of
   the main worktree). `true` means on; `false`, a missing key or a file that
-  cannot be read means off — say nothing about it. The switch is a rule of the
+  cannot be read means off. Say nothing of `false`; a missing key is never
+  passed over in silence — step 1 names the step that connects Superpowers
+  (install it, or turn the overlay on). The switch is a rule of the
   project for the whole team; the personal file can turn it off for one user.
   The old switch, `.superpowers/config.json` holding
   `{ "conport": { "superpowers": true } }` at the root of the current worktree
@@ -551,8 +598,8 @@ On `status=DONE` or `CANCELLED`, pass a `resolution` argument with the verdict
 2. Auto-creates a linked `progress_entry` so the close shows up in
    `recent_activity`, `list_progress`, and search.
 
-A task in REVIEW closes as DONE only after an `approve` of its current round,
-and there `resolution` is required, not just expected (`done_needs_resolution`).
+A task in REVIEW closes as DONE only after an `approve` of its current round
+with no `report` or `fix` written after it, and there `resolution` is required, not just expected (`done_needs_resolution`).
 The verdict and the reports stay in the journal; the `resolution` says what
 was delivered.
 
@@ -734,7 +781,9 @@ epic or reporting an epic's progress.
   above).
 - **A finding** is checked first, then fixed. A finding is fixed, not filed.
   A task review's finding: a fix round of that task by its implementer, every
-  finding at once (a Minor outside the task's diff is dropped). A final
+  finding at once (a Minor outside the task's diff is dropped). The Minor
+  findings of an `approve` are fixed while the task stays in REVIEW, written
+  there as a `fix` entry and reviewed again. A final
   review's or end gap hunt's finding, one in the code of a closed task
   included: one fix round of the epic's final-review task, one fixer dispatch
   with the whole list, recorded in that task's journal. A gap hunt of the spec:
@@ -1415,7 +1464,7 @@ finding for that reason:
 | `relation_pair_not_allowed` | The types of the two ends are not a pair the relation allows | Join the types the relation allows: `contains` from a unit to a component, interface, store, data or setting, from a component to a component, interface, data or setting, from a store to data; `references` from data to data; `replaces` within one type. |
 | `second_owner` | Two different owners of one entity in one portion, or active owners at equal precedence after folding the proposed model. A later document may replace the earlier owner by `(created_at, id)`; that is allowed. Empty resubmission, withdrawal, document deletion and type or role changes are also refused atomically if they expose conflicting owners | Correct or withdraw conflicting ownership claims so one owner remains at each precedence. |
 | `block_not_found` | The source document has no block with that ULID | Take the block ULID from `list_blocks` of the source document. |
-| `entity_without_ground` | The entity has neither an anchor nor a block | Give the entity an anchor, or in a document portion the ULID of the block that introduces it. |
+| `entity_without_ground` | The entity has neither an anchor nor a block; or a document portion mentions (`mentioned`), without an anchor, an entity the model does not have — a mention introduces nothing | Give the entity an anchor, or in a document portion the ULID of the block that introduces it. |
 | `name_collision` | A name or an alias is the name of an entity of another type | Rename the entity so that its name and aliases name one entity of its type and no other. |
 | `anchor_malformed` | An anchor of an unknown kind, an absolute path or a path with a line number | Write the anchor as one of the kinds path, symbol, command, route, table with a non-empty value, a path relative to the repository root and without a line number. |
 | `source_not_found` | The project has no such document, or the document is no source: its role in the model is `none`, or it has no role and is neither `spec` nor `architecture` | Name a document that is a source of the model: type spec or architecture, or a document the backfill inventory gave a role. |
@@ -1436,6 +1485,8 @@ finding for that reason:
 | `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
 
 When the end a relation names is an entity only the submitted source held and the portion no longer carries, `relation_endpoint_missing` prescribes instead: Return entity <name> to `entities` of the portion.
+
+When a document portion mentions an entity the model does not have, `entity_without_ground` prescribes instead: Introduce the entity with the action `introduced` and the block that introduces it, or name it as `arch_names` lists it.
 
 For a `code:` portion `portion_too_large` prescribes instead: Split the portion into one `code:` label per unit, or per component of a unit, at most 400 entities each.
 
@@ -1617,6 +1668,8 @@ one. When `total` is above five, `arch_status` lists them all.
 | `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.14.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.14.0 arch check` in the repository root on main or master. |
 | `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
 | `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.14.0 arch check`. |
+| `orphan_entity` | An active entity with no anchor, no active relation to another active entity and no scenario, that no living source introduces or changes: a document with the role `history`, archived, or replaced by another (a `supersedes` link or callout) is history, and a mention introduces nothing. It is what a history document left behind, or what outlived the withdrawal of the portion that introduced it; `detail` names up to ten sources of its claims and the newest document without the role `history` that introduced it, with its moment of creation: the fold orders an archived or replaced document by that moment and skips a `history` one, so the claim that clears the debt comes from a document created after it. At most 12 are listed, the oldest entity first; the last one counts the rest. The document `Model backfill: result` is the one of `references/model-backfill.md`; a thing that exists without an anchor (an external system) or that a living document still plans is introduced instead of removed | Claim it `removed`, or `replaced` by what replaced it, in the portion of a living document that names it and was created after the document the detail names, if it names one, else of a document `Model backfill: result` created after it (create the next one, `Model backfill: result N`, with the type `other` and the role `structure` when the project has none), or introduce it there if it exists or is still planned, then submit that portion. |
+| `part_without_owner` | An active component, interface, data or setting that no active entity contains by an active relation. `detail` says where the composition draws it: nowhere when nothing contains it (its neighbours then count its relations), at the top level marked owner removed when its owner is removed, still inside its owner when only the `contains` was taken back; and how many relations it has. An entity that owes `orphan_entity` owes this one no more. At most 12 are listed, the part with the most relations first; the last one counts the rest | Claim the relation `contains` to it from the entity that holds it, or claim it `removed` if it is gone, in the portion of a living source that names it, then submit that portion. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names is removed or replaced at the document source position (current state for code), or the scenario an action runs was deleted | Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history. |
 
@@ -1627,6 +1680,11 @@ A project that lived before its model is filled by the procedure
 inventory, pass, what is gone, decisions, debts. Read it before the first
 step and follow it; one session runs the backfill of a project, and the user
 of the project approves what it asks to approve.
+
+**The onboarding of a project runs the backfill itself**, at its step 8
+(`references/project-onboarding.md`): while the key `onboarding` of `init` is
+`in_progress`, `instructions` carries no line offering the backfill, and the
+key `offer` of `backfill` stays as it is.
 
 The key `backfill` of the section `arch` of `init` carries `state`
 (`not_started`, `in_progress`, `completed`, `declined`), `completed_at`,
@@ -2003,8 +2061,10 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Full per-tool parameter reference | `projects/tool-reference` |
 | Tool profiles — a connection that lists only some tool groups | `projects/tool-profiles` |
 | The project model — portions, reviews, views, debts | `projects/architecture-model` |
+| Connecting an existing project — its state, `conport history`, the routes | `projects/project-onboarding` |
 
 **Local references** (shipped with the skill): `references/command_list.md`
 (full MCP tool API), `references/documentation_graph.md` (long-form callout
-reference), `references/bootstrap.md` (fresh-project onboarding),
-`references/backlog-discipline.md` (the backlog rules in full).
+reference), `references/project-onboarding.md` (onboarding a project with a
+history of git), `references/bootstrap.md` (the first fill of a project
+without one), `references/backlog-discipline.md` (the backlog rules in full).

@@ -107,6 +107,39 @@ test('the skill sends old places to the move document', () => {
   assert.match(text, /carry out the document [^.]*before the user's task/)
 })
 
+// The session start names each tool of the project that is not connected
+// (the lines themselves are quoted by tool-setup.test.mjs); the skill tells an
+// agent with hooks what to do with each line and an agent without hooks to
+// make the same check itself. A key set to `false` silences it.
+test('step 1 presses for Superpowers and codegraph, with hooks and without', () => {
+  const hooks = flat(WITH_HOOKS)
+  assert.match(hooks, /Never pass it over in silence/)
+  assert.match(hooks, /When the user declines, set the key to `false`/)
+  assert.match(hooks, /the line is not said again/)
+
+  const own = flat(WITHOUT_HOOKS)
+  const tools = own.slice(own.indexOf('**The tools.**'))
+  assert.ok(own.includes('**The tools.**'), 'the rule for agents without hooks has no step for the tools')
+  for (const needle of [
+    '`plugins.superpowers`',
+    '`plugins.codegraph`',
+    '`codegraph --version`',
+    '`.codegraph/`',
+    '`npm install -g @colbymchenry/codegraph`',
+    '`codegraph init`',
+    'never pass it over in silence',
+  ]) {
+    assert.ok(tools.includes(needle), `the step for the tools does not name ${needle}`)
+  }
+  assert.match(tools, /A key set to `false` is the user's refusal: say nothing/)
+  assert.match(tools, /When the user declines, set the key to `false` in `\.conport\.json` .*? and do not ask again\./)
+
+  // The overlay no longer keeps silent about a missing switch.
+  const overlay = flat(between(SKILL, '**Superpowers overlay.** In a project that works with the Superpowers skills', '- **SDD'))
+  assert.doesNotMatch(overlay, /a missing key or a file that cannot be read means off — say nothing about it/)
+  assert.match(overlay, /a missing key is never passed over in silence/)
+})
+
 test('the skill names no settings.local.json line for the project', () => {
   assert.doesNotMatch(SKILL, /"env":\s*\{\s*"CONPORT_PROJECT_NAME"/)
   // Every place that asks the user to set the project names `project_name` in `.conport.json`.
@@ -156,8 +189,16 @@ test('the overlay switch is plugins.superpowers', () => {
 test('every recipe of the skill runs a CLI that reads .conport.json', () => {
   // No CLI before 0.11.0 reads `.conport.json`: a range below it runs on the
   // variable alone, so after the move a recipe loses its project or writes into
-  // the project a stale variable names.
-  for (const name of ['SKILL.md', 'references/superpowers-overlay.md', 'references/command_list.md', 'references/model-backfill.md']) {
+  // the project a stale variable names. The onboarding procedure runs `history`,
+  // which comes with 0.15.0; the other texts keep the range they ship with.
+  const files = {
+    'SKILL.md': '^0.14.0',
+    'references/superpowers-overlay.md': '^0.14.0',
+    'references/command_list.md': '^0.14.0',
+    'references/model-backfill.md': '^0.14.0',
+    'references/project-onboarding.md': '^0.15.0',
+  }
+  for (const [name, range] of Object.entries(files)) {
     const body = read(name)
     const below = []
     for (const found of body.matchAll(/conport@[~^]?(\d+)\.(\d+)(?:\.(\d+))?/g)) {
@@ -166,7 +207,7 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
       if (patch === undefined || version[0] * 1e6 + version[1] * 1e3 + version[2] < 11 * 1e3) below.push(found[0])
     }
     assert.deepEqual(below, [], `${name} runs a CLI that does not read .conport.json`)
-    assert.ok(body.includes('npx -y conport@^0.14.0 '), `${name} runs no npx -y conport@^0.14.0`)
+    assert.ok(body.includes(`npx -y conport@${range} `), `${name} runs no npx -y conport@${range}`)
   }
   const fails = flat(read('references/superpowers-overlay.md').split('## When the CLI fails')[1])
   assert.match(fails, /a `npx -y conport@\^0\.14\.0 …` command fails/)

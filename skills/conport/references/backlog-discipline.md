@@ -64,7 +64,9 @@ A finding is fixed, not filed. Where each one goes:
 
 - A task review's finding: a fix round of that task by its implementer, every
   finding at once (a Minor outside the task's diff is dropped). Important and
-  Minor go together; nothing is sorted into "later".
+  Minor go together; nothing is sorted into "later". The Minor findings of an
+  `approve` are fixed while the task stays in REVIEW: the implementer writes
+  them there as a `fix` entry, and the task waits for a new review.
 - A final review's or end gap hunt's finding, one in the code of a closed task
   included: one fix round of the epic's final-review task, one fixer dispatch
   with the whole list, recorded in that task's journal. That task is the last

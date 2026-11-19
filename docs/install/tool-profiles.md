@@ -50,7 +50,7 @@ rest of `tasks`.
 | `milestones` | 3 | Roadmap milestones |
 | `agenda` | 1 | The single-call briefing of a routine run |
 | `documents` | 12 | Documents and block-level editing |
-| `arch` | 12 | The project model: portions, views, entity cards, scenarios, lookups by anchor, debts, the backfill |
+| `arch` | 13 | The project model: portions, views, entity cards, scenarios, lookups by anchor, debts, the backfill, the onboarding |
 | `decisions` | 7 | Decisions, their retirement and deletion |
 | `progress` | 4 | The progress log |
 | `patterns` | 3 | Patterns |
@@ -77,7 +77,7 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 | `milestones` | `add_milestone`, `update_milestone`, `list_milestones` |
 | `agenda` | `get_agenda` |
 | `documents` | `add_document`, `update_document`, `list_documents`, `get_block_backlinks`, `get_semantically_related_blocks`, `get_document`, `delete_document`, `list_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
-| `arch` | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill` |
+| `arch` | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill`, `project_onboarding` |
 | `decisions` | `sync_decision`, `update_decision`, `deprecate_decision`, `reactivate_decision`, `list_decisions`, `get_decision`, `delete_decision` |
 | `progress` | `log_progress`, `update_progress`, `list_progress`, `delete_progress` |
 | `patterns` | `log_pattern`, `update_pattern`, `list_patterns` |
