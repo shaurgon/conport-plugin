@@ -1,25 +1,31 @@
 # Claude.ai (web)
 
 Claude.ai takes our two pieces separately: the **MCP server** as a custom
-connector, and the **skills** as zip uploads. Both features require a paid
-plan (Pro, Max, Team, or Enterprise) with code execution enabled.
+connector, and the **skills** as zip uploads. Skills need code execution. On a
+personal plan, turn on **Code execution and file creation** under
+**Settings → Capabilities** (called **Create and edit files** in the newer
+settings layout). On Team and Enterprise it is an organization policy: an
+owner turns on **Cloud code execution and file creation** and **Skills** under
+**Organization settings → Plugins & skills → Policy**.
 
 ## 1. MCP server — custom connector
 
 1. Sign in at https://claude.ai.
-2. Open **Settings → Customize → Connectors → Add custom connector**
-   (Team/Enterprise owners: **Organization settings → Connectors → Add → Custom → Web**).
+2. Open **Customize → Connectors**, click **+ Add**, then **Add custom connector**
+   (Team/Enterprise owners: **Organization settings → Connectors → Add → Custom → Web**;
+   members then find `ConPort` under **Customize → Connectors** and click **Connect**).
 3. Fill in:
    - **Name**: `ConPort`
    - **URL**: `https://api.conport.app/mcp/`
-4. Save.
 
-> **Auth caveat.** Our server accepts a static Bearer header (`cport_live_...`),
-> but the Claude.ai custom-connector UI only exposes an OAuth flow — no field
-> for arbitrary HTTP headers. Until we ship OAuth on `api.conport.app`, the
-> connector will fail at the sign-in step. If you need authenticated MCP
-> *today*, use **Claude Code** or **Cursor**. The skill-upload path below
-> works independently.
+   and click **Continue**.
+4. Claude.ai checks the server's authentication: keep the detected OAuth
+   settings and click **Continue** again.
+5. Click **Add**.
+
+The connector signs in with OAuth: on the first connect Claude.ai opens the
+ConPort sign-in page, and you sign in with your ConPort account. No API key is
+needed here — the `cport_live_...` key is for agents that cannot sign in.
 
 ## 2. Skill — zip upload
 
@@ -34,9 +40,8 @@ Each zip has the skill's folder with its `SKILL.md` (and, for `conport`, the
 
 Upload each in Claude.ai:
 
-1. **Settings → Features → Skills → Upload Skill**.
-2. Select `conport-skill.zip`, then `conport-roadmap-skill.zip`; accept the
-   permissions prompt.
+1. **Customize → Skills**, click **+**, then **Create skill → Upload a skill**.
+2. Select `conport-skill.zip`; repeat for `conport-roadmap-skill.zip`.
 
 Claude.ai skills are per-user — every teammate uploads their own copy.
 
@@ -64,10 +69,9 @@ that works in the repository. See the
 
 ## Verify
 
-- **Skills**: **Settings → Features → Skills** lists `conport` and
+- **Skills**: **Customize → Skills** lists `conport` and
   `conport-roadmap` as enabled.
-- **Connector** (once OAuth is live): the connectors panel shows `ConPort`
-  green. In a new chat ask Claude to call the ConPort `init` tool with your
+- **Connector**: **Customize → Connectors** shows `ConPort` connected. In a new chat ask Claude to call the ConPort `init` tool with your
   project name. `init` only finds a project, it never creates one: for a
   project that does not exist yet it answers `project_not_found`. Ask Claude
   to call `create_project` with the same name, then `init` again; the answer
@@ -90,10 +94,9 @@ To apply the update:
 1. Open the [releases page](https://github.com/shaurgon/conport-plugin/releases)
    and read the changelog for the entries between your version and the
    latest.
-2. Download the latest `SKILL.md` from `skills/conport/` and
-   `skills/conport-roadmap/` in this repo.
-3. **Settings → Features → Skills** — find each ConPort skill, click ⋯, and
-   replace the file with the new one.
+2. Download the latest skill zips from the links in section 2.
+3. **Customize → Skills** — open each ConPort skill, turn it off, choose
+   **⋯ → Delete**, then upload its new zip as in section 2.
 4. Reload any open chat or start a new session; the notice should disappear
    on the next `init` call.
 

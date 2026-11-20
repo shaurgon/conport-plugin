@@ -1,5 +1,21 @@
 # conport changelog
 
+## 27.0.1
+
+**The install pages match the product again.** Every command the plugin
+prescribes runs `npx -y conport@^0.15.0`, a range the published CLI 0.15.x is
+in (`^0.14.0` took 0.14.x only): the skills, the install pages, the hooks'
+hints and the server's own hints. The Claude Code page counts 6 hooks on 5
+events — the epic-growth guard was missing — and names the script of each. The
+Cursor page and the README say the server lists 83 tools instead of guessing.
+The Claude.ai page drops its caveat that the connector cannot sign in: the
+connector signs in with OAuth. Its paths follow the current Claude.ai settings:
+the connector under **Customize → Connectors**, the skills uploaded under
+**Customize → Skills**, and code execution turned on under
+**Settings → Capabilities** — on Team and Enterprise by an owner, under
+**Organization settings → Plugins & skills → Policy**. The Cursor page finds
+the server under **Customize** in Cursor's sidebar.
+
 ## 27.0.0
 
 **Breaking: the former tool groups are refused, and `render_current_architecture`

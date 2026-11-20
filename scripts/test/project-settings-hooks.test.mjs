@@ -281,7 +281,7 @@ test("the commit guard reads the settings of the command's folder", () => withSe
   const res = await bash(ctx, session, `cd ${word(other)} && git commit -m x`)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.14.0 documents upload ${file} --doc-type spec --tags awaiting-plan\`, then remove the file.\n`)
+    `run \`npx -y conport@^0.15.0 documents upload ${file} --doc-type spec --tags awaiting-plan\`, then remove the file.\n`)
 
   // The other way round: the session's overlay is on, the command's folder has none.
   const on = repo({ '.conport.json': '{"plugins": {"superpowers": true}}' })

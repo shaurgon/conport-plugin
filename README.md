@@ -6,7 +6,7 @@ and skills work across many clients.
 
 ## What it ships
 
-- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, the project model).
+- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 83 tools (decisions, tasks, patterns, documents, links, search, the project model).
 - **Skills** (plain `SKILL.md`, portable)
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …); files a public GitHub issue here when ConPort itself has a defect, lacks a capability or gives a refusal that says nothing to act on ([docs/use-cases/agent-issues.md](./docs/use-cases/agent-issues.md))
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest
@@ -100,7 +100,7 @@ to the project's instructions (`CLAUDE.md` or `AGENTS.md`):
 `Specs and plans of this project live in ConPort — follow the ConPort Superpowers overlay`.
 The rules are [skills/conport/references/superpowers-overlay.md](./skills/conport/references/superpowers-overlay.md);
 they call the `conport` CLI, which takes the project from `.conport.json` from
-0.11 on: `npx -y conport@^0.14.0`. The CLI does not see the plugin's `api_key`:
+0.11 on: `npx -y conport@^0.15.0`. The CLI does not see the plugin's `api_key`:
 it needs `CONPORT_API_KEY` in the environment or in `~/.config/conport/.env`.
 
 | Command | Does |

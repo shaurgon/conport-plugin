@@ -191,12 +191,12 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
   // No CLI before 0.11.0 reads `.conport.json`: a range below it runs on the
   // variable alone, so after the move a recipe loses its project or writes into
   // the project a stale variable names. The onboarding procedure runs `history`,
-  // which comes with 0.15.0; the other texts keep the range they ship with.
+  // which comes with 0.15.0, and the other texts run the same range.
   const files = {
-    'SKILL.md': '^0.14.0',
-    'references/superpowers-overlay.md': '^0.14.0',
-    'references/command_list.md': '^0.14.0',
-    'references/model-backfill.md': '^0.14.0',
+    'SKILL.md': '^0.15.0',
+    'references/superpowers-overlay.md': '^0.15.0',
+    'references/command_list.md': '^0.15.0',
+    'references/model-backfill.md': '^0.15.0',
     'references/project-onboarding.md': '^0.15.0',
   }
   for (const [name, range] of Object.entries(files)) {
@@ -211,7 +211,7 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
     assert.ok(body.includes(`npx -y conport@${range} `), `${name} runs no npx -y conport@${range}`)
   }
   const fails = flat(read('references/superpowers-overlay.md').split('## When the CLI fails')[1])
-  assert.match(fails, /a `npx -y conport@\^0\.14\.0 …` command fails/)
+  assert.match(fails, /a `npx -y conport@\^0\.15\.0 …` command fails/)
 })
 
 // The entry is the section that links the move document, under whatever heading the release gave it.

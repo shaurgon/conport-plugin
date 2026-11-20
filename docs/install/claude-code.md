@@ -66,8 +66,11 @@ The plugin loads in Claude Code:
   periodic backlog routine, the roadmap rules (milestones, releases, waiting work),
   and the superpowers→ConPort spec/epic flow with its `finish` release verdict
 - MCP server `conport` pointing at `https://api.conport.app/mcp/` (Bearer auth)
-- 5 hooks (Node.js scripts under `scripts/`) — session start, command check,
-  epic tracking, prompt submit, epic tails at the end of a turn
+- 6 hooks on 5 events (Node.js scripts under `scripts/`) — session start
+  (`session-start.js`), command check (`check-command.js`), epic-growth guard
+  (`guard-epic-growth.js`), epic tracking (`track-session-epics.js`), prompt
+  submit (`user-prompt-submit.js`), epic tails at the end of a turn
+  (`stop-epic-tails.js`)
 
 The connection lists every tool of the server. To have only some groups of
 tools listed, see [tool-profiles.md](./tool-profiles.md).
@@ -126,7 +129,7 @@ is on and names the file of its rules, which Claude reads; Claude prints
 folder of each commit and refuses one that adds a new file under
 `docs/superpowers/specs/` or `docs/superpowers/plans/`. The rules call the `conport` CLI (`documents get`, `plan import`, `plan pull`,
 `superpowers migrate`), which takes the project from `.conport.json` from 0.11
-on — `npx -y conport@^0.14.0` — so Node.js and network access are needed. The
+on — `npx -y conport@^0.15.0` — so Node.js and network access are needed. The
 CLI does not see the plugin's `api_key`: put `CONPORT_API_KEY` in the
 environment or in `~/.config/conport/.env`. See the
 [README](../../README.md#superpowers-overlay). To turn the overlay off, set

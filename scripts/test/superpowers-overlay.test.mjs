@@ -260,7 +260,7 @@ const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.ad
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.14\.0 plan import/)
+  assert.match(text, /npx -y conport@\^0\.15\.0 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
@@ -309,7 +309,7 @@ test('an idea task comes before the design, the spec closes it with awaiting-pla
   assert.match(brainstorming, /the design needs none/)
 
   const upload = step('Upload the spec')
-  assert.match(upload, /`npx -y conport@\^0\.14\.0 documents upload <draft> --doc-type spec --tags awaiting-plan`/)
+  assert.match(upload, /`npx -y conport@\^0\.15\.0 documents upload <draft> --doc-type spec --tags awaiting-plan`/)
   assert.match(upload, /link_items\(project=<project>, source_type='doc', source_id=N, target_type='task', target_id=<the idea task>, relationship='clarifies'\)/)
   assert.match(upload, /update_task\(project=<project>, task_id=<the idea task>, status='DONE', resolution=/)
   assert.match(upload, /close the idea task with a resolution naming the spec/)
@@ -323,13 +323,13 @@ test('an idea task comes before the design, the spec closes it with awaiting-pla
   assert.ok(upload.indexOf("status='DONE'") < upload.indexOf('Plan and build now?'), 'the question comes last')
 
   const plan = step('Plan')
-  assert.match(plan, /`npx -y conport@\^0\.14\.0 plan import <draft> --spec doc-N --milestone <id>`/)
+  assert.match(plan, /`npx -y conport@\^0\.15\.0 plan import <draft> --spec doc-N --milestone <id>`/)
   assert.match(plan, /the import of the plan creates the epic/)
   assert.match(plan, /roadmap rules/)
   assert.match(plan, /`spec_has_epic`/)
-  assert.match(plan, /`npx -y conport@\^0\.14\.0 plan import <draft> --spec doc-N --epic <id>`/, 'the epic of the former chain takes its plan by --epic')
+  assert.match(plan, /`npx -y conport@\^0\.15\.0 plan import <draft> --spec doc-N --epic <id>`/, 'the epic of the former chain takes its plan by --epic')
   assert.ok(plan.indexOf('--milestone <id>`') < plan.indexOf('--epic <id>`'), 'the new epic comes first')
-  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.14\.0 plan import <draft> \[--milestone <id>\]`/)
+  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.15\.0 plan import <draft> \[--milestone <id>\]`/)
   assert.doesNotMatch(plan, /\[--epic <id>\]/, 'the epic of a designed plan is not optional')
 })
 

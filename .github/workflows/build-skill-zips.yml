@@ -75,7 +75,7 @@ jobs:
             - `conport-skill.zip` — project context
             - `conport-roadmap-skill.zip` — the roadmap rules
 
-            Upload to Claude.ai via **Settings → Features → Skills → Upload Skill**.
+            Upload to Claude.ai via **Customize → Skills → + → Create skill → Upload a skill**.
           files: |
             conport-skill.zip
             conport-roadmap-skill.zip
@@ -96,7 +96,7 @@ jobs:
             - `conport-skill.zip` — project context skill
             - `conport-roadmap-skill.zip` — the roadmap rules skill
 
-            Upload to Claude.ai via **Settings → Features → Skills → Upload Skill**.
+            Upload to Claude.ai via **Customize → Skills → + → Create skill → Upload a skill**.
           files: |
             conport-skill.zip
             conport-roadmap-skill.zip
