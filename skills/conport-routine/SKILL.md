@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 26.0.0
+  version: 27.0.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -56,8 +56,8 @@ That suggestion is handled by the **conport** skill; this skill assumes the
 decision was already made and simply runs the cycle against whatever
 `get_routine_config` returns.
 
-**Gaps are not the run's.** The server resolves knowledge-base gaps and
-semantic-pass proposals itself, in a daily pass over every project. What only a
+**Gaps are not the run's.** The server resolves knowledge-base gaps itself, in
+a daily pass over every project. What only a
 person can decide is asked as a question in an interactive session's `init` — a
 run has nobody to ask, so it calls `init(questions=false)` and triages no gaps.
 

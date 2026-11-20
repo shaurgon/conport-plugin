@@ -9,6 +9,11 @@ own runs it. The rules of a portion — types, fields, scenarios, refusals — a
 the section *PROJECT MODEL* of the skill; this file says only what the backfill
 adds.
 
+**It is required.** A project with documents or decisions and no model is
+searched without the model, and `init` says filling it is required
+(`backfill.required`). There is no decline: `arch_backfill` with `declined`
+is refused with `backfill_required`.
+
 ## The frame
 
 Six steps, in this order:
@@ -361,7 +366,7 @@ each item and call again:
 |---|---|---|
 | `backfill_not_ready` | `completed` while a debt of the model or a `code` source newer than the anchor check is left; `blockers` names each | Clear each item of `blockers` by its kind, as the backfill procedure says, then repeat the call. |
 | `backfill_not_started` | `completed` before the backfill started | Start the backfill first: arch_backfill with state 'in_progress', right after the inventory is approved. |
-| `backfill_already_started` | `declined` after the backfill started | The backfill has started and cannot be declined; leave its state as it is and go on with the session's work. |
+| `backfill_required` | `declined`, in any state: filling the model is required | Filling the model is required and cannot be declined: start the backfill by the backfill procedure of the conport skill, arch_backfill with state 'in_progress' right after the inventory is approved. |
 
 ## Rollback
 

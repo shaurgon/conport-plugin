@@ -6,7 +6,7 @@ and skills work across many clients.
 
 ## What it ships
 
-- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, GraphRAG).
+- **MCP server `conport`** — HTTP transport → `https://api.conport.app/mcp/`, Bearer auth. 40+ tools (decisions, tasks, patterns, documents, links, search, the project model).
 - **Skills** (plain `SKILL.md`, portable)
   - `conport` — session context management (`init`, `search`, `log_progress`, `sync_decision`, …); files a public GitHub issue here when ConPort itself has a defect, lacks a capability or gives a refusal that says nothing to act on ([docs/use-cases/agent-issues.md](./docs/use-cases/agent-issues.md))
   - `conport-routine` — one iteration of a periodic backlog cycle: agenda, housekeeping, ready tasks, run digest

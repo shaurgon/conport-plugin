@@ -226,8 +226,9 @@ function refusalActions() {
     backfill_not_ready: 'Clear each item of `blockers` by its kind, as the backfill procedure says, then repeat the call.',
     backfill_not_started:
       "Start the backfill first: arch_backfill with state 'in_progress', right after the inventory is approved.",
-    backfill_already_started:
-      "The backfill has started and cannot be declined; leave its state as it is and go on with the session's work.",
+    backfill_required:
+      'Filling the model is required and cannot be declined: start the backfill by the backfill procedure of the ' +
+      "conport skill, arch_backfill with state 'in_progress' right after the inventory is approved.",
   }
 }
 
@@ -295,18 +296,16 @@ test('the changelog runs the full withdrawal with the CLI that has it', () => {
   assert.doesNotMatch(changelog, /conport@\^0\.7 arch withdraw/)
 })
 
-test('the skill reads the backfill line of init as a notice and declines an offer through arch_backfill', () => {
+test('the skill reads the backfill line of init as a notice and never declines the backfill', () => {
   const model = oneLine(modelSection())
   assert.match(model, /`Backfill: K of M documents submitted`/)
   assert.match(model, /a notice, not a task/)
   assert.match(model, /does not run the backfill/)
-  // The offer is shown once; the refusal is written only after the user's.
-  assert.match(model, /Show the offer to the user once/)
-  // The server repeats the offer in every init until the backfill starts or is declined.
-  assert.match(oneLine(read('CHANGELOG.md')), /`init` offers the backfill to a project with documents older than its model until it is started or declined/)
-  const declined = model.indexOf("arch_backfill(project, state='declined')")
-  assert.ok(declined >= 0, 'the skill never declines the offer')
-  assert.match(model.slice(Math.max(0, declined - 200), declined + 80), /only after the user declines/)
+  // Filling the model is required: the decline is named only as refused.
+  assert.match(model, /Filling the model is required\./)
+  assert.match(model, /There is no decline: `arch_backfill\(project, state='declined'\)` is refused with `backfill_required`/)
+  assert.doesNotMatch(model, /Show the offer to the user once|only after the user declines it/)
+  assert.doesNotMatch(model, /Start, complete or decline the backfill/)
 })
 
 test("the skill's no_portion debt names the role rule", () => {
@@ -382,22 +381,44 @@ test('the tool reference describes git_pass of arch_status and activity of the g
   assert.match(oneLine(section(reference, '### arch_entity')), /`activity`/)
 })
 
-// ── the offer goes only to a session with a person ─────────────────────────
+// ── the model is required; the line goes only to a session with a person ──
 
-test('the skill says only a session with a person gets the offer line', () => {
+test('the skill says the model is required and only a session with a person gets the line', () => {
   const model = oneLine(modelSection())
-  const offer = model.slice(model.indexOf('**An offer.**'), model.indexOf('**A rollback**'))
-  assert.ok(offer.length > 0, 'no offer paragraph')
-  assert.match(offer, /Only a session with a person — `init` called with `questions=true` — gets the line in `instructions` that offers it/)
-  assert.match(offer, /a routine or a subagent \(`questions=false`\) gets the key `offer` alone and leaves it: it has nobody to offer it to/)
-  // The decline is written only on the user's refusal, in the same sentence.
-  assert.match(offer, /Call `arch_backfill\(project, state='declined'\)` only after the user declines it/)
+  const required = model.slice(model.indexOf('**Filling the model is required.**'), model.indexOf('**A rollback**'))
+  assert.ok(required.length > 0, 'no paragraph on the required model')
+  assert.match(required, /documents or decisions but no model, search runs without it and `required` is true/)
+  assert.match(required, /a decline made before is no exception/)
+  assert.match(required, /Only a session with a person — `init` called with `questions=true` — gets the line in `instructions` that says so/)
+  assert.match(required, /a routine or a subagent \(`questions=false`\) gets the key `required` alone and leaves it/)
+  assert.match(required, /`backfill_required`, whose action is to start the backfill/)
+  // One backfill session per project: while it runs, nobody else is told to start one.
+  assert.match(required, /While the backfill runs, no session gets the line: one session runs the backfill of a project, and another gets the progress line alone and starts no second one/)
+  // The search names the projects it searched without a model.
+  const search = oneLine(section(read('SKILL.md'), '### Search through the model'))
+  assert.match(search, /`projects_without_model` of the answer names by handle the projects of the search's scope that have documents or decisions but no model/)
 })
 
-test("the parameter questions of init says false drops the offer line", () => {
+test("the parameter questions of init says false drops the warning line", () => {
   const row = read('references/command_list.md').split('\n').find((line) => line.startsWith('| questions | boolean |'))
   assert.ok(row, 'no row questions')
-  assert.match(row, /`instructions` carries no offer to fill the project model \(the key `arch\.backfill\.offer` stays\)/)
+  assert.match(row, /`instructions` carries no warning that filling the project model is required \(the key `arch\.backfill\.required` stays\)/)
+})
+
+test('the reference says a decline of the backfill is refused and search names the projects without a model', () => {
+  const reference = read('references/command_list.md')
+  const backfill = oneLine(section(reference, '### arch_backfill'))
+  assert.match(backfill, /`declined` is refused in every state with `backfill_required`/)
+  assert.doesNotMatch(backfill, /backfill_already_started|only on the user's refusal/)
+  assert.match(oneLine(section(reference, '### search')), /`projects_without_model` — the handles of the projects of the search's scope that hold documents or decisions but no model/)
+  assert.match(oneLine(procedure()), /\*\*It is required\.\*\* A project with documents or decisions and no model is searched without the model/)
+})
+
+test('the changelog says filling the model is required and the backfill can no longer be declined', () => {
+  const entry = oneLine(sectionWith(read('CHANGELOG.md'), 'Filling the project model is required; the backfill can no longer be declined.'))
+  assert.match(entry, /`arch\.backfill\.required`/)
+  assert.match(entry, /`backfill_required`/)
+  assert.match(entry, /`projects_without_model`/)
 })
 
 test('the backfill entry of the changelog says only a session with a person gets the offer', () => {

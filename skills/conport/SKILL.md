@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 26.0.0
+  version: 27.0.0
 ---
 
 # ConPort — Project Management System
@@ -220,8 +220,7 @@ trying another name.
 
 ### Questions from init
 
-The server resolves knowledge-base gaps and semantic-pass proposals on its own,
-every day. What only a person can decide reaches you as a question: `init`
+The server resolves knowledge-base gaps on its own, every day. What only a person can decide reaches you as a question: `init`
 returns up to three in `questions`, each with `id`, `gap_type`, `text`,
 `options` (`key`, `label`, `effect` — what the server does on that answer) and
 `default` (the `key` taken when nobody answers).
@@ -364,8 +363,7 @@ the first receipt instead of a second move. Refusals move nothing:
 target's plan is full), `project_busy` (409, retry later),
 `transfer_source_admin_required` (403). The project keeps its id, items,
 documents and history; links to projects that stay behind in the source team
-are removed; subscription and past usage stay with the source team. For a while
-graph functions may answer `graph_rebuilding`; project data stays readable.
+are removed; subscription and past usage stay with the source team.
 
 **After the move the previous name no longer finds the project.** A name
 without a team ID (`<project>` or `pers/<project>`) answers
@@ -748,7 +746,7 @@ drift. Edit the original, or author an addendum with an explicit callout
 | "Open task #N and brief me" | `assemble_context` with `recipe='task_briefing'`, `start_id='task-N'` |
 | "Implementation status of spec doc-N?" | `assemble_context` with `recipe='spec_implementation_status'`, `start_id='doc-N'` |
 | "What recipes are available?" | `list_context_recipes` |
-| "Current architecture of subsystem X?" | `render_current_architecture` with `scope=[...]` |
+| "Current architecture of subsystem X?" | `arch_get` — the project model |
 | "Is this architecture doc safe to archive?" | `audit_doc_l1_coverage(doc_id)` |
 | Init response carries `questions` | ask the user, one at a time, then `answer_question` — see *Questions from init* |
 | "Show the gaps" / "how healthy is the knowledge base?" | `gap_list` (open ones by default), `gap_stats` — read-only: the server resolves gaps itself |
@@ -888,7 +886,7 @@ below.
 | Check the anchors and send no facts of git | `npx -y conport@^0.14.0 arch check --no-git` |
 | Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.14.0 arch suggest --json` (any branch; it submits nothing) |
 | Fill the model of a project that lived before it | the procedure `references/model-backfill.md` |
-| Start, complete or decline the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`, `declined` |
+| Start or complete the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`; filling the model is required, so `declined` is refused (`backfill_required`) |
 | The role of a document in the model | `update_document` with `model_role` — `structure`, `history`, `none` |
 
 ### What goes into the model
@@ -1158,8 +1156,9 @@ nothing for it.
 
 ### Search through the model
 
-In a project whose model is filled (`backfill.filled` of `arch_status`),
-`search` also reaches records through the model. A query that names an entity
+`search` fuses vector and full-text search, and in any project whose model is
+not empty — whether its backfill is completed or it began with its model —
+also reaches records through the model. A query that names an entity
 or a scenario, or comes close to one, finds the documents that claim the
 entity, the decisions linked to it and the epics of its documents, and the
 records of the entities one and two relations away; a scenario gives the
@@ -1169,6 +1168,13 @@ carries in `content` the part of the model it came through:
 `name`, `kind`). The entity and the scenario are never hits themselves: read
 them with `arch_entity` and `arch_scenario`. A failure of this branch names
 `arch` in `failed_sources`.
+
+A project without a model is searched by vector and full text alone.
+`projects_without_model` of the answer names by handle the projects of the
+search's scope that have documents or decisions but no model: they were
+searched without it, and filling their model is required (see *Filling the
+model of an existing project*) — except a project whose backfill is
+`completed` with no portion; one portion makes the model required again.
 
 Entities that were removed or replaced give no records by default. To ask what
 replaced a thing, or what a removed part of the system was, call `search` with
@@ -1644,8 +1650,8 @@ with facts, or null when there is none.
 ### Debts of the model in init
 
 `init` returns the section `arch` when the model owes work, when its backfill
-has started, completed or been declined, or when the project is offered the
-backfill: `total` and up to five `debts`, each with `kind`, `subject`,
+has started, completed or been declined, when the project is offered the
+backfill, or when its model is required: `total` and up to five `debts`, each with `kind`, `subject`,
 `detail` and `action`, and `backfill` (below). When the model owes work,
 `instructions` gains a line that opens with `Model debts: N`. Print the
 section after the backlog:
@@ -1683,27 +1689,36 @@ of the project approves what it asks to approve.
 
 **The onboarding of a project runs the backfill itself**, at its step 8
 (`references/project-onboarding.md`): while the key `onboarding` of `init` is
-`in_progress`, `instructions` carries no line offering the backfill, and the
-key `offer` of `backfill` stays as it is.
+`in_progress`, `instructions` carries no line saying the model is required,
+and the key `required` of `backfill` stays as it is.
 
 The key `backfill` of the section `arch` of `init` carries `state`
 (`not_started`, `in_progress`, `completed`, `declined`), `completed_at`,
 `documents` and `submitted` (the documents with the role `structure` or
-`history`, and those of them with a portion) and `offer`.
+`history`, and those of them with a portion), `offer` and `required`.
 
 - **While the backfill runs**, the debts `no_portion` by the role of a document
   are not listed one by one: `instructions` carries the line
   `Backfill: K of M documents submitted` instead. In a session that does not
   run the backfill the line is a notice, not a task: print it and go on with
   the session's own work. The other debts stay listed, each with its action.
-- **An offer.** When the project has documents older than its model and the
-  backfill has not started, `offer` is true. Only a session with a person —
-  `init` called with `questions=true` — gets the line in `instructions` that
-  offers it; a routine or a subagent (`questions=false`) gets the key `offer`
-  alone and leaves it: it has nobody to offer it to. Show the offer to the
-  user once. When the user accepts,
-  follow the procedure. Call `arch_backfill(project, state='declined')` only
-  after the user declines it; the offer is not shown again.
+- **Filling the model is required.** When the project has documents or
+  decisions but no model, search runs without it and `required` is true,
+  whatever the state of the backfill — a decline made before is no
+  exception — except a project whose backfill is `completed` with no
+  portion; one portion makes the model required again. Only a session with a person — `init` called with
+  `questions=true` — gets the line in `instructions` that says so
+  (`Model required: …`); a routine or a subagent (`questions=false`) gets the
+  key `required` alone and leaves it: it has nobody to approve the inventory.
+  While the backfill runs, no session gets the line: one session runs the
+  backfill of a project, and another gets the progress line alone and starts
+  no second one.
+  When the line is given, tell the user once that the model is required, then
+  follow the procedure.
+  There is no decline: `arch_backfill(project, state='declined')` is refused
+  with `backfill_required`, whose action is to start the backfill. `offer`
+  (documents older than the model, the backfill not started) is kept for
+  older clients; go by `required`.
 - **A rollback** of the backfill is never your own step: it runs only on the
   user's word, as the procedure's part *Rollback* says.
 
@@ -2048,11 +2063,11 @@ page.** Public index: **https://conport.app/llms.txt**. (No web fetch? Use the
 | Topic | Page |
 |---|---|
 | Save-first discipline | `core/save-first` |
-| Knowledge-graph model (item links + GraphRAG) | `core/graph-model` |
+| Knowledge-graph model (item links + the project model) | `core/graph-model` |
 | Cross-reference grammar | `core/cross-references` |
 | Documentation-graph callouts (full reference) | `core/documentation-callouts` |
 | Post-write verification / slim responses | `core/post-write-verification` |
-| `assemble_context` recipes / `render_current_architecture` | `projects/context-recipes` |
+| `assemble_context` recipes | `projects/context-recipes` |
 | Knowledge-base gaps | `projects/gaps` |
 | Spec append-only invariant | `projects/spec-append-only` |
 | Block-level document model | `projects/block-model` |

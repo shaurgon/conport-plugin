@@ -70,7 +70,7 @@ mcp__conport__init({
 | skill_id | string | no | Skill the client runs (`conport`, `conport-agent`) — only used to detect an available skill update |
 | skill_version | string | no | Semver of the installed SKILL.md content (independent of the plugin release tag) |
 | client_type | string | no | Calling environment: `claude-code` \| `claude-ai` \| `cursor` \| `openclaw` \| `mcporter` \| `paperclip`. Picks the install-guide URL of an update notice |
-| questions | boolean | no | `true` (default) when a person is at the session: up to three questions are returned and marked as asked. Pass `false` for a run with no person — a subagent, a routine cycle: no question is returned or marked, and `instructions` carries no offer to fill the project model (the key `arch.backfill.offer` stays) |
+| questions | boolean | no | `true` (default) when a person is at the session: up to three questions are returned and marked as asked. Pass `false` for a run with no person — a subagent, a routine cycle: no question is returned or marked, and `instructions` carries no warning that filling the project model is required (the key `arch.backfill.required` stays) |
 
 **Returns:** `project` (the project's handle — pass it as `project` to every
 other tool), `name` (the short name), `canonical_name`
@@ -102,15 +102,19 @@ reviewed before taking new work"; `arch` (the debts of the project model:
 `total` and up to five `debts`, each `kind`, `subject`, `detail` and the one
 `action` — see *Project model*) only when the model owes work — and then
 `instructions` carries "Model debts: N — take the action of each debt in
-`arch`; `arch_status` lists them all"; `backlog.top` rows carry `milestone_id` and the
+`arch`; `arch_status` lists them all"; `arch.backfill.required` is true when
+the project has documents or decisions but no model — except a project whose
+backfill is `completed` with no portion; one portion makes the model required
+again: search runs without it, filling it is required, and a session with a person gets a line in
+`instructions` that opens with `Model required:` — except while the backfill
+runs, which one session leads; `backlog.top` rows carry `milestone_id` and the
 current milestone's rows float up.
 Top-5 excludes subtasks of active epics so
 you see roots + orphans; `effective_priority` rolls up the most-important
 priority across direct children (priority is industry-standard 1-5 where
 1=critical and 5=idle, so "most important" = the smallest number).
 
-**`questions`.** Knowledge-base gaps and semantic-pass proposals are resolved
-by the server's daily pass; a gap only a person can decide becomes a question.
+**`questions`.** Knowledge-base gaps are resolved by the server's daily pass; a gap only a person can decide becomes a question.
 Each one carries `id`, `gap_type`, `text` (English, with the names filled in),
 `options` (2–3, each `key`, `label` and `effect` — what the server does on that
 answer) and `default` (the `key` taken when nobody answers). Ask the user each
@@ -513,8 +517,7 @@ mcp__conport__log_progress({
 A link is refused unless both parameters are given and name an existing item of this project: name one, or send neither.
 
 **Returns:** a slim echo — the new entry `id`. Canonical references in the text
-become graph edges on the write itself; decision extraction from the text runs
-afterwards in the background.
+become graph edges on the write itself.
 
 ### update_progress
 
@@ -840,7 +843,7 @@ mcp__conport__delete_task({
 `id` that was removed; deleting a child of an epic also returns `epic_progress`
 — the shrunk epic's rollup (same shape as under `add_task`, without
 `grew_after_start`), so a delete that empties a tail says so on the spot.
-Dependencies and graph mentions of the task are removed with it; an unknown
+Dependencies and links of the task are removed with it; an unknown
 task is an error.
 
 ### add_linked_task
@@ -1122,7 +1125,7 @@ mcp__conport__add_document({
 
 **Returns:** a slim echo — `id` and `tags`, so you can confirm where the body
 landed. The body is split into blocks on the
-write itself; their embeddings and entity extraction follow in the background.
+write itself; their embeddings follow in the background.
 
 **Errors:** a call without `doc_type` fails before anything is written, with
 the action `name the document type: spec, architecture, runbook, api_docs, tutorial, meeting_notes, plan or other`.
@@ -1153,7 +1156,7 @@ mcp__conport__update_document({
 })
 ```
 
-The body is parsed into blocks server-side via the block reconciliation algorithm — unchanged blocks keep their ULIDs (and their embeddings/entity mentions), changed blocks get re-embedded, deleted blocks are dropped. Cheaper than naive replace because only the dirty parts hit Mistral.
+The body is parsed into blocks server-side via the block reconciliation algorithm — unchanged blocks keep their ULIDs (and their embeddings), changed blocks get re-embedded, deleted blocks are dropped. Cheaper than naive replace because only the dirty parts hit Mistral.
 
 Metadata-only updates work without a `content` field — pass just `title`, `doc_type`, `tags`, etc. The body and its blocks stay as they are.
 
@@ -1175,8 +1178,8 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 
 **Returns:** a slim echo — `id` and `tags`.
 
-**Errors:** a `doc_role='derived_view'` document rejects any body change (it
-is regenerated by the recipe runner); a spec body edit without `change_kind`,
+**Errors:** a `doc_role='derived_view'` document rejects any body change (a
+derived view is a render, kept as it was rendered); a spec body edit without `change_kind`,
 with `change_kind: "substantive"`, or with `change_kind: "amend"` and no
 `reason`, is rejected as well.
 
@@ -1286,8 +1289,8 @@ with `update_document`.
 
 ### delete_block
 
-Delete one block by ULID. Its mentions go with it and the document
-re-serializes; an unknown ULID is an error.
+Delete one block by ULID. The document re-serializes; an unknown ULID is an
+error.
 
 ```
 mcp__conport__delete_block({
@@ -1542,9 +1545,11 @@ conport skill.
 **Filling the model of an existing project** — the backfill — is the
 procedure `references/model-backfill.md` of the conport skill; no tool of its
 own builds the skeleton of the code, the agent writes it as `code:<label>`
-portions. The procedure gives every document its role with `update_document`
-(`model_role`), moves the state of the backfill with `arch_backfill`
-(`in_progress`, `completed`, `declined`), and reads the active decisions
+portions. Filling the model is required: a project with documents or
+decisions and no model is searched without it. The procedure gives every
+document its role with `update_document` (`model_role`), moves the state of
+the backfill with `arch_backfill` (`in_progress`, `completed`; `declined` is
+refused with `backfill_required`), and reads the active decisions
 without an entity from `arch_status` while the backfill runs
 (`unlinked_decisions`, page by page with `unlinked_after`).
 `npx -y conport@^0.14.0 arch withdraw --all` reports every source of the project
@@ -1903,8 +1908,10 @@ shallow clone, or a refusal (`disabled`: `--no-git` or `arch.git: false`
 from any branch, or no main branch) — or null when there is none),
 `backfill` (`state`, `completed_at`,
 `documents` — the documents with the role structure or history, `submitted`
-— those of them with a portion, `code_sources`, `filled`, `offer`). While the
-backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,
+— those of them with a portion, `code_sources`, `filled`, `offer`,
+`required` — the project has documents or decisions but no model, and filling
+it is required, except a project whose backfill is `completed` with no portion;
+one portion makes the model required again). While the backfill is `in_progress`, `unlinked_decisions` (`total`, `ids`,
 `next_after` — the `unlinked_after` of the next page, null on the last one)
 lists the current decisions no entity is bound to (by a `clarifies` link from
 the decision to the entity); in any other state the key is absent. `vectors`
@@ -1990,15 +1997,16 @@ from `in_progress`, and again on a completed backfill, which keeps its date of
 completion: the server accepts it only without a debt of the model — a
 document portion submitted without a review is one, `unchecked_portion` — and
 with every code source no newer than the last anchor check.
-`declined` — only on the user's refusal, before the start.
+`declined` is refused in every state with `backfill_required`: filling the
+model is required, and the action is to start the backfill.
 
 **Returns:** `state`, `completed_at`, `documents`, `submitted`,
-`code_sources`, `filled`, `offer`.
+`code_sources`, `filled`, `offer`, `required`.
 
 **Refusals:** `{"error", "action", "blockers"}` —
 `backfill_not_ready` (`blockers`: `debts` with their `count`,
 `code_source_unchecked` with its `subject`), `backfill_not_started`,
-`backfill_already_started`.
+`backfill_required`.
 
 ### project_onboarding
 
@@ -2350,21 +2358,20 @@ the REST `DELETE /project-links` answers (404 and 422). The tool takes no
 
 ### search
 
-Unified search across all project data with GraphRAG — or, in a project whose
-model is filled, with the branch of the project model in place of GraphRAG
-(hits carry `content.via_arch_entity` or `content.via_arch_scenario`; see live
-docs `projects/architecture-model`).
+Unified search across all project data — and, in any project whose model is
+not empty, through the project model too (hits carry `content.via_arch_entity`
+or `content.via_arch_scenario`; see live docs `projects/architecture-model`).
 
 Automatically combines:
 - **Semantic search** (vector similarity)
 - **Full-text search** (FTS)
-- **GraphRAG** (entity and community traversal)
-- **The project model** — in place of GraphRAG in a project whose model is
-  filled (`backfill.filled` of `arch_status`): the documents, decisions and
-  epics of the entities and scenarios the query matches, and of the entities
-  one and two relations away. Removed and replaced entities give no records
-  unless `include_removed` is true; a failure of this source names `arch` in
-  `failed_sources`
+- **The project model** — in any project whose model is not empty, whether
+  its backfill is completed or it began with its model: the documents,
+  decisions and epics of the entities and scenarios the query matches, and of
+  the entities one and two relations away. Removed and replaced entities give
+  no records unless `include_removed` is true; a failure of this source names
+  `arch` in `failed_sources`. A project without a model is searched by vector
+  and full text alone
 
 Results are merged via **Reciprocal Rank Fusion (RRF)**.
 
@@ -2386,7 +2393,12 @@ mcp__conport__search({
 | team | string | no | Team to act in — `"pers"` or a shared team's ID. Omitted: your Private Team. Working in a project of a shared team: pass the `team.handle` that `init` returned for that project |
 | include_removed | boolean | no | Also find the records of removed or replaced parts of the project model — e.g. "what replaced X" (default: false) |
 
-**Returns:** `results` (ranked) and `total`, plus a rendered `_summary` and
+**Returns:** `results` (ranked) and `total`, plus a rendered `_summary`,
+`projects_without_model` — the handles of the projects of the search's scope
+that hold documents or decisions but no model, except a project whose
+backfill is `completed` with no portion (one portion makes the model required
+again): they are searched without it, filling it is required, and `_summary`
+says so — and
 `team` — the team the search ran in (`pers` for your Private Team, otherwise
 the shared team's ID). A search never crosses teams: an empty result is about
 that team only, so before concluding the knowledge is missing, repeat the
@@ -2400,8 +2412,7 @@ Each hit carries:
   `content.context_type` and `content.version`; a `custom_data` hit has
   none (`null`) and names its entry by `content.category` and `content.key`
 - `project` (the handle) / `project_name` — which project the hit came from
-- `content` — the item blob. GraphRAG hits carry `via_entity` /
-  `via_community` inside it; a hit reached through the project model carries
+- `content` — the item blob. A hit reached through the project model carries
   `via_arch_entity` (`id`, `name`, `stage`) or `via_arch_scenario` (`id`,
   `name`, `kind`) — the entity or the scenario it came through; decision
   hits are annotated with `currency` (current \| superseded \| deprecated),
@@ -2569,30 +2580,6 @@ No parameters.
 
 **Returns:** `recipes` — per recipe `name`, `version`, `start_node_type`,
 `description`.
-
-### render_current_architecture
-
-Synthesise the current architecture of a subsystem from decisions, patterns and
-authored spec documents whose tags intersect `scope`. Decisions not in force —
-absorbed into a pattern, deprecated or superseded — are left out, so the render
-shows what holds *now*. Tag-scoped rather than
-start-node-based, which is why it is not an `assemble_context` recipe.
-
-```
-mcp__conport__render_current_architecture({
-  project: <project>,
-  scope: ["embedding", "graph"]
-})
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| project | string | yes | Project handle or name |
-| scope | array | yes | Non-empty list of subsystem tags. Order matters — the first tag is the primary bucket for items matching several |
-| format | string | no | `markdown` (default) or `json` |
-
-**Returns:** `recipe` (`current_architecture`), `scope`, `format`, `content`
-(markdown) or `data` (json), `totals` and `generated_at`.
 
 ### audit_doc_l1_coverage
 
@@ -2981,7 +2968,7 @@ kept, or a decision tagged `error-solution` by hand.
 | Search | `search` |
 | Linking | `link_items`, `get_linked`, `link_project`, `get_project_links`, `unlink_project` |
 | History | `recent_activity`, `item_history`, `context_history` |
-| Context assembly | `assemble_context`, `list_context_recipes`, `render_current_architecture`, `audit_doc_l1_coverage` |
+| Context assembly | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage` |
 | Project model | `arch_submit`, `arch_withdraw`, `arch_source`, `arch_sources`, `arch_names`, `arch_get`, `arch_entity`, `arch_lookup`, `arch_status`, `arch_scenarios`, `arch_scenario`, `arch_backfill`, `project_onboarding` |
 | Gaps | `gap_list`, `gap_stats`, `answer_question` |
 | Routine cycle | `get_agenda`, `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |

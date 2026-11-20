@@ -1,6 +1,6 @@
 {
   "name": "conport",
-  "version": "26.0.0",
+  "version": "27.0.0",
   "description": "ConPort — project context for Claude Code (MCP + skills + hooks).",
   "skills": ["./skills/conport", "./skills/conport-routine", "./skills/conport-roadmap", "./skills/superpowers-conport"],
   "author": {
@@ -8,7 +8,7 @@
     "url": "https://github.com/shaurgon"
   },
   "repository": "https://github.com/shaurgon/conport-plugin",
-  "keywords": ["conport", "context", "memory", "mcp", "agents", "graphrag"],
+  "keywords": ["conport", "context", "memory", "mcp", "agents"],
   "userConfig": {
     "api_key": {
       "type": "string",

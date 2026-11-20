@@ -28,11 +28,11 @@ groups together: `?profile=core&profile=gaps` is `core,gaps`.
 
 A name that is no group is refused: every request of such a connection is
 answered with HTTP 400 and the list of valid groups, so the client does not
-connect at all. Reconnect with a profile made of those names only. The group
-`diagrams` was removed with its one tool, and `graphrag` and `semantic`, the
-groups of the entity graph and the semantic pass, were removed in the plugin's
-release 21.0.0; all three are still accepted and list nothing until the next
-major release.
+connect at all. Reconnect with a profile made of those names only. The former
+groups `diagrams`, `graphrag` and `semantic` — of the diagrams tool, the entity
+graph and the semantic pass — are no groups any more and are refused the same
+way, with HTTP 400 and `unknown_tool_group`: remove them from the profile and
+reconnect.
 
 ## Groups
 
@@ -60,7 +60,7 @@ rest of `tasks`.
 | `history` | 3 | Recent activity and item history |
 | `guardrails` | 4 | Conventions and error solutions |
 | `gaps` | 3 | Knowledge-base gaps and the answer to the questions about them |
-| `recipes` | 4 | Context assembly and architecture rendering |
+| `recipes` | 3 | Context assembly and the coverage audit of a document |
 | `routine` | 6 | Periodic cycles: policy, runs, estimation statistics |
 
 ## The tools of each group
@@ -87,7 +87,7 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 | `history` | `recent_activity`, `item_history`, `context_history` |
 | `guardrails` | `add_convention`, `add_error_solution`, `list_conventions`, `list_error_solutions` |
 | `gaps` | `gap_list`, `gap_stats`, `answer_question` |
-| `recipes` | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage`, `render_current_architecture` |
+| `recipes` | `assemble_context`, `list_context_recipes`, `audit_doc_l1_coverage` |
 | `routine` | `get_routine_config`, `set_routine_config`, `routine_run_start`, `routine_run_finish`, `list_routine_runs`, `get_estimation_stats` |
 
 ## What each part of the plugin needs

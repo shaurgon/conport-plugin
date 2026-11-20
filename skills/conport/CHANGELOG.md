@@ -1,5 +1,70 @@
 # conport changelog
 
+## 27.0.0
+
+**Breaking: the former tool groups are refused, and `render_current_architecture`
+is gone.** A tool profile that names `diagrams`, `graphrag` or `semantic` is no
+longer accepted as an empty group: every request of such a connection answers
+HTTP 400 `unknown_tool_group` with the list of valid groups. Remove those names
+from the profile (`X-Conport-Profile` or `?profile=`) and reconnect. The tool
+`render_current_architecture` and the REST route
+`POST /api/v1/projects/{project}/recipes/current-architecture` are removed: the
+tool answers like a tool the server does not have and the route answers 404.
+The current architecture is the project model: read it with `arch_get`. The
+`recipes` group now holds three tools.
+
+**Breaking: the entity graph is gone, and the data of the entity graph is
+deleted.** The server no longer extracts entities from the text of decisions,
+patterns, tasks, progress entries or blocks, keeps no communities and runs no
+semantic pass: its proposals are closed, and knowledge-base gaps are what the
+daily pass resolves. The answers of decisions, patterns, tasks and progress
+entries on REST and MCP no longer carry the field `extraction_status`. The
+project export is `schema_version` 6: its rows carry no `extraction_status`,
+and it carries the project model — its entities, relations, sources, claims,
+reviews, anchor checks and scenarios with their nodes and steps, one section
+each — in rows without a project number or a vector. `search` fuses vector
+and full-text search, and in any project whose model is not empty — its
+backfill completed or begun with its model — the branch of the project model;
+a project without a model is searched by vector and full text alone, and a
+query is no longer enriched or narrowed through entities. The routes of the
+entity graph and the semantic pass that were left are removed and answer 404:
+`/api/v1/admin/retry-*-extractions` and the other service routes of the graph
+under `/api/v1/admin`; `/api/v1/admin/regenerate-embeddings` stays and
+re-embeds the entities and scenarios of the model. `/api/v1/health` no longer
+answers the six fields of the graph (`graph_loaded`, `graph_nodes`,
+`graph_edges`, `communities_count`, `communities_loaded`,
+`last_community_update`). The answer and the receipt of a project transfer
+carry no `graph_state`, and no call answers `graph_rebuilding` any more.
+`sync_decision` drafts a pattern from a cluster of similar decisions whenever
+the server has its LLM key. What replaced each tool of the entity graph and
+the semantic pass is the project model: `entities`, `entity`,
+`entity_related`, `communities`, `community` and `graph_stats` — `arch_names`,
+`arch_entity`, `arch_lookup`; `semantic_pass_run`, `semantic_pass_stats` and
+`semantic_cleanup` — nothing to call, the checks of the model keep it clean;
+`render_current_architecture` — `arch_get`. `conport api graph …` and
+`conport api semantic …` answer like any resource the API does not have;
+embedding regeneration stays at `/api/v1/admin/regenerate-embeddings`, for
+the admin token only and unpublished, so the CLI has no command for it. The
+skill, its references and the docs say so; the docs page on the semantic pass
+is removed.
+
+**Filling the project model is required; the backfill can no longer be
+declined.** A project that has documents or decisions but no model is searched
+without it. `init` marks such a project with `arch.backfill.required`, whatever
+the state of its backfill — a decline made before is no exception — except a
+project whose backfill is `completed` with no portion; one portion makes the
+model required again. A session with a person gets the line
+`Model required: …` in `instructions` in place of the old offer — except while
+the backfill runs, which one session leads. `arch_backfill` with `declined` (and REST
+`PUT /api/v1/projects/{project}/arch/backfill`) is refused in every state with
+`backfill_required` (409 on REST), whose action is to start the backfill;
+`backfill_already_started` is gone. `search` names the projects of its scope
+without a model in `projects_without_model` (MCP and REST alike), and the MCP
+`_summary` says filling them is required. `arch_status` carries `required` in
+`backfill`. The dashboard shows a strip on every page of such a project, with
+a link to the instructions. The skill, the backfill procedure and the
+reference say the model is required.
+
 ## 26.0.0
 
 **The implementer's work in REVIEW is written in the journal.** A task in

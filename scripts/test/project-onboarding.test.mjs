@@ -317,10 +317,10 @@ test('the skill reads onboarding.offer, not zero counters, for the first fill', 
   const after = afterInit()
   assert.match(after, /`onboarding\.offer`/)
   assert.doesNotMatch(after, /no decisions, no patterns/)
-  // In a session with an onboarding running, the offer to fill the model does not come.
+  // In a session with an onboarding running, the warning that the model is required does not come.
   const filling = oneLine(section(read('SKILL.md'), '### Filling the model of an existing project'))
   assert.match(filling, /step 8/)
-  assert.match(filling, /`in_progress`[^.]*no line offering the backfill/)
+  assert.match(filling, /`in_progress`[^.]*no line saying the model is required/)
 })
 
 test('the skill tells an agent without MCP to read GET /onboarding', () => {

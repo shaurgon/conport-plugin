@@ -303,8 +303,8 @@ of roles, the pass, what is gone, the decisions attached to entities, the
 debts. The overview takes the role `structure`. Without documents of the
 repository the inventory holds the overview alone. The step ends when
 `arch_backfill(project, state='completed')` is accepted. While the onboarding
-is `in_progress`, `init` gives no line offering the backfill: this step runs
-it.
+is `in_progress`, `init` gives no line saying the model is required: this step
+fills it.
 
 ## Step 9. Summary
 
