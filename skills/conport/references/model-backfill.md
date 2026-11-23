@@ -74,9 +74,18 @@ table of the inventory (step 2) and is approved with it; until then the
 skeleton is submitted by the proposed list.
 
 **The label** of a unit's source is `code:<unit-name>`: lower case, no `/` —
-the unit `cli/conport` → `code:cli-conport`. A unit with more than 400
-entities is split into `code:<unit-name>.<part>` sources; the portion with the
-unit itself goes first.
+the unit `cli/conport` → `code:cli-conport`. Every `code:` portion but a part portion, `code:root` too, introduces exactly one entity of the type `unit`, the unit of
+its label, or it is refused `code_portion_unit`; `code:root` introduces a unit for the repository with the anchor `path` `.`. A unit with
+more than 400 entities is split into `code:<unit-name>.<part>` sources; the
+portion with the unit itself goes first. A part portion `code:<unit-name>.<part>` introduces no unit and takes the unit of `code:<unit-name>`.
+
+**What holds each part.** Write the unit and its parts with their `path`
+anchors: the server infers the entity that holds each part a `code:` portion
+introduces — the deepest entity of the portion whose `path` anchor contains
+the part's, else the unit — writes its `contains` and names them in
+`inferred_owners` of the answer. Claim `contains` yourself only where the
+part belongs to another entity than that: a claimed `contains` ranks above
+the inferred one.
 
 **What is written out** — read the code through `codegraph` or the files:
 
@@ -223,6 +232,14 @@ files), not only in the skeleton: the skeleton is two levels deep. Found —
 name the entity of the skeleton by its name, or introduce a new one with an
 anchor. Not found — submit it without an anchor; step 4 decides its fate.
 
+**A part needs the entity that holds it.** A portion of a document whose
+role is not `history` that introduces a component, an interface, data or a
+setting no active entity of the model holds by an active `contains` — from
+this portion, another source or the server's inference for the code — is
+refused `part_without_owner`: claim
+`contains` to it from the entity that holds it, or leave it out of the
+portion.
+
 **A mention needs an entity the model already has.** The pass goes oldest
 first, so an early document may name a thing that only a later document
 introduces. Write `mentioned` only for an entity `arch_names` lists (or one
@@ -291,20 +308,19 @@ The user is not asked about each one: the user reads the result as a whole; a
 row they disagree with is edited, and the portion of the result is submitted
 again.
 
-**Each debt `orphan_entity` is a thing of this step**: an entity only a
-history, archived or replaced document introduced, or one only mentioned, with
-no anchor, no relation and no scenario. Claim it in the portion of the result
-by the rules above; a thing that exists without an anchor (an external system
-the code reaches) is introduced there instead, with a relation when the
-documents name one. The fold orders an archived or replaced document by its
-moment of creation and skips a `history` one: the result must be created
-after the document the debt names, so when the debt names one created after
-the result, create the next result document, `Model backfill: result N`. At
-most 12 debts of the kind are listed at a time; the last one counts the rest,
-and they come in as these are paid.
+**An entity no living source holds** — one only a history, archived or
+replaced document introduced, or one only mentioned, with no anchor, no
+relation and no scenario: the server folds it `removed` itself, its card
+carries `state_reason: "no_living_source"`, and `arch_status` counts it in
+`no_living_source`. There is nothing to claim for it. A thing that still
+exists without an anchor (an external system the code reaches) is introduced
+in the portion of the result, with a relation when the documents name one,
+and becomes active again.
 
 **Each debt `part_without_owner`** is a component, interface, data or setting
-nothing active contains. Claim the relation `contains` to it from the unit or
+nothing active contains; the parts of the `code:` portions get the
+`contains` the server infers, so the debt is left mostly for the parts of the
+documents. Claim the relation `contains` to it from the unit or
 component that holds it, in the portion of a living source that names it, or
 claim it `removed` there if it is gone. At most 12 debts of the kind are
 listed at a time, the parts with the most relations first; the last one

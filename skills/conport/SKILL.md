@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 27.0.1
+  version: 27.1.0
 ---
 
 # ConPort — Project Management System
@@ -968,6 +968,21 @@ with the block that states it.
   `code` portion again once files under its anchors were added, deleted or
   renamed.
 
+**An edit of a document with a portion.** The answer of `update_document`
+with a new body, `update_block`, `insert_block` and `delete_block` on a
+document that has a portion carries `model_portion` when the portion is
+stale after the edit, or when the edit changed blocks the portion does not
+claim; otherwise the key is not there. On REST the `PUT` of a document
+and the writes of a block carry it too; the `DELETE` of a block answers 204
+without it, and the debt `portion_stale` shows what it did.
+
+- `{"stale": true, "blocks": [...], "action": ...}` — the portion is stale
+  now: a block it claims changed or is gone, or the document has a new block;
+  `blocks` names them all. Do exactly this: Read the portion with `arch_source`, bring the blocks named in `blocks` in line and submit it again.
+- `{"stale": false, "unclaimed_blocks": [...], "action": ...}` — the edit
+  changed blocks no claim of the portion names, so the portion owes no debt
+  for them and nothing else will point at them. Do exactly this: These blocks carry no claim of the model portion: if they now introduce or change a part of the system, bring the portion in line and submit it again.
+
 The model is on in a project once it has one portion, or while its backfill
 runs or after it is completed; before that it owes nothing.
 
@@ -994,7 +1009,9 @@ runs or after it is completed; before that it owes nothing.
 5. **Submit it** with `arch_submit(project, portion)`, the report of the
    reviewer in `review` of the portion, or write it to a file and run
    `npx -y conport@^0.15.0 arch submit <file.json>`. The answer carries
-   `review_id`, the number of the stored report (null without one).
+   `review_id`, the number of the stored report (null without one), and
+   `inferred_owners`, the owners the server inferred for the parts of a
+   `code:` portion (*A code portion for one unit*).
 6. **A refusal** is `portion_rejected` with every error at once, each with its
    `code`, `subject` and `action`; nothing was written. Take the action of each
    error and submit again. `portion_invalid` is a portion off the schema: its
@@ -1477,6 +1494,7 @@ finding for that reason:
 | `decision_not_found` | The project has no decision of that number | Name the decision by a number `list_decisions` returns for the project. |
 | `portion_too_large` | More than 150 entities for a document, more than 400 for one `code:` label | Move whole units, each with the entities it contains, or the components of a unit over 150 entities, each with what it contains, into a new `architecture` document that describes them and submit its portion first, with the blocks `list_blocks` returns for that document; then submit this portion without those entities but with all their relations, and dismiss them in `review.findings` with `resolution: dismissed` for the reason that the `architecture` document holds them, so that it carries at most 150 entities. |
 | `entity_reference_missing` | `renamed_from` or `replaced_by` names no entity | Name in `renamed_from` a name of `arch_names` and in `replaced_by` an entity of the portion or of `arch_names`. |
+| `code_portion_unit` | A `code:<label>` portion, `code:root` too, introduces no entity of the type unit or more than one; a part portion `code:<unit>.<part>` of an existing `code:<unit>` introduces none and takes the unit of `code:<unit>`, a nested part such as `code:<unit>.<part>.<sub>` that of the nearest ancestor that is no part itself | Introduce exactly one entity of the type unit in the portion code:<label>. |
 | `unknown_scenario_kind` | The kind of a scenario, a step or a branch is not one of its set | Give the scenario one of the kinds sequence, states, activity, a step one of call, reply, async and a branch one of alt, opt, loop. |
 | `unknown_node_kind` | The kind of a node of an activity is not one of the seven | Give the node one of the kinds start, end, action, decision, fork, join, wait. |
 | `scenario_participant_missing` | A participant, the subject, a performer or `via` names an entity neither the portion nor the model has | Name the participant, subject, performer or `via` by a name or an alias of an entity of the portion or of `arch_names`. |
@@ -1489,12 +1507,17 @@ finding for that reason:
 | `dismissal_moved` | `dismissed` holds a finding of the kind `missing` or `invented` | Move the dismissal into `review.findings` with `resolution: dismissed` and its `reason`. |
 | `review_reused` | `review` is the report `arch_source` gave back: it carries `id` or `at` | Run the reviewer on the portion again and submit it with the new report, or submit it without `review`. |
 | `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
+| `part_without_owner` | A document portion whose role is not `history` introduces a component, an interface, data or a setting that has no active owner once the model with the portion is folded: no active entity holds it by an active `contains`, from this portion, from another source or inferred by the server for code. An archived or replaced `structure` document is held to it too; a mentioned part is not. The action names the part in place of <name> | Claim `contains` to <name> from the entity that holds it, or leave <name> out of the portion. |
 
 When the end a relation names is an entity only the submitted source held and the portion no longer carries, `relation_endpoint_missing` prescribes instead: Return entity <name> to `entities` of the portion.
 
 When a document portion mentions an entity the model does not have, `entity_without_ground` prescribes instead: Introduce the entity with the action `introduced` and the block that introduces it, or name it as `arch_names` lists it.
 
 For a `code:` portion `portion_too_large` prescribes instead: Split the portion into one `code:` label per unit, or per component of a unit, at most 400 entities each.
+
+For a part portion `code:<unit>.<part>` whose `code:<unit>` does not introduce exactly one unit, `code_portion_unit` prescribes instead: Submit the portion code:<unit> with exactly one entity of the type unit first.
+
+When a part portion introduces an entity of the type unit itself, `code_portion_unit` prescribes instead: A part portion introduces no unit: leave the unit out, the part takes the unit of code:<unit>.
 
 ### A code portion for one unit
 
@@ -1560,6 +1583,34 @@ A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
 `npx -y conport@^0.15.0 arch submit <file.json>`, then
 `npx -y conport@^0.15.0 arch check`.
+
+**One unit a portion.** A `code:<label>` portion but a part portion, `code:root` too, introduces
+exactly one entity of the type `unit`, or it is refused `code_portion_unit`;
+the unit of `code:root` is the repository, anchored at the `path` `.`. A unit
+too large for one portion is split into part portions `code:<unit>.<part>`:
+submit `code:<unit>` with its unit first, then each part portion, which
+introduces no unit and takes the unit of `code:<unit>`; a nested part
+`code:<unit>.<part>.<sub>` takes that of its nearest ancestor that is no part
+itself. A label is a part portion only while `code:<unit>` exists:
+`code:apps-web.v2` without a portion `code:apps-web` introduces its own unit.
+When `code:<unit>` does not introduce exactly one unit, the part portion is
+refused with the action: Submit the portion code:<unit> with exactly one entity of the type unit first.
+
+**The server infers the owners of the parts.** For each component,
+interface, data or setting a `code:` portion introduces, the server writes
+the relation `contains` from its owner as a claim of the same portion, with
+`"inferred": true` and `by`: the owner is the deepest entity of the portion, its
+unit aside, whose `path` anchor strictly contains every `path` anchor of the
+part and that may contain it (`by: "path"`; two at the same depth leave the
+choice to a shallower one), else — no such entity, or a part without a `path`
+anchor — the unit of the portion (`by: "unit"`). The answer of `arch_submit` lists them in
+`inferred_owners` (`[{part, owner, by}]`, empty for a document portion), and
+`arch_source` gives them back among the relations. A relation sent with `inferred: true` is dropped on submission and inferred anew, so a portion read
+with `arch_source` and submitted back is accepted as it is. An owner a source
+claims — a document, or a `contains` the portion itself claims — ranks above the inferred one, which then folds `removed` and comes back when
+that owner is withdrawn; a part whose ownership a document decides gets no
+inferred owner. An inferred owner the check would refuse is left out, never
+refused: the part then owes `part_without_owner`.
 
 ### The anchor check
 
@@ -1667,17 +1718,34 @@ one. When `total` is above five, `arch_status` lists them all.
 | Kind | When | Do exactly this |
 |---|---|---|
 | `no_portion` | A `spec` whose plan was imported after the model was on has no portion; while the backfill runs or after it is completed, also a document with the role `structure` or `history` and no portion, whatever its type | Extract the portion of the document and submit it with `arch_submit`. |
-| `portion_stale` | The document changed after its portion was submitted | Read the portion with `arch_source`, bring it in line with the document and submit it again. |
+| `portion_stale` | A block the portion claims — the block of an entity, a relation, a constraint or a scenario — changed or is gone, or the document has a new block that was not there when the portion was submitted; `detail` names the changed, gone and new blocks by ULID. An edit of a block the portion does not claim owes nothing: the answer of the edit names it in `model_portion` (*An edit of a document with a portion*) | Read the portion with `arch_source`, bring it in line with the document and submit it again. |
 | `code_portion_stale` | The latest check with git facts saw a file added, deleted or renamed under an anchor of an entity of the `code:` portion after it was submitted; `detail` names the paths | Read the changed paths, bring the portion code:<label> in line with the code and submit it again; if the model does not change, submit it as it is. |
 | `unchecked_portion` | The document's portion was submitted without the reviewer's report (`review`) | Run the reviewer on the portion and submit it again with `review`. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
 | `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.15.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.15.0 arch check` in the repository root on main or master. |
 | `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
 | `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.15.0 arch check`. |
-| `orphan_entity` | An active entity with no anchor, no active relation to another active entity and no scenario, that no living source introduces or changes: a document with the role `history`, archived, or replaced by another (a `supersedes` link or callout) is history, and a mention introduces nothing. It is what a history document left behind, or what outlived the withdrawal of the portion that introduced it; `detail` names up to ten sources of its claims and the newest document without the role `history` that introduced it, with its moment of creation: the fold orders an archived or replaced document by that moment and skips a `history` one, so the claim that clears the debt comes from a document created after it. At most 12 are listed, the oldest entity first; the last one counts the rest. The document `Model backfill: result` is the one of `references/model-backfill.md`; a thing that exists without an anchor (an external system) or that a living document still plans is introduced instead of removed | Claim it `removed`, or `replaced` by what replaced it, in the portion of a living document that names it and was created after the document the detail names, if it names one, else of a document `Model backfill: result` created after it (create the next one, `Model backfill: result N`, with the type `other` and the role `structure` when the project has none), or introduce it there if it exists or is still planned, then submit that portion. |
-| `part_without_owner` | An active component, interface, data or setting that no active entity contains by an active relation. `detail` says where the composition draws it: nowhere when nothing contains it (its neighbours then count its relations), at the top level marked owner removed when its owner is removed, still inside its owner when only the `contains` was taken back; and how many relations it has. An entity that owes `orphan_entity` owes this one no more. At most 12 are listed, the part with the most relations first; the last one counts the rest | Claim the relation `contains` to it from the entity that holds it, or claim it `removed` if it is gone, in the portion of a living source that names it, then submit that portion. |
+| `part_without_owner` | An active component, interface, data or setting that no active entity contains by an active relation. `detail` says where the composition draws it: nowhere when nothing contains it (its neighbours then count its relations), at the top level marked owner removed when its owner is removed, still inside its owner when only the `contains` was taken back; and how many relations it has. At most 12 are listed, the part with the most relations first; the last one counts the rest | Claim the relation `contains` to it from the entity that holds it, or claim it `removed` if it is gone, in the portion of a living source that names it, then submit that portion. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names is removed or replaced at the document source position (current state for code), or the scenario an action runs was deleted | Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history. |
+
+**Entities without a living source.** An active entity with no anchor, no
+active relation and no scenario that no living source holds — only documents
+with the role `history`, archived or replaced documents, or mentions — is
+folded `removed` by the server itself, and no debt asks for it. Its card in
+`arch_entity` carries `state_reason: "no_living_source"` (null for any other
+entity), and `arch_status` counts such entities in `no_living_source`: a
+count, not a debt. A living source that introduces the entity again makes it
+active.
+
+**Replace a block, not a whole document.** A callout `[!supersedes] [[doc-N]]` without a block, or a `supersedes` link to the whole document
+`doc-N` (`link_items`), makes `doc-N` a replaced document: the server
+takes out of the model every entity only that document holds that has no
+anchor, no active relation and no scenario (*Entities without a living
+source*), and the count `no_living_source` grows; entities that relate to
+each other hold each other and stay. When a newer document replaces only a part of
+`doc-N`, name the block it replaces — `[!supersedes] [[doc-N#<block>]]` — and
+keep the link to the whole document for a document replaced as a whole.
 
 ### Filling the model of an existing project
 

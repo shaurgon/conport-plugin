@@ -1176,7 +1176,10 @@ For surgical single-block edits, prefer `update_block` (skips the parse/reconcil
 | reason | string | no | Why the amendment was made. Required with `change_kind: "amend"`, recorded in the spec amendment log |
 | model_role | string | no | Role in the project model — `structure` (describes what exists now) \| `history` (describes what has been replaced) \| `none` (no portion). Metadata: needs no `change_kind`, leaves the body as it is. `none` withdraws the document's portion of the model |
 
-**Returns:** a slim echo — `id` and `tags`.
+**Returns:** a slim echo — `id` and `tags` — and, for a new body of a document
+with a portion of the project model, `model_portion` when the portion is stale
+after the edit or the edit changed blocks the portion does not claim (see
+*update_block*).
 
 **Errors:** a `doc_role='derived_view'` document rejects any body change (a
 derived view is a render, kept as it was rendered); a spec body edit without `change_kind`,
@@ -1245,7 +1248,18 @@ mcp__conport__update_block({
 | markdown | string | yes | New markdown for this block. Must parse to **exactly one** block — a multi-block payload is rejected |
 
 **Returns:** `ulid`, `type`, `content_hash` and `changed_block_ids` (the blocks
-queued for re-embedding).
+queued for re-embedding); `model_portion` when the document has a portion of
+the project model and the portion is stale after the edit, or the edit changed
+blocks the portion does not claim.
+
+**`model_portion`** — the hint of an edit of a document with a portion, in the
+answers of `update_document`, `update_block`, `insert_block` and
+`delete_block` (on REST the `PUT` of a document and the writes of a block;
+the `DELETE` of a block answers 204 without it). `{stale: true, blocks,
+action}` when the portion is stale now — `blocks` names every changed, gone
+and new block; `{stale: false, unclaimed_blocks, action}` when the edit
+changed blocks no claim of the portion names. Take the `action`; without a
+hint the key is absent.
 
 **Refused when it would change the blocks of the document.** The edit is checked
 against the body it would leave: if that body reads back as other blocks than
@@ -1277,7 +1291,9 @@ mcp__conport__insert_block({
 | after | string | no | ULID to insert after (takes precedence over `before`) |
 | before | string | no | ULID to insert before (ignored when `after` is given) |
 
-**Returns:** `ulid`, `type`, `ord`, `content_hash` and `changed_block_ids`.
+**Returns:** `ulid`, `type`, `ord`, `content_hash` and `changed_block_ids`;
+`model_portion` when the document has a portion of the project model and the
+edit leaves it stale or changed blocks it does not claim (see *update_block*).
 
 **Refused when it would change the blocks of the document.** The edit is checked
 against the body it would leave: if that body reads back as other blocks than
@@ -1306,7 +1322,9 @@ mcp__conport__delete_block({
 | document_id | integer | yes | Per-project document ID |
 | block_ulid | string | yes | ULID of the block to delete |
 
-**Returns:** a confirmation `message` and `changed_block_ids`.
+**Returns:** a confirmation `message` and `changed_block_ids`;
+`model_portion` when the document has a portion of the project model and the
+edit leaves it stale or changed blocks it does not claim (see *update_block*).
 
 **Refused when it would change the blocks of the document.** The edit is checked
 against the body it would leave: if that body reads back as other blocks than
@@ -1598,7 +1616,9 @@ optionally `description`, `aliases`, `technologies`, `properties` (`name`,
 `value`), `constraints` (`text`, `block`), `renamed_from`, `replaced_by` (with
 `replaced` only) and `decisions` (decision numbers). A relation: `type`,
 `source`, `target` (names or aliases), `action`, `block`, and optionally
-`label` and `constraints`. A code portion takes only `introduced`. `dismissed`
+`label` and `constraints`; a relation the server inferred carries
+`inferred` and `by`, and one sent with `inferred: true` is dropped and
+inferred anew. A code portion takes only `introduced`. `dismissed`
 lists only the dismissals of the debt `step_without_relation` of a scenario:
 `subject` `scenario`, `kind` `step_without_relation`, `name` (the scenario),
 `where` (the text of the step), `reason`.
@@ -1643,10 +1663,22 @@ wait, `text`, `performer`, `scenario` — on an action, the scenario it runs) an
 `transitions` (`from`, `to`, `condition`); at most 60 nodes, 90 transitions.
 Entities are named by a name or an alias of the portion or of `arch_names`.
 
+A `code:<label>` portion, `code:root` too, introduces exactly one entity of
+the type `unit`; a part portion `code:<unit>.<part>` of an existing
+`code:<unit>` introduces none and takes the unit of `code:<unit>`. For each
+component, interface, data or setting a code portion introduces, the server
+infers its owner — the deepest entity of the portion whose `path` anchor
+strictly contains the part's (`by` `path`), else the unit (`by` `unit`) —
+and writes it as a `contains` claim of the portion. An owner a source claims
+ranks above the inferred one; an inferred owner the check would refuse is left
+out, never refused. A document portion whose role is not `history` and that
+introduces a part without an active owner is refused `part_without_owner`.
+
 **Returns:** `source`, `entities` and `relations` (`created`, `updated`,
 `deleted`), `scenarios` (`created`, `updated`, `deleted`; null when the
 portion has no field `scenarios`), `review_id` — the number of the stored
-report (null for a portion without `review` and for code).
+report (null for a portion without `review` and for code), `inferred_owners` (`[{part, owner, by}]` — the owners the server inferred, by the
+names the portion gives; empty for a document portion).
 
 **Refusals:** a portion the write-time check refuses answers
 `{"error": "portion_rejected", "errors": [{code, subject, message, action}]}`
@@ -1655,11 +1687,12 @@ with every error at once, and nothing is written. The codes:
 `relation_endpoint_removed`, `relation_pair_not_allowed`, `second_owner`,
 `block_not_found`, `entity_without_ground`, `name_collision`,
 `anchor_malformed`, `source_not_found`, `decision_not_found`,
-`portion_too_large`, `entity_reference_missing`, `unknown_scenario_kind`,
-`unknown_node_kind`, `scenario_participant_missing`,
+`portion_too_large`, `entity_reference_missing`, `code_portion_unit`,
+`unknown_scenario_kind`, `unknown_node_kind`, `scenario_participant_missing`,
 `scenario_participant_removed`, `scenario_ref_unknown`, `scenario_malformed`,
 `scenario_name_taken`, `scenario_too_large`, `review_not_for_code`,
-`dismissal_moved`, `review_reused`, `review_malformed`.
+`dismissal_moved`, `review_reused`, `review_malformed`,
+`part_without_owner`.
 A portion off the schema is `portion_invalid`.
 
 ### arch_withdraw
@@ -1708,7 +1741,9 @@ scenarios) — and beside it `review`: the reviewer's report of the current
 submission (`id`, `reviewer`, `model`, `recheck`, `findings` — each with its
 `resolution` and `reason` —, `at`), null for a portion submitted without one.
 `review` is not part of the portion: submit the portion without it, with the
-report of a new review. `dismissed` carries only the dismissals of the debt
+report of a new review. A `contains` the server inferred comes among the
+relations with `"inferred": true` and `by`; submitted back, it is dropped
+and inferred anew. `dismissed` carries only the dismissals of the debt
 `step_without_relation` its scenarios keep; submitted again with the same
 reason they change nothing.
 
@@ -1729,7 +1764,8 @@ mcp__conport__arch_sources({
 | project | string | yes | Project handle or name |
 
 **Returns:** `sources` (`source`, `kind`, `document_id`, `title`, `author`,
-`submitted_at`, `stale` — the document changed after the submission,
+`submitted_at`, `stale` — a block the portion claims changed or is gone, or
+the document has a new block,
 `review` — the summary of the reviewer's report of the current submission:
 `reviewer`, `model`, `found` (the findings of both passes), `fixed`,
 `dismissed`, `recheck`, `at`; null for the code and for a portion submitted
@@ -1852,7 +1888,9 @@ documents and their children), `incoming`, `outgoing`, `stage`, `state`, `scenar
 `name`, `kind`, `role` — participant \| subject \| performer \| via: one row
 per scenario and role the entity plays in it), `activity` (`last_commit_at`,
 `commits_90d`, `recent_files`) from the latest anchor check with facts of git,
-or null.
+or null, `state_reason` — `no_living_source` for an entity the server folded
+`removed` because no living source holds it (only history, archived or
+replaced documents, or mentions), else null.
 
 **Refusals:** `entity_not_found`.
 
@@ -1895,7 +1933,7 @@ mcp__conport__arch_status({
 
 **Returns:** `total`, `debts` (`kind` — no_portion \| portion_stale \|
 code_portion_stale \| unchecked_portion \| anchor_missing \| check_stale \|
-area_uncovered \| removed_but_present \| orphan_entity \| part_without_owner \|
+area_uncovered \| removed_but_present \| part_without_owner \|
 step_without_relation \| scenario_participant_gone, `subject`, `detail`, `action`, a `no_portion` debt
 its `role`, an `area_uncovered` debt its `area` (`unit` — `""` for the root,
 `path`, `commits`, `share`, `nodes` — null without codegraph,
@@ -1918,7 +1956,10 @@ the decision to the entity); in any other state the key is absent. `vectors`
 (`entities_missing`, `scenarios_missing`) counts the entities and the
 scenarios of the model still without a search vector: the service fills them
 on its own, within minutes, and until then `search` finds them by their names
-only.
+only. `no_living_source` — the number of the entities the server folded
+`removed` because no living source holds them, those whose card carries
+`state_reason` `no_living_source`: a count, not a debt. A `supersedes` on a
+whole document by mistake makes it grow.
 
 **Refusals:** `invalid_page` (an `unlinked_after` outside 0 to 2147483647).
 

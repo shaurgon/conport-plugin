@@ -42,8 +42,8 @@ function skillRefusals() {
 
 test('the conport skill names every write-time refusal of the model', () => {
   const codes = referenceCodes()
-  // Fourteen codes of the entities, eight of the scenarios and four of the reviewer's report.
-  assert.equal(codes.length, 26, `the reference lists ${codes.length} codes: ${codes}`)
+  // Fifteen codes of the entities, eight of the scenarios and four of the reviewer's report.
+  assert.equal(codes.length, 28, `the reference lists ${codes.length} codes: ${codes}`)
   const refusals = skillRefusals()
   for (const code of codes) {
     assert.ok(refusals.has(code), `the skill has no row for ${code}`)
@@ -51,6 +51,22 @@ test('the conport skill names every write-time refusal of the model', () => {
   }
   assert.deepEqual([...refusals.keys()].filter((code) => !codes.includes(code)), [],
     'the skill answers a refusal the reference does not list')
+})
+
+test('the tool reference tells what the server now infers, settles and hints', () => {
+  const reference = read('references/command_list.md')
+  const flat = (text) => text.replace(/\s+/g, ' ')
+  const submit = flat(section(reference, '### arch_submit'))
+  assert.match(submit, /`inferred_owners` \(`\[\{part, owner, by\}\]`/)
+  assert.match(submit, /`inferred` and `by`/)
+  assert.match(flat(section(reference, '### arch_source')), /`"inferred": true` and `by`/)
+  assert.match(flat(section(reference, '### arch_status')), /`no_living_source` — the number of the entities/)
+  assert.match(flat(section(reference, '### arch_entity')), /`state_reason` — `no_living_source`/)
+  assert.doesNotMatch(flat(section(reference, '### arch_sources')), /the document changed after the submission/)
+  // Every edit of a document with a portion may carry the hint.
+  for (const tool of ['update_document', 'update_block', 'insert_block', 'delete_block']) {
+    assert.match(flat(section(reference, `### ${tool}`)), /`model_portion`/, tool)
+  }
 })
 
 /** The numbered steps of the overlay's flow: number, title and text up to the next step. */

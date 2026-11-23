@@ -148,6 +148,64 @@ test('the procedure tells how to build a code label and when to split it', () =>
   assert.match(skeleton, /no tool of its own builds the skeleton/i)
 })
 
+test('the procedure splits a large unit into code:<unit>.<part> portions that take its unit', () => {
+  const skeleton = step(1)
+  // Every code portion introduces exactly one unit; the root gets a unit of its own at `.`.
+  assert.match(skeleton, /Every `code:` portion but a part portion, `code:root` too, introduces exactly one entity of the type `unit`/)
+  assert.match(skeleton, /`code:root` introduces a unit for the repository with the anchor `path` `\.`/)
+  // A part portion introduces none and takes the unit of its parent label.
+  assert.match(skeleton, /A part portion `code:<unit-name>\.<part>` introduces no unit and takes the unit of `code:<unit-name>`/)
+  assert.match(skeleton, /refused `code_portion_unit`/)
+  // The server infers the owners of the parts: no relation `contains` is owed for them.
+  assert.match(skeleton, /the server infers the entity that holds each part[^.]*`inferred_owners`/)
+})
+
+test('the procedure gives no action for orphans: the server folds them', () => {
+  const text = oneLine(procedure())
+  assert.doesNotMatch(text, /orphan_entity/)
+  assert.doesNotMatch(text, /Model backfill: result N/)
+  const gone = step(4)
+  assert.match(gone, /the server folds it `removed` itself/)
+  assert.match(gone, /`no_living_source`/)
+  assert.match(gone, /nothing to claim/)
+  // A part of a document portion is refused without its owner during the pass.
+  assert.match(step(3), /refused `part_without_owner`/)
+})
+
+test('the changelog says the server infers the owners of the parts of a code portion', () => {
+  const entry = oneLine(sectionWith(read('CHANGELOG.md'), 'The server infers the owners of the parts of a code portion.'))
+  assert.match(entry, /`inferred_owners`/)
+  assert.match(entry, /`inferred: true`/)
+  assert.match(entry, /`by`/)
+  assert.match(entry, /`arch_source`/)
+})
+
+test('the changelog names every other change of the surface of the model', () => {
+  const changelog = read('CHANGELOG.md')
+  const part = oneLine(sectionWith(changelog, 'A document portion that introduces a part without an owner is refused.'))
+  assert.match(part, /`part_without_owner`/)
+  const orphans = oneLine(sectionWith(changelog, 'The debt `orphan_entity` is gone.'))
+  assert.match(orphans, /`state_reason: "no_living_source"`/)
+  assert.match(orphans, /`no_living_source`/)
+  assert.match(orphans, /`\[!supersedes\] \[\[doc-N\]\]`/)
+  const stale = oneLine(sectionWith(changelog, 'A document portion goes stale by its blocks.'))
+  assert.match(stale, /`model_portion`/)
+  for (const tool of ['update_document', 'update_block', 'insert_block', 'delete_block']) assert.match(stale, new RegExp(`\`${tool}\``))
+})
+
+test('the overlay keeps the model of a spec and of the code by the rules of the server', () => {
+  const flow = oneLine(read('references/superpowers-overlay.md').split('\n## The flow\n')[1].split('\n## ')[0])
+  // The portion of the spec gives each part it introduces its owner.
+  assert.match(flow, /refused `part_without_owner`/)
+  // An edit of the spec answers `model_portion` when the spec has a portion.
+  assert.match(flow, /`model_portion`/)
+  // The code portions: one unit each, a part portion takes the unit, the server infers the owners.
+  assert.match(flow, /Each `code:` portion but a part portion introduces exactly one unit/)
+  assert.match(flow, /`code:<unit>\.<part>` introduces none and takes the unit of `code:<unit>`/)
+  assert.match(flow, /`inferred_owners`/)
+  assert.doesNotMatch(flow, /orphan_entity/)
+})
+
 test('the skeleton step runs arch suggest --json and names the version files', () => {
   const skeleton = step(1)
   // The proposal of units, parts and links comes from git history; it submits nothing.

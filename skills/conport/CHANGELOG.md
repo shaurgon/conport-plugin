@@ -1,5 +1,55 @@
 # conport changelog
 
+## 27.1.0
+
+**A code portion introduces exactly one unit.** `arch_submit` refuses a
+`code:<label>` portion, `code:root` too, that introduces no entity of the type
+unit or more than one, with the new code `code_portion_unit`. A part portion
+`code:<unit>.<part>`, whose `code:<unit>` exists, introduces none and takes the
+unit of `code:<unit>`; a nested part takes the unit of its nearest ancestor that
+is no part itself. When that portion does not introduce exactly one unit, the
+refusal asks to submit it first; a part portion that introduces a unit itself is
+refused too. Portions already accepted stay as they are.
+
+**The server infers the owners of the parts of a code portion.** For each
+component, interface, data or setting a `code:` portion introduces, the server
+writes the `contains` from its owner — the deepest entity of the portion whose
+`path` anchor contains the part's (`by` `path`), else the unit of the portion
+(`by` `unit`) — as a claim of the same portion. The answer of `arch_submit`
+lists them in `inferred_owners` (`[{part, owner, by}]`), and `arch_source`
+gives them back among the relations with `inferred: true` and `by`; a relation
+sent with `inferred: true` is dropped and inferred anew. An owner a document or
+the portion claims ranks above the inferred one, which comes back when that
+owner is withdrawn. The skill, its tool reference, the backfill procedure and
+the Superpowers overlay say so.
+
+**A document portion that introduces a part without an owner is refused.** A
+portion of a document whose role is not `history` that introduces a
+component, an interface, data or a setting with no active owner once the model
+with it is folded is refused `part_without_owner`: claim `contains` to it from
+the entity that holds it, or leave it out. The debt of the same name stays for
+the parts that lost their owner.
+
+**The debt `orphan_entity` is gone.** An entity with no anchor, no relation
+and no scenario that no living source holds is folded `removed` by the server
+itself; its card in `arch_entity` carries `state_reason: "no_living_source"`,
+and `arch_status` counts such entities in `no_living_source`, a count beside
+the debts. The backfill procedure has no step for them any more and no
+further result documents. The skill warns that a callout
+`[!supersedes] [[doc-N]]` without a block, or a `supersedes` link to the
+whole document, takes out of the model every entity only that document holds
+that has no anchor, no active relation and no scenario — entities that relate
+to each other hold each other and stay: a document replaced in part is
+replaced by its block, `doc-N#<block>`.
+
+**A document portion goes stale by its blocks.** `portion_stale` comes when a
+block the portion claims changed or is gone, or the document has a new block;
+its `detail` names them by ULID, and `stale` of `arch_sources` follows the
+same rule. An edit of a block no claim names owes nothing: instead, the answer
+of `update_document`, `update_block`, `insert_block` and `delete_block` on a
+document with a portion carries `model_portion` — `blocks` of a portion now
+stale, or `unclaimed_blocks` an edit changed — with its one action.
+
 ## 27.0.1
 
 **The install pages match the product again.** Every command the plugin

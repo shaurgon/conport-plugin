@@ -126,8 +126,10 @@ creates).
    `arch_submit(project=<project>, portion=<the portion>)` or
    `npx -y conport@^0.15.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
    A refusal lists every error with its action: take them all and submit
-   again. Delete the file and the input directory once the portion is
-   accepted. If the spec is amended later, read the portion back with
+   again — a part the spec introduces (a component, an interface, data or a
+   setting) without an owner in the model is refused `part_without_owner`:
+   claim `contains` to it from the entity that holds it. Delete the file and
+   the input directory once the portion is accepted. If the spec is amended later, read the portion back with
    `arch_source`, bring it in line, review it again and submit it again.
 6. **Execution.** `npx -y conport@^0.15.0 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
@@ -148,7 +150,10 @@ creates).
 
    A task that changes behaviour the spec describes changes the spec in the
    same task, with the block tools (`update_block`, `insert_block`), before
-   the task is closed; its report names the blocks it changed.
+   the task is closed; its report names the blocks it changed. When the spec
+   has a portion, the answer of the block tool carries `model_portion`: take
+   its action in the same task; a stale portion is read with `arch_source`,
+   brought in line with the blocks it names, reviewed and submitted again.
 
    **Dispatching a subagent.** A brief, a report, a review and a fix live in
    the task's journal, never in files: nothing is written under
@@ -242,8 +247,11 @@ creates).
    as it is when the model does not change. The debt sees files added,
    deleted and renamed, not what changed inside a file: when the epic changed
    what a unit is made of in its existing files, submit that portion again
-   too. After the last submission run the check once more: a `code` portion
-   newer than the check owes `check_stale`.
+   too. Each `code:` portion but a part portion introduces exactly one unit; a part portion
+   `code:<unit>.<part>` introduces none and takes the unit of `code:<unit>`,
+   and the server infers the owners of the parts a code portion introduces
+   (`inferred_owners` of the answer). After the last submission run the check
+   once more: a `code` portion newer than the check owes `check_stale`.
 
 ## When the CLI fails
 

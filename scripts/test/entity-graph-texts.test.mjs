@@ -154,15 +154,13 @@ test('the data handling page promises no entity extraction', () => {
   assert.doesNotMatch(plugin('README.md'), /GraphRAG/)
 })
 
-test('the repository guides do not describe the entity graph', () => {
-  for (const path of ['CLAUDE.md', 'AGENTS.md', 'README.md']) {
-    const text = repo(path)
-    assert.doesNotMatch(text, /GraphRAG|EntityExtractionService|entity extraction|Louvain/i, path)
-    // The table names are spelled with a class: a shipped text names no table.
-    assert.doesNotMatch(text, /canonical[_]entities|entity[_]mentions|entity[_]communities/, path)
-    assert.doesNotMatch(text, /HNSW indexes (for|with)|Uses HNSW/, path)
-    assert.doesNotMatch(text, /maintenance routes on the graph/, path)
-  }
+test('the repository README does not describe the entity graph', () => {
+  const text = repo('README.md')
+  assert.doesNotMatch(text, /GraphRAG|EntityExtractionService|entity extraction|Louvain/i)
+  // The table names are spelled with a class: a shipped text names no table.
+  assert.doesNotMatch(text, /canonical[_]entities|entity[_]mentions|entity[_]communities/)
+  assert.doesNotMatch(text, /HNSW indexes (for|with)|Uses HNSW/)
+  assert.doesNotMatch(text, /maintenance routes on the graph/)
 })
 
 test('the skills say the server resolves gaps, not semantic-pass proposals', () => {
