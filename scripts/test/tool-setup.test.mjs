@@ -426,8 +426,11 @@ test('codegraph is installed when its command is on PATH and indexed with .codeg
     assert.equal(onPath('codegraph', { PATH: `${isolatedDir()}${delimiter}${bin}` }, 'linux'), true)
   }
   assert.equal(onPath('codegraph', {}, 'linux'), false)
-  // On Windows the command is found by its PATHEXT ending.
-  const win = isolatedDir({ 'codegraph.cmd': '' })
+  // On Windows the command is found by its PATHEXT ending. The stand-in is
+  // named with the ending as PATHEXT spells it: Windows matches `.cmd` to
+  // `.CMD` by its file system, which ignores case, and so does macOS's, but
+  // the Linux of the CI runner does not.
+  const win = isolatedDir({ 'codegraph.CMD': '' })
   assert.equal(onPath('codegraph', { PATH: win, PATHEXT: '.EXE;.CMD' }, 'win32'), true)
   assert.equal(onPath('codegraph', { PATH: win, PATHEXT: '.EXE' }, 'win32'), false)
 

@@ -4,7 +4,9 @@
 // the turn once and hand the agent the list — once per composition of those
 // tails: a later turn on the same list ends freely. Only the epics the nearest
 // release milestone waits for are listed; a roadmap with no release point
-// lists them all and says to create one. No project in the session's settings
+// lists them all and says to create one. A child another member leads is
+// listed with who leads it and is never demanded; tails with only such
+// children hold nothing. No project in the session's settings
 // or no session epics → no output, no request. Any failure → silent: an outage
 // must never trap a turn.
 'use strict';
@@ -27,8 +29,9 @@ function isOpen(status) {
 }
 
 // All children (every status, snoozed included) of the given epics of one
-// project. Closed children are filtered out before the tails are displayed.
-async function fetchChildren(route, epicIds, auth) {
+// project, or only the caller's own with `filter` { assignee: 'me' }. Closed
+// children are filtered out before the tails are displayed.
+async function fetchChildren(route, epicIds, auth, filter = {}) {
   const children = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const qs = new URLSearchParams({
@@ -37,6 +40,7 @@ async function fetchChildren(route, epicIds, auth) {
       include_snoozed: 'true',
       limit: String(PAGE_LIMIT),
       offset: String(page * PAGE_LIMIT),
+      ...filter,
     });
     const res = await request('GET',
       `${CONPORT_URL}/api/v1/projects/${route.segment}/tasks?${qs}`,
@@ -48,6 +52,31 @@ async function fetchChildren(route, epicIds, auth) {
     if (tasks.length < PAGE_LIMIT || children.length >= (body.total || 0)) break;
   }
   return children;
+}
+
+// Who leads a child another member leads: the email of its card, else the
+// handle. A child leads nobody else when it is free (`assignee` null), when
+// the team shows no assignees (no `assignee` key: a Private Team) or when it
+// is among `mine` — the ids the same list filtered by assignee=me answers.
+// `mine` null (that read failed): every assigned child counts as another's,
+// so the hold never orders the agent to take a task it may not lead.
+function ledBy(child, mine) {
+  const card = child.assignee;
+  if (!card) return null;
+  if (mine && mine.has(child.id)) return null;
+  return card.email || card.handle || 'another member';
+}
+
+// The ids of the caller's own children among `children`; read only when a
+// child has an assignee. `null` when the read fails.
+async function ownChildIds(route, epicIds, children, auth) {
+  if (!children.some((c) => c.assignee)) return new Set();
+  try {
+    const own = await fetchChildren(route, epicIds, auth, { assignee: 'me' });
+    return new Set(own.map((c) => c.id));
+  } catch (_) {
+    return null;
+  }
 }
 
 // Use the server's ordinary growth counter; list rows do not expose attachment
@@ -123,12 +152,15 @@ async function collectTails(epics, auth) {
       ? sessionEpics.filter((e) => scope.has(e.epic_id))
       : sessionEpics;
     if (!projectEpics.length) continue;
-    const children = await fetchChildren(
-      route, projectEpics.map((e) => e.epic_id), auth);
+    const epicIds = projectEpics.map((e) => e.epic_id);
+    const children = await fetchChildren(route, epicIds, auth);
+    const mine = await ownChildIds(
+      route, epicIds, children.filter((c) => isOpen(c.status)), auth);
     const projectTails = [];
     for (const epic of projectEpics) {
       const own = children.filter((c) => c.parent_task_id === epic.epic_id);
-      const open = own.filter((c) => isOpen(c.status)).sort((a, b) => a.id - b.id);
+      const open = own.filter((c) => isOpen(c.status)).sort((a, b) => a.id - b.id)
+        .map((c) => ({ ...c, ledBy: ledBy(c, mine) }));
       if (!open.length) continue;
       projectTails.push({ ...epic, open });
     }
@@ -156,7 +188,11 @@ function formatReason(tails, noRelease) {
     const title = t.title ? ` ${t.title}` : '';
     const grew = t.grew ? ' (grew after work started)' : '';
     lines.push(`[TAILS] task-${t.epic_id}${title}${grew} — ${t.open.length} open`);
-    for (const c of t.open) lines.push(`  · task-${c.id} [${c.status}] ${c.title}`);
+    for (const c of t.open) {
+      // A child another member leads is theirs: named, never to dispatch.
+      const lead = c.ledBy ? ` — led by ${c.ledBy}, not yours to dispatch` : '';
+      lines.push(`  · task-${c.id} [${c.status}] ${c.title}${lead}`);
+    }
   }
   for (const p of noRelease) {
     lines.push(`[TAILS] Project ${p} has no release milestone on its roadmap — ` +
@@ -168,10 +204,11 @@ function formatReason(tails, noRelease) {
 
 // What the hold is about: which epics, which children are open, and whether
 // a release point is missing. Titles and statuses are left out — a rename or
-// a TODO → IN_PROGRESS move is not a new tail.
+// a TODO → IN_PROGRESS move is not a new tail; a child another member leads
+// is marked, so one that becomes the session's to dispatch is a new tail.
 function composition(tails, noRelease) {
   return tails
-    .map((t) => `${t.project}:${t.epic_id}=` + t.open.map((c) => c.id).join(','))
+    .map((t) => `${t.project}:${t.epic_id}=` + t.open.map((c) => `${c.id}${c.ledBy ? '@' : ''}`).join(','))
     .concat(noRelease.map((p) => `${p}:no-release`))
     .sort()
     .join('\n');
@@ -213,6 +250,10 @@ async function main() {
   // The stop_hook_active guard lasts one stop cycle; without this the same
   // list held every turn of the session. Hold again only on a new composition.
   if (!fingerprintChanged('stop_tails_held', sid, composition(tails, noRelease))) process.exit(0);
+  // Only children other members lead and a release point in place: nothing
+  // is this session's to dispatch, so the turn ends freely.
+  const demanded = tails.some((t) => t.open.some((c) => !c.ledBy));
+  if (!demanded && !noRelease.length) process.exit(0);
 
   process.stdout.write(JSON.stringify({ decision: 'block', reason: formatReason(tails, noRelease) }));
   process.exit(0);

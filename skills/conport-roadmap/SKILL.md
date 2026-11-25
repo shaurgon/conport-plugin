@@ -2,7 +2,7 @@
 name: conport-roadmap
 description: "Use when about to take a task into work, file an epic or a task, move a task between epics, call a task waiting, close an epic or a milestone, talk about a release, a version bump or a deploy, and before every report to the user with open tasks. The ConPort roadmap rules — milestones, the release point, the make-up of epics, work after a release, waiting on someone else's work. Requires the conport skill for base tool discipline."
 metadata:
-  version: 27.1.0
+  version: 27.2.0
 ---
 
 # ConPort Roadmap
@@ -107,7 +107,9 @@ which release.
 - Everything without a real blocker is taken at once and in parallel. "Until
   the bump command" is not a blocker when the task's acceptance does not need
   the bump.
-- Do not take or offer tasks of another project: that project does them.
+- Do not take or offer tasks of another project: that project does them. In
+  a shared team, "taken at once" means your own and free tasks: a task another
+  person leads waits for them, not for you.
 - A long run (a sync, a backfill) holds neither the release nor other work.
 
 ## Release
@@ -174,6 +176,12 @@ Two separate lists, both read from ConPort:
 
 The number of open children is recounted after every close and every move.
 
+In a shared team every open task another person leads is named with its
+assignee — the email, else the handle (`#id title — <name>`); your own and
+free tasks need no name. The `assignee` of each task comes with `list_tasks`
+and `get_task`. Taking such a task is not yours to decide: the rules of a team
+are *Work of a team* of the conport skill's backlog discipline reference.
+
 ## Check before sending the report
 
 - [ ] `list_milestones` was called in this pass, not restored from memory.
@@ -182,6 +190,7 @@ The number of open children is recounted after every close and every move.
 - [ ] No epic holds done tasks next to waiting ones.
 - [ ] Every waiting task has its reason checked with `get_task` and its
       dependency written.
+- [ ] Every open task another person leads is named with its assignee.
 - [ ] No task is put off without a real blocker.
 - [ ] The word "bump" appears only with a release milestone that has no open
       children.

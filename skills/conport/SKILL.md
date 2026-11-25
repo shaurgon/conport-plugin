@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 27.1.0
+  version: 27.2.0
 ---
 
 # ConPort — Project Management System
@@ -190,6 +190,8 @@ trying another name.
 1. **Print summary:** `[CONPORT] {summary from response}`
 2. **Execute instructions** from the response (read files, apply rules)
 3. **Report backlog:** `N tasks in TODO, M in progress, K in review. Top 5:` — use `backlog.top` from the response; `K` is `backlog.total_review`, and `, K in review` is dropped when it is zero. Line format: `Pk · #id title (n subtasks)`, skipping `(n subtasks)` when zero. `Pk` is `effective_priority`. Skip the whole block if `backlog.total_todo == 0`, `backlog.total_in_progress == 0` and `backlog.total_review == 0`. Tasks waiting in REVIEW need a reviewer, not more work: when the response carries `review_tasks` (`id`, `title`, `priority`; present only when some task waits), print them as `In review: #id title, …` and follow the instruction that comes with them — have them reviewed before taking new work.
+
+   **In a shared team** print `backlog.mine` (your person's open tasks) before `backlog.top` and take work from it first; take only your own or a free task. `in_progress_by_others` is printed for information only, naming each assignee — never touch those tasks. A person reads a name as the email, else the handle. The rules of a team: `references/backlog-discipline.md` *Work of a team*.
 4. **Report the roadmap:** when the response carries `roadmap` and/or `epic_tails`, print them in the format given under *OUTPUT FORMAT → Roadmap sections*. Both sections are omitted when the project has nothing to show — then print nothing.
 5. **If the response carries `questions`** — ask them before starting the user's work. See *Questions from init* below.
 6. **If `onboarding.offer` is true** — the project is not onboarded: no product context (or an empty one) and no portion of the model, whatever decisions, progress entries, documents and tasks it already has. A repository with history is connected by the onboarding procedure `references/project-onboarding.md`; a folder outside git or a repository with almost no history gets the first fill `references/bootstrap.md` instead (the procedure's step 0 tells which). Only a session with a person gets the line in `instructions` that offers it: show the offer once, and call `project_onboarding(project, state='declined')` only after the user declines it. The key `onboarding` (`state`, `offer`, `lead_is_caller`) comes whenever its `state` is not `not_started` or `offer` is true. While `state` is `in_progress`, the line for the lead (`lead_is_caller` true) says to resume the procedure from the step its draft names; the line for another member says not to start a second one and to take it over only on the user's word. A routine or a subagent (`questions=false`) gets the key alone and never starts the procedure. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
@@ -407,7 +409,7 @@ semantics of a surface, fetch the live-docs page named in the table.
 
 | Trigger | Tool |
 |---------|------|
-| Starting work | `update_task` → IN_PROGRESS (**before the first write on a task**) |
+| Starting work | `update_task` → IN_PROGRESS (**before the first write on a task**) — only your own or a free task, `backlog.mine` first |
 | Brief for whoever executes or reviews the task | `add_task_journal_entry` with `kind='brief'` |
 | Work finished and it needs a check | `add_task_journal_entry` with `kind='report'` — it moves the task to REVIEW (a TODO or BLOCKED task is started first); no `update_task` around it |
 | Reviewing a task in REVIEW | read the round with `list_task_journal` (`include_body=true`), then `add_task_journal_entry` with `kind='review'` and `verdict='approve'` or `verdict='changes_requested'` — changes requested return the task to IN_PROGRESS for the next round by themselves |
@@ -423,7 +425,9 @@ semantics of a surface, fetch the live-docs page named in the table.
 **IN_PROGRESS gate.** Before your first ConPort write against a task, move it to
 IN_PROGRESS. This keeps `current_focus` accurate and the backlog honest. A
 `brief` is the one write that may come first: it is written while the task is
-still TODO, before anyone starts.
+still TODO, before anyone starts. A task another person leads (its `assignee`
+is not your person) is not moved to IN_PROGRESS unless your person told you to
+take it over: write to it without the take.
 
 **The review cycle.** A task whose work must be checked goes through REVIEW,
 and every step of the way is an entry in the task's journal:
@@ -508,6 +512,7 @@ answer carries `error`, a `message` that prescribes the action, and `context`
 | `reviewer_is_author` | A `review` signed with the `author` of a `report` or `fix` of the current round | The reviewer adds the `review` under its own name; never review your own work |
 | `addendum_by_reviewer` | A `report` or `fix` on a task in REVIEW signed `reviewer`, `reviewer:<agent>` or like a `review` of the current round | The implementer adds the entry under its own name |
 | `invalid_verdict` (422 over REST) | `verdict` on an entry that is not `review`, or a `review` without one | Pass `verdict` on `review` only, `approve` or `changes_requested` |
+| `task_assigned_to_other` | A take or an assignee change of a task another person leads (`context.assignee`) | Take another task, or tell your person who leads it and ask. `take_over=true` only on your person's word, never on your own |
 
 **Epic in its own branch.** An epic whose tasks are worked in parallel, or
 whose tasks take more than one review round, gets an integration branch
@@ -845,9 +850,12 @@ epic or reporting an epic's progress.
   outside reason (another party's service, a date, a measurement window) goes
   to the waiting milestone. A defect in this release's code is closed before
   the push.
-- **At session start** a task in IN_PROGRESS with no live executor and no
+- **At session start** a task of `reconciliation.stale_tasks` (your own and
+  free tasks in IN_PROGRESS — not `list_tasks`) with no live executor and no
   commit is an interrupted attempt: tell the user, then continue it from what
-  it left or return it to TODO.
+  it left — a free one taken by a repeat `status='IN_PROGRESS'` — or return it
+  to TODO. `in_progress_by_others` is never touched nor called interrupted
+  (`references/backlog-discipline.md` *Work of a team*).
 
 ---
 

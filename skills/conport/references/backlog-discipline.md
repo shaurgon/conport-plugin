@@ -2,7 +2,8 @@
 
 The rules behind the *BACKLOG DISCIPLINE* section of the conport skill: what
 goes into ConPort, when a piece of work gets a task, what a finding becomes,
-and how an epic is kept from growing without end. The roadmap itself — milestones, the release point,
+how an epic is kept from growing without end, and whose task an agent may
+take in a team. The roadmap itself — milestones, the release point,
 what waits — is the **conport-roadmap** skill.
 
 ## What to record
@@ -268,9 +269,120 @@ exit.
 ## Session start: interrupted attempts
 
 At every session start — after a crash, a context reset or a compaction too,
-not only on a fresh start — read the tasks in IN_PROGRESS
-(`list_tasks(status="IN_PROGRESS")`, or the reconciliation hint of `init`).
-A task in IN_PROGRESS with no live executor and no commit since the last
+not only on a fresh start — read `reconciliation.stale_tasks` of `init`: your
+own and free tasks in IN_PROGRESS (in a Private Team, every task in
+IN_PROGRESS). Do not read them from `list_tasks(status="IN_PROGRESS")`: in a
+shared team it lists the work of other people too. No `reconciliation` in the
+answer means there is nothing to reconcile.
+
+A task of `stale_tasks` with no live executor and no commit since the last
 session is an interrupted attempt: tell the user, then either continue it from
-what it left behind (its journal, its branch) or return it to TODO. Hanging
-tasks pile up at ordinary session boundaries, not only after a crash.
+what it left behind (its journal, its branch) or return it to TODO. A free
+task you continue is taken first with a repeat
+`update_task(status='IN_PROGRESS')`: it makes your person its assignee, and the
+server answers `task_assigned_to_other` when another session took it in
+between. Hanging tasks pile up at ordinary session boundaries, not only after
+a crash.
+
+`in_progress_by_others` lists the tasks other people lead in IN_PROGRESS, for
+information only. Never touch them: do not continue, return, close or block
+them, and never call them interrupted — their own sessions reconcile them.
+
+## Work of a team
+
+In a project of a shared team a task may have an **assignee** — the person
+whose agents lead it. Every task answer carries `assignee`:
+`{handle, email, former_member}`, or `null` for a free task. Your person is
+`init.me` (`{handle, email, former_member, role}`). A task is **your own** when
+its assignee is your person, **free** when it has none, and **another's**
+otherwise. A Private Team shows no assignee and adds no key: every task there
+is yours, and the rules below change nothing in your work.
+
+A person reads a name as the email, else the handle: an `us…` handle tells
+nobody who the colleague is. Every report, question and line to your person
+names a user that way.
+
+**Take only your own or a free task.** A take is any way into IN_PROGRESS:
+`update_task(status='IN_PROGRESS')` from any status (a reopen of a DONE or
+CANCELLED task too), a repeat of it on a task already in IN_PROGRESS, a
+`report` entry on a TODO or BLOCKED task, and `add_task` or `add_linked_task`
+created with `status='IN_PROGRESS'` and no `assignee`. A take of a free task
+makes your person its assignee; a take of your own changes nothing. The server
+decides under the lock of the task row, so of two sessions that take one task
+at the same moment one passes and the other is refused. A return by a
+`review` with `changes_requested` is no take: any reviewer writes it.
+
+**Where to take from.** `backlog.mine` (your person's open tasks whatever their
+epic: IN_PROGRESS and REVIEW first, then TODO and BLOCKED; up to 10) comes
+before `backlog.top`. `backlog.top` and `ready_top` of `get_agenda` leave out
+the roots others lead, and an epic another person leads drops out with its
+children; a child of such an epic assigned to your person is in
+`backlog.mine`. `backlog.total_others` counts the open tasks of others;
+`total_todo`, `total_in_progress` and `total_review` stay project-wide.
+`reconciliation.stale_tasks`, `review_tasks`, `epic_tails` and, in
+`get_agenda`, `stale_in_progress`, `stale_review` and `woken_tasks` hold only
+your own and free tasks. `blocked_too_long` keeps every task and names the
+assignee of each.
+
+**A task another person leads is not taken.** Unless your person told you to
+take it over (`take_over=true`, below), never move it to IN_PROGRESS and never
+write its first `report`. The writes the server does not guard pass
+without a take, by any member: the title, the description, the priority, the
+epic, the milestone, BLOCKED, CANCELLED, a `brief`, a `review`, closing after
+an `approve`. That is the exception to the IN_PROGRESS gate: write to another's
+task without moving it.
+
+**`task_assigned_to_other`** (HTTP 409 over REST) answers a take or an
+assignee change of a task another person leads; nothing is written. Its
+`context` carries `task_id` and the `assignee` card. Take another task, or tell
+your person `<name> leads task-N` and ask what to do. Pass `take_over=true`
+only on your person's word about that task — never on your own initiative: not
+because the assignee looks idle, not to unblock your own work. A launch with
+`npx -y conport@^0.16.0 prompt … --take-over` is that word, for the task the
+launch names.
+
+**Assigning.** `assignee` on `add_task`, `add_linked_task` and `update_task`
+takes a handle, an email (any case) or `"me"`; `"none"` removes the assignee.
+An omitted field changes nothing; `null` is refused by validation. Any member of
+the team assigns, an admin and a member alike. Assigning a task another person
+leads, or removing its assignee, needs `take_over=true` on `update_task` — the
+same rule as above. `take_over=true` together with `status='IN_PROGRESS'` takes
+another's task in one call. A new task created with `status='IN_PROGRESS'` and
+an `assignee` is assigned to that person, not taken by you.
+
+**`assignee_not_member`** (HTTP 422 over REST; `context.assignee` is the value
+as sent) — the value names no active member of the project's team: an unknown
+handle, a user of another team, a former member. Name a member:
+`list_team_members(project)` lists them (`handle`, `email`, `former_member`,
+`role`, `me`).
+
+**An epic** is led by its assignee. The lead session takes the epic with
+`update_task(status='IN_PROGRESS')`; on `task_assigned_to_other` it tells the
+person `the epic is led by <name>` and takes nothing over. A child of the epic
+assigned to another person is not taken by the lead session: its assignee
+leads it in their own session from the epic branch and merges it there. The
+epic closes, as always, only when every child is closed.
+
+**Questions of `init`** about a task — an epic near its close, an open child
+under a closed parent, a task blocked too long — go to the assignee of that
+task first; to anyone when the task is free, its assignee left the team, or
+the assignee has not received the question within a week of its detection.
+
+**Reports name the assignee.** A report to your person of open tasks names the
+assignee of every task another person leads; your own and free tasks need no
+name.
+
+**People change the assignee themselves** in the dashboard (the task list
+filters Mine, Free and a member; the task card picks the assignee and asks
+`<name> leads this task. Take it over?` before a take over) and with the CLI:
+`npx -y conport@^0.16.0 task assign <id> <handle|email|me|none> [--take-over]`
+and `npx -y conport@^0.16.0 task list --assignee me|<handle>|none`.
+
+**Leaving the team.** When a member leaves or is removed, when their account is
+deleted, or when the project moves to a team without them, their open tasks
+become free. A closed task keeps its assignee, shown with
+`former_member: true`.
+
+**History.** Task answers carry only `assignee`. Every change of an assignee is
+recorded, and the project export carries the whole history of each task
+(`assignment_history`: `cause`, `from`, `to`, `actor`, `at`).

@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 27.1.0
+  version: 27.2.0
 ---
 
 # superpowers-conport — Bridge
@@ -757,9 +757,10 @@ if there were any, routed by the rule above.
 [superpowers-conport finish]
   spec: doc-<N>
   epic: task-<M> — RELEASE BLOCKED
-  открыто задач: 2
+  открыто задач: 3
     task-<a> <title> (TODO)
     task-<b> <title> (BLOCKED)
+    task-<c> <title> (IN_PROGRESS) — ведёт <name>
   в плане есть, в ConPort нет: 1
     Task 6: <заголовок блока плана>
   в журнале есть, в раунд правок не взято: 1
@@ -781,9 +782,19 @@ if there were any, routed by the rule above.
        список (веха ожидания, бэклог без даты) или её нет, спроси пользователя, в какую
        веху идут хвосты
     3. update_task(task-<a>, IN_PROGRESS) и доделай
-    4. доделай цикл правок по Task 5
+    4. task-<c> ведёт <name> — её доделывает он; не бери её и не перехватывай,
+       перехват — только по слову пользователя
+    5. доделай цикл правок по Task 5
   Релиз запрещён, пока эпик task-<M> не закрыт.
 ```
+
+**Open children name their assignee.** In a shared team each row of `list_tasks` carries
+`assignee`, and `init` gives the caller as `me`. An open child another person leads is
+printed with `— ведёт <name>` (the email, else the handle) and answered by its own item:
+that person finishes it, and the prescription never tells the agent to take it or pass
+`take_over` — only the user's word does. Your own and free children are printed without a
+name and answered by `update_task(task-<a>, IN_PROGRESS) и доделай`. In a Private Team no row
+carries `assignee` and every open child is answered that way.
 
 The counted lines carry only what was found: a category with a count of zero is omitted
 rather than printed as `0`, and the missing-tasks line is the one that reports plan tasks
@@ -796,7 +807,8 @@ missing tasks, so the audit names it rather than leaving the agent to invent a w
 them by hand. Ledger candidates are answered by a fix round — of the Final review task
 (or, in an epic started without the section, of the task the finding is in), or the tails
 epic of the release for a finding outside the epic's goal (see *Where a finding goes*
-above) — open children by finishing them, an unclosed fix round by finishing that round.
+above) — open children by finishing them (a child another person leads, by naming who
+finishes it), an unclosed fix round by finishing that round.
 On the pulled route whatever the switch, and on the anchor route with the overlay on,
 the missing-tasks item names the CLI instead of the bridge's import (see
 `## Overlay mode`):

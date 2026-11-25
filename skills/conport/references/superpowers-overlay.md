@@ -148,6 +148,15 @@ creates).
    `TODO`. Closing the epic, or returning it to `TODO` when the work stops,
    clears the mark.
 
+   In a shared team that call is a take, and the epic's assignee is the person
+   who leads it. When another person leads the epic, the server answers
+   `task_assigned_to_other`: tell your person `the epic is led by <name>` (the
+   email, else the handle) and take nothing over — `take_over=true` only on
+   their word, which a launch with `npx -y conport@^0.16.0 prompt … --take-over`
+   carries. A child of the epic assigned to another person is neither taken
+   nor dispatched by the lead session: its assignee leads it in their own
+   session from the epic branch and merges it into the epic branch.
+
    A task that changes behaviour the spec describes changes the spec in the
    same task, with the block tools (`update_block`, `insert_block`), before
    the task is closed; its report names the blocks it changed. When the spec

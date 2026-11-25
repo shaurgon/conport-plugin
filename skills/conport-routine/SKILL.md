@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 27.1.0
+  version: 27.2.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -124,11 +124,14 @@ configured level.
 
 ### Phase 2: Reconcile (all autonomy levels)
 
-Go through `housekeeping.stale_in_progress` from the agenda. For **each** stale
-task decide explicitly:
+Go through `housekeeping.stale_in_progress` from the agenda — and only it. In a
+shared team it holds only your person's own tasks and free ones: a task another
+person leads is reconciled by their sessions, never by this run (never from
+`list_tasks(status='IN_PROGRESS')`). For **each** stale task decide explicitly:
 
 - **Continue** — the work is genuinely still in flight → keep IN_PROGRESS
-  (re-touching via `update_task` refreshes the lease).
+  (re-touching via `update_task` refreshes the lease; a free task you continue
+  is taken with a repeat `update_task(status='IN_PROGRESS')`).
 - **Return** — nobody is working on it → `update_task` → TODO.
 - **Close** — it's actually finished → `update_task` → DONE with `resolution`.
 
@@ -157,6 +160,9 @@ Skip this phase entirely at level 0.
   **unblock** (the blocker is resolved → status back to TODO), **decompose**
   (split out the unblocked part as a new task), or **snooze with a concrete
   date** (`update_task(snooze_until=...)`) when the blocker has a known ETA.
+  This holds for your own and free tasks. Each row carries `assignee`: a task
+  another person leads is left as it is — the digest names it with its
+  assignee (the email, else the handle).
 
 ### Phase 4: Execute (autonomy_level == 2 only)
 
@@ -175,9 +181,11 @@ roadmap only advances when epics actually close.
 
 - For each tail, do what its `suggested_action` prescribes: `closable=true` →
   `update_task` → DONE with `resolution` on the epic itself; otherwise finish
-  its `open_tasks` (each through the normal IN_PROGRESS → verify → DONE cycle;
-  a child in REVIEW is reviewed, as in the review step below, not worked
-  again), then close the epic.
+  its own and free `open_tasks` (each through the normal IN_PROGRESS → verify
+  → DONE cycle; a child in REVIEW is reviewed, as in the review step below,
+  not worked again), then close the epic. A child whose `assignee` is another
+  person is theirs: `suggested_action` names it "task-N is led by …" and does
+  not send you to it — skip it, and close the epic only once it is closed.
 - Tails count against `max_tasks_per_run` like any other taken item, and so
   does each review of a task waiting in REVIEW. When the limit runs out inside
   a tail or the reviews, stop there and name what remains in the digest —
@@ -196,6 +204,15 @@ Then the ready pool:
   `priority <= priority_threshold`. If the pool is thinner than
   `max_tasks_per_run`, you may extend it with
   `list_tasks(ready=true, order="priority", offset=N)` — same threshold filter.
+- **Only your own and free work.** `ready_top` leaves out what another person
+  leads, and `epic_tails` the epics another person leads — but a child of your
+  own or a free epic may still be assigned to another person and show up in
+  the tail's `open_tasks`, with its `assignee` card and named "led by …" in
+  `suggested_action`. Such a child, and rows added from `list_tasks`
+  whose `assignee` is another person, are skipped. A take refused with
+  `task_assigned_to_other` (the task is another's, or another session took it
+  first) is skipped and named in the digest with its assignee: a run has no person to give the word, so it never passes
+  `take_over=true`.
 - **Stay on the current milestone — but don't starve on it.** The server
   already floats its rows to the top of `ready_top`, and every row carries
   `milestone_id`. Two cases, decided by that field alone:
@@ -322,7 +339,8 @@ Phase 4 and the digest:
   estimates calibrate.
 - **BLOCKED review** — walk every BLOCKED task (not just `blocked_too_long`):
   is the blocker still real? Unblock, decompose, snooze with a date, or cancel
-  with a resolution.
+  with a resolution — for your own and free tasks only; one another person
+  leads is only named in the digest with its assignee.
 
 Fold the reflection findings into the same `routine_run_finish` summary — no
 separate report entity.
@@ -335,6 +353,7 @@ separate report entity.
 - [ ] `get_routine_config` checked — and exited immediately if `enabled=false`?
 - [ ] `routine_run_start` called — and an `already_open` run resolved first?
 - [ ] Every `stale_in_progress` task got an explicit verdict (continue / return / close)?
+- [ ] No task another person leads was taken, returned, unblocked or closed — only named with its assignee, and `take_over` never passed?
 - [ ] Housekeeping done only at autonomy >= 1; execution only at autonomy == 2?
 - [ ] Execute phase worked `epic_tails` first (closable epics closed with `resolution`), and only then `ready_top` — inside each epic its open Bugs first?
 - [ ] Executed at most `max_tasks_per_run` tasks, one at a time, each through IN_PROGRESS → verify → DONE with `resolution`?

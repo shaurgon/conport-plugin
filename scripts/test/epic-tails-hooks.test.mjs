@@ -17,14 +17,17 @@ const SCRIPTS = dirname(dirname(fileURLToPath(import.meta.url)))
 const TOOL_ADD = 'mcp__plugin_conport_conport__add_task'
 const TOOL_UPDATE = 'mcp__plugin_conport_conport__update_task'
 
-// Fake API: `children` is the task table (parent_task_id per row), `tails`
+// Fake API: `children` is the task table (parent_task_id per row; `assignee`
+// a card where the team shows assignees), `me` the caller's handle that the
+// list filter assignee=me answers by (`mineFails`: that read answers 500), `tails`
 // the body of GET /epic-tails, sent after `tailsDelayMs`. Every request is
 // recorded. An epic read whose failure is `hang` is never answered; one whose
 // failure is `held` is kept open until `holdUntil` reads are held at once, and
 // then all of them get 500; `mostHeld` is the most held at once.
 async function startApi() {
   const api = {
-    children: [], progress: {}, detailFailures: {}, tails: [], tailsDelayMs: 0, milestones: null, requests: [],
+    children: [], me: null, mineFails: false,
+    progress: {}, detailFailures: {}, tails: [], tailsDelayMs: 0, milestones: null, requests: [],
     held: [], holdUntil: 0, mostHeld: 0,
   }
   const server = createServer((req, res) => {
@@ -33,7 +36,14 @@ async function startApi() {
     res.setHeader('content-type', 'application/json')
     if (url.pathname === '/api/v1/projects/prk7m2qx9d/tasks') {
       const parents = (url.searchParams.get('parent_task_ids') || '').split(',').map(Number)
+      const mine = url.searchParams.get('assignee') === 'me'
+      if (mine && api.mineFails) {
+        res.statusCode = 500
+        res.end('{}')
+        return
+      }
       const rows = api.children.filter((c) => parents.includes(c.parent_task_id))
+        .filter((c) => !mine || c.assignee?.handle === api.me)
       const offset = Number(url.searchParams.get('offset') || 0)
       const limit = Number(url.searchParams.get('limit') || 50)
       res.end(JSON.stringify({ tasks: rows.slice(offset, offset + limit), total: rows.length }))
@@ -160,6 +170,61 @@ test('an epic with a single open child is listed too — no near-closing thresho
   ctx.api.children = [child(41, 40, 'IN_PROGRESS')]
   const verdict = JSON.parse((await stop(ctx, 's1')).out)
   assert.match(verdict.reason, /task-41 \[IN_PROGRESS\]/)
+}))
+
+const ME = { handle: 'usme000000', email: 'me@example.com', former_member: false }
+const ANN = { handle: 'usann00000', email: 'ann@example.com', former_member: false }
+const BOB = { handle: 'usbob00000', email: null, former_member: false }
+
+test('a child another member leads is named with its lead and never ordered dispatched', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.me = ME.handle
+  ctx.api.children = [
+    child(51, 50, 'TODO', { assignee: null }),
+    child(52, 50, 'IN_PROGRESS', { assignee: ME }),
+    child(53, 50, 'IN_PROGRESS', { assignee: ANN }),
+    child(54, 50, 'TODO', { assignee: BOB }),
+  ]
+  const verdict = JSON.parse((await stop(ctx, 's1')).out)
+  assert.equal(verdict.decision, 'block')
+  const lines = verdict.reason.split('\n')
+  assert.ok(lines.includes('  · task-51 [TODO] child 51'), verdict.reason)
+  assert.ok(lines.includes('  · task-52 [IN_PROGRESS] child 52'), verdict.reason)
+  assert.ok(lines.includes('  · task-53 [IN_PROGRESS] child 53 — led by ann@example.com, not yours to dispatch'), verdict.reason)
+  assert.ok(lines.includes('  · task-54 [TODO] child 54 — led by usbob00000, not yours to dispatch'), verdict.reason)
+}))
+
+test('tails whose open children all have another lead hold nothing', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 53)
+  ctx.api.me = ME.handle
+  ctx.api.children = [child(53, 50, 'IN_PROGRESS', { assignee: ANN }), child(56, 50, 'DONE', { assignee: ME })]
+  assert.equal((await stop(ctx, 's1')).out, '')
+}))
+
+test('a child that becomes free is held again', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 53)
+  ctx.api.me = ME.handle
+  ctx.api.children = [child(53, 50, 'IN_PROGRESS', { assignee: ANN })]
+  assert.equal((await stop(ctx, 's1')).out, '')
+  ctx.api.children = [child(53, 50, 'TODO', { assignee: null })]
+  assert.equal(JSON.parse((await stop(ctx, 's1')).out).decision, 'block')
+}))
+
+test('the own-children read is skipped where no child has an assignee', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.children = [child(51, 50, 'TODO')]
+  await stop(ctx, 's1')
+  assert.ok(!ctx.api.requests.some((u) => u.searchParams.get('assignee')), 'no assignee=me read')
+}))
+
+test('when the own-children read fails every assigned child counts as led by another', () => withEnv(async (ctx) => {
+  await addUnderEpic(ctx, 's1', 50, 51)
+  ctx.api.me = ME.handle
+  ctx.api.mineFails = true
+  ctx.api.children = [child(51, 50, 'TODO', { assignee: null }), child(52, 50, 'IN_PROGRESS', { assignee: ME })]
+  const lines = JSON.parse((await stop(ctx, 's1')).out).reason.split('\n')
+  assert.ok(lines.includes('  · task-51 [TODO] child 51'))
+  assert.ok(lines.includes('  · task-52 [IN_PROGRESS] child 52 — led by me@example.com, not yours to dispatch'))
 }))
 
 test('a session that changed no epic gets nothing at Stop and spends no request', () => withEnv(async (ctx) => {
@@ -493,6 +558,19 @@ test('a tail with open children is a reference to them, never an order to finish
     '[TAILS] task-60 Epic 60 — Close epic task-60 with a resolution',
   ])
   assert.doesNotMatch(context, /Finish/)
+}))
+
+// Which tails are the caller's — their own epics and free ones in a shared
+// team — is the route's filter: the hook prints what the route answers and
+// adds nothing of its own.
+test('prints only the tails the route answers', () => withEnv(async (ctx) => {
+  ctx.api.tails = [openTail(50, [51])]
+  await pastFirstPrompt(ctx)
+  const context = await promptContext(ctx)
+  assert.deepEqual(tailLines(context), ['[TAILS] task-50 Epic 50 — open: task-51'])
+  const reads = ctx.api.requests.filter((u) => u.pathname === '/api/v1/projects/prk7m2qx9d/epic-tails')
+  assert.ok(reads.length > 0)
+  for (const url of reads) assert.equal(url.searchParams.get('assignee'), null)
 }))
 
 test('a tails cache written in the old ready-made line format is not served', () => withEnv(async (ctx) => {

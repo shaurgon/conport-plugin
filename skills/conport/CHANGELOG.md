@@ -1,5 +1,67 @@
 # conport changelog
 
+## 27.2.0
+
+**A task has an assignee.** In a project of a shared team a task, a Bug and an
+epic may have an assignee: the person whose agents lead it. `add_task`,
+`add_linked_task` and `update_task` take `assignee` — a handle, an email or
+`"me"`; `"none"` removes it, an omitted field changes nothing, `null` is
+refused. `list_tasks` filters by `assignee` (`me`, `none`, a handle or an
+email). Every task answer carries `assignee` (`{handle, email,
+former_member}` or `null`) and nothing more about assignment: every change is
+recorded, and the project export carries each task's whole history
+(`assignment_history`). A value that names no active member of the project's
+team is refused `assignee_not_member`. A Private Team shows no assignee and
+adds no key.
+
+**Agents take only their own and free work.** Every way into IN_PROGRESS — a
+status write, a repeat of it, a `report` on a TODO or BLOCKED task, a task
+created in IN_PROGRESS without `assignee` — is a take (created with
+`assignee`, it is assigned to that member): a free task gets the caller as its
+assignee, and of two simultaneous takes one passes. A take or an assignee
+change of a task another person leads is refused `task_assigned_to_other`
+with that person in `context.assignee`; `update_task` passes it only with
+`take_over=true`, which an agent sends only on its person's word, never on its
+own. The `update_task` summary names a change: `— assigned to <handle>` or
+`— taken over from <handle>`.
+
+**`init` and `get_agenda` show your own and free work.** `init` gives `me`
+(the caller with its `role`), `backlog.mine` (the caller's open tasks, up to
+10, taken before `backlog.top`), `backlog.total_others` and
+`in_progress_by_others` (others' tasks in IN_PROGRESS, the newest up to 10, for
+information only).
+`backlog.top`, `ready_top`, `reconciliation.stale_tasks`, `review_tasks`,
+`epic_tails`, `stale_in_progress`, `stale_review` and `woken_tasks` leave out
+what another person leads; `blocked_too_long` names each task's assignee. The
+prompt hook's epic tails are filtered the same way.
+
+**An epic tail does not send you to a child another person leads.** Inside a
+tail each open child carries its `assignee`, and `suggested_action` covers
+your own and free children only: a child another person leads is named
+`task-N is led by <email or handle>`. The Stop hook lists such a child with
+`led by …, not yours to dispatch` and holds no turn when every open child of
+the session's epics is led by someone else.
+
+**`list_team_members` is in the `core` profile.** It lists the active members
+of the project's team (`handle`, `email`, `former_member`, `role`, `me`): the
+action an `assignee_not_member` refusal prescribes.
+
+**Questions of `init` go to the person they concern.** A question about a task
+— an epic near its close, an open child under a closed parent, a task blocked
+too long — goes to the task's assignee first, and a question closes by its
+default when one person skipped it twice, not two different people once each.
+
+**The skills follow the assignee.** The skill takes `backlog.mine` first and
+only its own or free tasks, writes to another's task without moving it to
+IN_PROGRESS, answers `task_assigned_to_other` by taking another task or asking
+its person, and at session start reconciles only `reconciliation.stale_tasks`
+— never `in_progress_by_others`. The rules of a team are a new section of
+`references/backlog-discipline.md`; the routine reconciles and unblocks only
+its own and free tasks, the roadmap report and the project status name the
+assignee of others' tasks, the overlay's lead session tells its person who
+leads an epic it cannot take, and `finish` names the assignee of open
+children without prescribing to take them.
+
 ## 27.1.0
 
 **A code portion introduces exactly one unit.** `arch_submit` refuses a

@@ -94,7 +94,9 @@ detected, `routine_suggestion` for a routine-ripe project with no policy yet,
 version exists, and `roadmap` (current milestone with its epics + `next`) /
 `epic_tails` (epics near closing, each with a prescribed `suggested_action` —
 `Review task-N` for a child in REVIEW, `review task-N` after a `Finish …`
-step) only when the project has them;
+step; in a shared team each open child carries its `assignee`, and a child
+another person leads is named "task-N is led by …", never a step) only when
+the project has them;
 `review_tasks` (`id`, `title`, `priority` of the tasks waiting in REVIEW, most
 recently updated first, snoozed ones left out) only when some task waits — and
 then `instructions` carries "Review: N task(s) await a reviewer — have them
@@ -113,6 +115,20 @@ Top-5 excludes subtasks of active epics so
 you see roots + orphans; `effective_priority` rolls up the most-important
 priority across direct children (priority is industry-standard 1-5 where
 1=critical and 5=idle, so "most important" = the smallest number).
+
+**In a shared team** the answer is shaped by the tasks' assignees ("your own":
+the assignee is the caller; "free": no assignee; "another's": anyone else):
+`me` (`handle`, `email`, `former_member`, `role` of the caller; absent for a
+service context); `backlog.mine` (the caller's open tasks whatever their epic,
+IN_PROGRESS and REVIEW first, then TODO and BLOCKED, up to 10 — take work from
+it before `backlog.top`); `backlog.total_others` (the number of open tasks of
+others); `in_progress_by_others` (`id`, `title`, `assignee` of the tasks others
+lead in IN_PROGRESS, the newest first, up to 10, only when there are some — for
+information, never to reconcile). `backlog.top` leaves out the roots others lead and the children of
+an epic another person leads; `reconciliation.stale_tasks`, `review_tasks` and
+`epic_tails` hold only the caller's own and free tasks; `total_todo`,
+`total_in_progress` and `total_review` stay project-wide. A Private Team answer
+carries none of these keys and filters nothing.
 
 **`questions`.** Knowledge-base gaps are resolved by the server's daily pass; a gap only a person can decide becomes a question.
 Each one carries `id`, `gap_type`, `text` (English, with the names filled in),
@@ -612,9 +628,11 @@ mcp__conport__add_task({
 | estimated_seconds | integer | no | Estimated effort in seconds. Epic rows reject it (`epic_does_not_carry_time_fields`) — an epic's effort is summed from its children |
 | routine_eligible | boolean | no | Opt-in marker for the autonomous routine cycle: `true` lets an agent pick the task up on its own (`selection='tagged'`). Orthogonal to priority (default: false) |
 | milestone_id | integer | no | Per-project ID of the roadmap milestone this epic belongs to. Only `kind='epic'` rows may carry one (`milestone_on_non_epic`); an unknown milestone is rejected with `milestone_not_found`. `0` means no milestone — exactly the same as omitting it (there is nothing to detach on create) |
+| assignee | string | no | Handle, email (any case) or `"me"` of an active member of the project's team; `"none"` leaves the task free; omit to leave it free too. `null` is refused. A task created with `status: "IN_PROGRESS"` is assigned to that member; with no `assignee` it is taken by you |
 
 **Returns:** a slim echo — `id`, `tags`, `summary` — plus the applied `kind`,
-`estimated_seconds` and `milestone_id`. Creating a child under an epic also
+`estimated_seconds` and `milestone_id`, and `assignee`
+(`{handle, email, former_member}` or `null`; in a shared team only). Creating a child under an epic also
 returns `epic_progress`: `epic_id`, `epic_title`, `open_children`,
 `total_children`, `closable` (no open children and the epic still open),
 `plan_tasks`, `ordinary_added`, `bugs`, `growth_ceiling`, `plan_started`
@@ -651,7 +669,9 @@ or reopening a cancelled ordinary task through `update_task`.
 `parent_not_epic` (with `suggestions` naming the promote / attach call to make
 next), `epic_with_parent`, `epic_does_not_carry_time_fields`,
 `milestone_on_non_epic`, `milestone_not_found`; `status: "REVIEW"` on create
-comes back as `review_from_in_progress_only`.
+comes back as `review_from_in_progress_only`. An `assignee` that names no
+active member of the project's team comes back as `assignee_not_member` (see
+`update_task`).
 
 ### update_task
 
@@ -682,11 +702,23 @@ mcp__conport__update_task({
 | snooze_until | string | no | ISO 8601 timestamp — hide the task from default listings until then (status unchanged, it wakes on its own when the time passes). A timestamp without a timezone is read as UTC. Empty string clears the snooze, omit to leave unchanged |
 | routine_eligible | boolean | no | Autonomous-cycle opt-in marker (see `add_task`). Pass `true`/`false` to set, omit to leave unchanged |
 | milestone_id | integer | no | Attach this epic to a roadmap milestone. Positive id attaches, `0` detaches, omit to leave unchanged. Epics only (`milestone_on_non_epic`); unknown milestone → `milestone_not_found`; an epic must be detached before it can be demoted to a task (`epic_has_milestone`) |
+| assignee | string | no | Handle, email (any case) or `"me"` of an active member of the project's team; `"none"` removes the assignee; omit to leave it. `null` is refused. Changing the assignee of a task another person leads needs `take_over` |
+| take_over | boolean | no | Take a task another person leads — with `assignee`, or with `status: "IN_PROGRESS"` to take it yourself in one call. Pass `true` only on your person's word, never on your own (default: false) |
+
+**Taking a task.** `status: "IN_PROGRESS"` — from any status, or repeated on a
+task already in IN_PROGRESS — is a take: a free task gets you as its assignee,
+your own passes unchanged, and a task another person leads is refused with
+`task_assigned_to_other` unless `take_over` is `true`. Edits that are not a
+take (title, description, priority, epic, milestone, BLOCKED, CANCELLED,
+closing after `approve`) pass on anyone's task.
 
 **Returns:** a slim echo — `id`, `tags`, `summary`, `resolution_applied` (true
 when the close upserted the `## Resolution` section) and, for post-write
 verification, the applied `status`, `review_round`, `kind`, `estimated_seconds`,
-`routine_eligible`, `snooze_until`, `milestone_id`. Plus the rollups that save
+`routine_eligible`, `snooze_until`, `milestone_id` and, in a shared team,
+`assignee` (`{handle, email, former_member}` or `null`). A change of the
+assignee ends the `summary` with `— assigned to <handle>` or
+`— taken over from <handle>`. Plus the rollups that save
 a follow-up read: `parent_epic_ready_to_close` (`id` + `title` of the parent
 epic when this close left it with no open children — close it next; `null`
 otherwise), `started_at` / `completed_at` (stamped on the first entry into
@@ -714,10 +746,19 @@ The hierarchy invariants come back the same way: `parent_not_epic` (with
 `epic_growth_ceiling` refusal and its ordered `suggestions` are described
 under `add_task`.
 
+The assignee refusals carry `error`, `message` and `context`; nothing is
+written:
+
+| Refusal | Raised when | Next call |
+|---|---|---|
+| `task_assigned_to_other` (409 over REST) | A take, or an assignee change, of a task another person leads, without `take_over`; `context`: `task_id`, `assignee` (`{handle, email, former_member}`) | Pick another task, or ask your person; repeat with `take_over: true` only on their word |
+| `assignee_not_member` (422 over REST) | `assignee` names no active member of the project's team — an unknown handle, a user of another team and a former member answer alike; `context.assignee` is the value as sent | `list_team_members`, then name one of its members |
+
 **Review cycle.** A task whose work is checked goes IN_PROGRESS → REVIEW →
 DONE, or back from REVIEW to IN_PROGRESS for another round; every step is
 gated by the task's journal (`add_task_journal_entry`). Writing the status the
-task already has is not a transition and is never refused. The refusals carry
+task already has is not a transition and is never refused by the cycle (a
+repeat of IN_PROGRESS is still a take, above). The refusals carry
 `error`, a `message` with one action and `context` (`task_id`, `status`,
 `review_round`, and the last verdict for `done_needs_approval` and
 `return_needs_review`); a refused write changes nothing:
@@ -760,6 +801,7 @@ mcp__conport__list_tasks({
 | ready | boolean | no | Only tasks with no open blocking dependency — a `blocks`/`requires` dependency on a task in TODO/IN_PROGRESS/BLOCKED/REVIEW excludes it; `suggests` and DONE/CANCELLED targets never block (default: false) |
 | include_snoozed | boolean | no | Include tasks snoozed into the future (`snooze_until` > now). Default false — snoozed tasks stay hidden from the list and the count until their snooze elapses |
 | routine_eligible | boolean | no | Filter by the autonomous-cycle opt-in marker: `true` — only marked tasks, `false` — only unmarked. Omit for no filter |
+| assignee | string | no | Filter by assignee: `"me"`, `"none"` (free tasks), or a member's handle or email. A value that names no active member of the project's team is refused `assignee_not_member`. Omit for no filter |
 | order | string | no | `created_at` (default, newest first) or `priority` — rank by effective priority (the smallest of the task's own priority and the priorities of its active TODO/IN_PROGRESS/REVIEW direct children; ties broken by newest first). With `parent_task_id` of an epic, an open Bug goes first among the children of its epic; among roots a Bug has no precedence. With `priority` each task carries `effective_priority` |
 | limit | integer | no | Max results (default: 50) |
 | offset | integer | no | Pagination offset — page deeper than the first `limit` tasks (default: 0) |
@@ -768,7 +810,8 @@ mcp__conport__list_tasks({
 **Returns:** `tasks` (`id`, `title`, `status`, `priority`, `parent_task_id`,
 `kind`, `estimated_seconds`, `actual_seconds`, `started_at`, `completed_at`,
 `snooze_until`, `claim_expires_at`, `routine_eligible`, `milestone_id`,
-timestamps — plus `effective_priority` with
+timestamps, and in a shared team `assignee` (`{handle, email, former_member}`
+or `null`) — plus `effective_priority` with
 `order: "priority"`), `total` and a
 one-line `summary`. Epic rows carry the time sums of their children.
 
@@ -798,6 +841,10 @@ round of that verdict (both `null` before the first review and while a
 from `list_task_journal`. An epic reports the `estimated_seconds` /
 `actual_seconds` summed across its children and `epic_progress` (the rollup
 and growth fields described under `add_task`, without `grew_after_start`).
+In a shared team the row carries `assignee` (`{handle, email, former_member}`
+or `null`); `former_member: true` names a closed task's assignee who left the
+team. No task answer carries the history of assignments: it is recorded and
+goes only into the project export (`assignment_history` of each task).
 
 ### add_task_dep
 
@@ -870,6 +917,7 @@ mcp__conport__add_linked_task({
 | description | string | no | Task description (max 2000 chars) |
 | priority | integer | no | 1-5 (1=critical, 5=idle, default: 3) |
 | status | string | no | TODO \| IN_PROGRESS \| BLOCKED \| REVIEW \| DONE \| CANCELLED (default: TODO). A new task is never created in REVIEW (`review_from_in_progress_only`): a task enters REVIEW from IN_PROGRESS |
+| assignee | string | no | Handle, email (any case) or `"me"` of an active member of the team; `"none"` or omitted leaves the task free; `null` is refused. As under `add_task`: with `status: "IN_PROGRESS"` and no `assignee` the task is taken by you; a value that names no member is refused `assignee_not_member` |
 
 **Returns:** `target_task` (the created task, full body — this one is not
 slimmed), `source_progress` (the log entry written in the source project)
@@ -883,6 +931,30 @@ team exists or not; a prefix of another team of yours fails with
 `cross_team_link_not_supported` (422). A malformed target fails with
 `invalid_project_name` (422): rewrite it as `<team ID>/<project>`
 (`k7m2qx9d/other-project`), `pers/<project>`, or a name without `/`.
+
+### list_team_members
+
+The active members of the project's team: who a task's `assignee` can name.
+The action an `assignee_not_member` refusal prescribes, so it is in the
+`core` profile.
+
+```
+mcp__conport__list_team_members({
+  project: <project>
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+
+**Returns:** `project` (its handle), `members` in order of joining — each
+`{handle, email, former_member, role, me}`: `handle` is the member's permanent
+`us…` address, `role` is `admin` or `member`, `me` marks you, `former_member`
+is always `false` (only active members are listed) — and `summary`. Pass a
+member's `handle` or `email` (or `"me"`) as `assignee`. When you tell your
+person who a member is, name them by `email`, else by `handle`. A Private Team
+has one member, its owner.
 
 ### add_task_journal_entry
 
@@ -941,7 +1013,9 @@ carries the refusal under `move_refused`, and the task keeps its status.
 `journal_kind_not_allowed` (`context` carries `kind`, `status` and the kinds
 that fit), `invalid_verdict` (`verdict` missing on `review` or present on
 another kind; 422 over REST), `reviewer_is_author`, `addendum_by_reviewer`, a refusal of the move
-before a report (the transition's own code) and `not_found`
+before a report (the transition's own code — a `report` that starts a TODO or
+BLOCKED task is a take, so on a task another person leads it is
+`task_assigned_to_other`, see `update_task`) and `not_found`
 (`context.task_id` — the task is not in the project, a task of another team
 included; check the id with `list_tasks`).
 
@@ -2760,7 +2834,11 @@ mcp__conport__get_agenda({
 `stale_review` — tasks in REVIEW untouched for over 24 hours, each with `id`,
 `title`, `hours_in_review` (hours since the task in REVIEW was last touched, by a journal entry or an edit) — `blocked_too_long`),
 `activity_delta` and a one-line `summary` (which counts
-"N stale in review").
+"N stale in review"). In a shared team `ready_top`, `epic_tails`,
+`woken_tasks`, `stale_in_progress` and `stale_review` hold only the caller's
+own and free tasks (an epic another person leads drops out with its
+children), and every `blocked_too_long` row carries `assignee`
+(`{handle, email, former_member}` or `null`).
 
 ### get_routine_config
 
@@ -3000,7 +3078,7 @@ kept, or a decision tagged `error-solution` by hand.
 |----------|-------|
 | Session | `init`, `create_project`, `list_projects` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
-| Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
+| Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task`, `list_team_members`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
 | Milestones | `add_milestone`, `update_milestone`, `list_milestones` |
 | Documents | `add_document`, `update_document`, `list_documents`, `get_document`, `delete_document`, `get_block_backlinks`, `get_semantically_related_blocks`, `list_blocks`, `get_block`, `update_block`, `insert_block`, `delete_block` |
 | Decisions | `sync_decision`, `list_decisions`, `get_decision`, `update_decision`, `deprecate_decision`, `reactivate_decision`, `delete_decision` |
