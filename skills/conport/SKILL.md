@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 27.3.0
+  version: 27.4.0
 ---
 
 # ConPort — Project Management System
@@ -721,7 +721,7 @@ return it in the `roadmap` section.
 | "What was decided about Y?" | `search` by topic |
 | "What replaced X?" / a removed or replaced part of the project model | `search` with `include_removed=true` (see *PROJECT MODEL → Search through the model*) |
 | "Which projects do I own?" / bootstrapping without a known project handle | `list_projects` |
-| "Which repositories is this project made of?" / add, rename or remove one | `project_roots`, `add_project_root`, `rename_project_root`, `remove_project_root` (from a repository the CLI `conport root` commands send its fingerprint) |
+| "Which repositories is this project made of?" / add, rename, rebind or remove one | `project_roots`, `add_project_root`, `rename_project_root`, `rebind_project_root`, `remove_project_root` (from a repository the CLI `conport root` commands send its fingerprint) |
 
 ### Sync
 
@@ -1857,9 +1857,10 @@ you work in (*Step 1*), passed to `init` (*Step 2*). `roots` of
 names the same project and that root (`--save` writes it into `roots`).
 
 **The roots are managed** with `project_roots`, `add_project_root`,
-`rename_project_root` and `remove_project_root`, or from the repository with
-`npx -y conport@^0.17.0 root list`, `root add <root>`, `root rename <root> <new>`
-and `root remove <root>`. Add a root from its own repository with the CLI:
+`rename_project_root`, `rebind_project_root` and `remove_project_root`, or
+from the repository with `npx -y conport@^0.17.0 root list`, `root add <root>`,
+`root rename <root> <new>` and `root remove <root>`, and
+`npx -y conport@^0.18.0 root rebind <root>`. Add a root from its own repository with the CLI:
 `root add` sends the fingerprint of the repository (its smallest root commit),
 and a clone or a worktree of another root is refused `root_repo_mismatch`.
 Two repositories with a common history (one split off the other) share that
@@ -1874,6 +1875,13 @@ never checked against one. Each of these changes the project: run it on the user
   writes its `root` into its `.conport.json`.
 - A rename changes the addresses `code:<root>:…`; the person changes `root` in
   `.conport.json` of that repository.
+- A root bound to the wrong repository is rebound from the right one:
+  `npx -y conport@^0.18.0 root rebind <root>` sends its fingerprint (in a
+  shallow clone, run `git fetch --unshallow` first), `root rebind <root> --clear`
+  unbinds it (`rebind_project_root` with `fingerprint: null`), and the next
+  call from a full clone binds that repository. Its sources, anchors
+  and tasks keep the root; a fingerprint another root holds is refused
+  `root_repo_mismatch`.
 - Removing the only root returns the project to no roots. One of several is
   refused `root_in_use` while code sources, tasks or anchors of document
   portions name it.

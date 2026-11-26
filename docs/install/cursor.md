@@ -88,7 +88,7 @@ npx skills add shaurgon/conport-plugin --skill conport --skill conport-routine -
 ## Verify
 
 Restart Cursor. Under **Customize** in the sidebar the `conport` server should
-be turned on; it lists 88 tools. If it does not connect, read the MCP Logs in
+be turned on; it lists 89 tools. If it does not connect, read the MCP Logs in
 the Output panel. In Agent chat, ask:
 
 > Call `mcp__conport__init` with `project_name` from `.conport.json`. If it

@@ -1,5 +1,17 @@
 # conport changelog
 
+## 27.4.0
+
+**A root rebinds its repository.** A root bound to the wrong repository —
+the first call with it from another clone bound that one — is rebound: the MCP
+server adds `rebind_project_root` to the profile group `projects` and lists 89
+tools, and the CLI runs it as `npx -y conport@^0.18.0 root rebind <root>` in
+the repository of the root (`--clear` unbinds it — `fingerprint: null`, a
+required argument of the tool — and the next call from a full clone binds its
+repository; a shallow clone is refused with `git fetch --unshallow`). Sources, anchors and tasks keep the root, and a
+fingerprint another root holds is refused `root_repo_mismatch`. The skill's
+*Roots* and the tool trigger of the roots name it.
+
 ## 27.3.0
 
 **A project of several repositories.** A project may now be made of several

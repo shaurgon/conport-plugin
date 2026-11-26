@@ -322,6 +322,39 @@ mcp__conport__rename_project_root({
 **Refusals** (`error`, `message`, `context`): `root_not_found`,
 `root_exists` and `invalid_root_name`.
 
+### rebind_project_root
+
+Bind a root to the fingerprint of another repository, or unbind it: the fix
+of a wrong first binding. The root takes the fingerprint and is checked
+against it, a root added with `no_fingerprint` too. `fingerprint` is
+required: `null` unbinds the root, and the next call with the root from a full
+clone of its repository binds that repository. Its code sources, checks, anchors and tasks
+keep it: only the binding changes. From the repository, prefer
+`conport root rebind <name>` (`--clear` unbinds): it sends the repository's
+fingerprint.
+
+```
+mcp__conport__rebind_project_root({
+  project: "my-project",
+  name: "api",
+  fingerprint: "9fceb02d0ae598e95dc970b74767f19372d61af8"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| name | string | yes | The root's name |
+| fingerprint | string or null | yes | The fingerprint of the root's repository: its smallest root commit (`git rev-list --max-parents=0 HEAD`), 1 to 64 characters; `null` unbinds the root. Left out: a validation error |
+
+**Returns:** `id`, `name` and `created_at` of the root. The same fingerprint
+again writes nothing and answers the same.
+
+**Refusals** (`error`, `message`, `context`; nothing was written):
+`root_not_found`, `invalid_fingerprint` (a `fingerprint` empty or longer
+than 64 characters) and `root_repo_mismatch` (another root holds the
+fingerprint; `context.root` names it).
+
 ### remove_project_root
 
 Remove a root. The only root: the project goes back to no roots — its code
@@ -3218,7 +3251,7 @@ kept, or a decision tagged `error-solution` by hand.
 | Category | Tools |
 |----------|-------|
 | Session | `init`, `create_project`, `list_projects` |
-| Project roots | `project_roots`, `add_project_root`, `rename_project_root`, `remove_project_root` |
+| Project roots | `project_roots`, `add_project_root`, `rename_project_root`, `rebind_project_root`, `remove_project_root` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task`, `list_team_members`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
 | Milestones | `add_milestone`, `update_milestone`, `list_milestones` |
