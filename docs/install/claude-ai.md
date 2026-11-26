@@ -61,8 +61,8 @@ of `docs/superpowers/`. Its switch is `plugins.superpowers` in `.conport.json`
 at the root of a repository; the agent gets its
 rules from the **Superpowers overlay** block of the `conport` skill, with no
 session-start hook and no commit guard, and the rules call the `conport` CLI,
-which needs `CONPORT_API_KEY` in the environment or in
-`~/.config/conport/.env`. Claude.ai has no repository and no shell, so the
+which needs `CONPORT_API_KEY` in the environment or the key alone in
+`~/.config/conport/conport.key`. Claude.ai has no repository and no shell, so the
 overlay does not apply here: use it from Claude Code, Cursor or another agent
 that works in the repository. See the
 [README](../../README.md#superpowers-overlay).

@@ -88,7 +88,7 @@ npx skills add shaurgon/conport-plugin --skill conport --skill conport-routine -
 ## Verify
 
 Restart Cursor. Under **Customize** in the sidebar the `conport` server should
-be turned on; it lists 84 tools. If it does not connect, read the MCP Logs in
+be turned on; it lists 88 tools. If it does not connect, read the MCP Logs in
 the Output panel. In Agent chat, ask:
 
 > Call `mcp__conport__init` with `project_name` from `.conport.json`. If it
@@ -113,8 +113,8 @@ rules from the **Superpowers overlay** block of the `conport` skill. There is no
 commit guard either, so nothing refuses a commit of a new file under
 `docs/superpowers/` — the rules alone keep specs and plans out of git. The rules
 call the `conport` CLI, which takes the project from `.conport.json` from 0.11
-on (`npx -y conport@^0.15.0`) and needs `CONPORT_API_KEY` in the environment or
-in `~/.config/conport/.env`. See the
+on (`npx -y conport@^0.17.0`) and needs `CONPORT_API_KEY` in the environment or
+the key alone in `~/.config/conport/conport.key`. See the
 [README](../../README.md#superpowers-overlay).
 
 ## Updating

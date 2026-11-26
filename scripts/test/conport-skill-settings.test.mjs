@@ -36,6 +36,7 @@ const SKILL = read('SKILL.md')
 const STEP_1 = between(SKILL, '### Step 1: Determine the project name', '### Step 2')
 const WITH_HOOKS = /\*\*Claude Code CLI\*\*[\s\S]*?(?=\n\*\*Cursor, Codex)/.exec(STEP_1)?.[0] ?? ''
 const WITHOUT_HOOKS = /\n\*\*Cursor, Codex[\s\S]*?(?=\n\*\*Claude\.ai Chat\*\*)/.exec(STEP_1)?.[0] ?? ''
+const STEP_2 = between(SKILL, '### Step 2: Call init', '### After init')
 
 test('step 1 takes the project from the ConPort project line', () => {
   assert.ok(WITH_HOOKS, 'step 1 has no part for Claude Code')
@@ -46,6 +47,67 @@ test('step 1 takes the project from the ConPort project line', () => {
   assert.match(text, /Do not call `init`/)
   // A missing project is answered with the shared file to write, not with a variable.
   assert.match(STEP_1, /"\$schema": "https:\/\/conport\.app\/schema\/conport\.json",\s*\n\s*"project_name": "<project>"/)
+})
+
+// A project of several repositories names the repository of the session: the
+// hook prints its root beside the project, from `.conport.json` alone.
+test('step 1 takes the root from the ConPort root line', () => {
+  const hooks = flat(WITH_HOOKS)
+  assert.ok(hooks.includes('`ConPort root: <root> (from .conport.json)`'), 'step 1 does not quote the root line')
+  assert.ok(hooks.includes('`ConPort root: <handle>:<root> (from .conport.json)`'), 'step 1 does not quote the root line of a handle')
+  // The root passed to init is the name after the handle, never the shown pair.
+  assert.match(hooks, /the root is the name after `<handle>:`/i)
+  // The line comes whenever `.conport.json` sets `root`, a project of one root included.
+  assert.match(hooks, /When `\.conport\.json` sets `root` — in a project with one root as with several — the hook prints/)
+  assert.match(hooks, /pass it to `init` as `root`/)
+  assert.match(hooks, /No `ConPort root:` line — call `init` without `root`/)
+  // The lines about a root in the wrong file name their one action.
+  for (const line of [
+    '`remove root from .conport.local.json — the root is set by .conport.json`',
+    '`roots is read from .conport.local.json only`',
+  ]) {
+    assert.ok(hooks.includes(line), `step 1 does not quote ${line}`)
+  }
+
+  // An agent without hooks reads the same keys by the same rule.
+  const own = flat(WITHOUT_HOOKS)
+  assert.match(own, /`arch`, `units` and `root` are read from `\.conport\.json` only/)
+  assert.match(own, /From the personal file only `project_name`, `plugins\.superpowers`, `plugins\.codegraph` and `roots` are read/)
+  const root = own.slice(own.indexOf('**The root of the session.**'))
+  assert.ok(own.includes('**The root of the session.**'), 'the rule for agents without hooks has no step for the root')
+  for (const needle of [
+    'pass it to `init` as `root`',
+    '`remove root from .conport.local.json — the root is set by .conport.json`',
+    '`roots is read from .conport.local.json only`',
+    '`npx -y conport@^0.17.0 root path <root>`',
+  ]) {
+    assert.ok(root.includes(needle), `the step for the root does not name ${needle}`)
+  }
+})
+
+test('step 2 passes root to init', () => {
+  // The call carries the root of step 1, and leaves it out without one.
+  assert.match(STEP_2, /^\s*root: "<root>",\s*\/\/ the root of step 1; leave it out when step 1 gives none$/m)
+  const text = flat(STEP_2)
+  // The answer: the roots of the project, the root of the session, and the line of a session without one.
+  assert.match(text, /`roots` \(each `id` and `name`\)/)
+  assert.match(text, /`root` — the root named, or the only root when none was named/)
+  assert.ok(text.includes('`The project has roots …: set root in .conport.json`'), 'step 2 does not quote the line of a session without a root')
+  assert.match(text, /`backlog\.top` keeps the tasks of that root and the tasks without one/)
+  assert.match(text, /debts of that root come first in `arch\.debts`/)
+})
+
+test('the init refusals answer root_not_found with its action', () => {
+  // Step 2 lists the refusal among those of init.
+  assert.match(flat(STEP_2), /Each refusal \([^)]*`root_not_found`[^)]*\) has one prescribed action/)
+  const refusals = flat(between(SKILL, '### Refusals — one action each', '`create_project(name'))
+  const row = refusals.split('| `').find((cell) => cell.startsWith('root_not_found`'))
+  assert.ok(row, 'no refusal row root_not_found')
+  // One action: the root is added from its repository, on the user's word, and init repeated.
+  assert.ok(row.includes('`npx -y conport@^0.17.0 root add <root>`'), 'the row does not add the root')
+  assert.match(row, /only on the user's word/)
+  assert.match(row, /repeat `init`/)
+  assert.match(row, /Do not retry with another root/)
 })
 
 test('step 1 gives agents without hooks the whole file rule', () => {
@@ -59,7 +121,6 @@ test('step 1 gives agents without hooks the whole file rule', () => {
     '`.conport.local.json`',
     '`project_name`',
     '`CONPORT_PROJECT_NAME`',
-    '`~/.config/conport/.env`',
     '`api_key`',
     '`apiKey`',
     '`CONPORT_API_KEY`',
@@ -87,8 +148,14 @@ test('step 1 gives agents without hooks the whole file rule', () => {
   // A file without `project_name` leaves the variable its turn; a wrong one does not.
   assert.match(text, /`project_name` is set but is not a non-empty string \(or carries an API key\)/)
   // An API key in a file is never read and never printed.
-  assert.match(text, /holds an API key: revoke it at https:\/\/me\.conport\.app\/dashboard\/connect, create a new one and keep it in ~\/\.config\/conport\/\.env/)
+  assert.match(text, /holds an API key: revoke it at https:\/\/me\.conport\.app\/dashboard\/connect, create a new one and keep it in ~\/\.config\/conport\/conport\.key/)
   assert.match(text, /never print/i)
+})
+
+test('step 1 says the user config folder holds only keys and reads no .env there', () => {
+  const text = flat(STEP_1)
+  assert.match(text, /The folder `~\/\.config\/conport\/` holds only API keys and never names the project/)
+  assert.doesNotMatch(text, /config\/conport\/\.env/)
 })
 
 test('the skill sends old places to the move document', () => {
@@ -191,13 +258,13 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
   // No CLI before 0.11.0 reads `.conport.json`: a range below it runs on the
   // variable alone, so after the move a recipe loses its project or writes into
   // the project a stale variable names. The onboarding procedure runs `history`,
-  // which comes with 0.15.0, and the other texts run the same range.
+  // which comes with 0.15.0; the texts run the CLI with project roots, 0.17.0.
   const files = {
-    'SKILL.md': '^0.15.0',
-    'references/superpowers-overlay.md': '^0.15.0',
-    'references/command_list.md': '^0.15.0',
-    'references/model-backfill.md': '^0.15.0',
-    'references/project-onboarding.md': '^0.15.0',
+    'SKILL.md': '^0.17.0',
+    'references/superpowers-overlay.md': '^0.17.0',
+    'references/command_list.md': '^0.17.0',
+    'references/model-backfill.md': '^0.17.0',
+    'references/project-onboarding.md': '^0.17.0',
   }
   for (const [name, range] of Object.entries(files)) {
     const body = read(name)
@@ -211,7 +278,30 @@ test('every recipe of the skill runs a CLI that reads .conport.json', () => {
     assert.ok(body.includes(`npx -y conport@${range} `), `${name} runs no npx -y conport@${range}`)
   }
   const fails = flat(read('references/superpowers-overlay.md').split('## When the CLI fails')[1])
-  assert.match(fails, /a `npx -y conport@\^0\.15\.0 …` command fails/)
+  assert.match(fails, /a `npx -y conport@\^0\.17\.0 …` command fails/)
+})
+
+// The entry is the section that quotes the root line, under whatever heading the release gave it.
+test('the changelog names the roots', () => {
+  const entry = flat(sectionWith(read('CHANGELOG.md'), '`ConPort root: <root> (from .conport.json)`'))
+  for (const needle of [
+    '`init` takes `root`',
+    '`roots`',
+    '`root_not_found`',
+    '`project_roots`',
+    '`add_project_root`',
+    '`rename_project_root`',
+    '`remove_project_root`',
+    '88 tools',
+    '`code:<root>:<label>`',
+    '`arch check` in every root',
+    '`npx -y conport@^0.17.0 root path <root>`',
+    '`npx -y conport@^0.17.0 task list --in-root <root>|none`',
+    '*Roots*',
+  ]) {
+    assert.ok(entry.includes(needle), `the roots entry of the changelog does not name ${needle}`)
+  }
+  assert.doesNotMatch(entry, /\b(task|decision|doc|progress)-\d+\b/)
 })
 
 // The entry is the section that links the move document, under whatever heading the release gave it.

@@ -16,7 +16,7 @@ const {
   CONPORT_URL, parseProject, sessionSettings, retiredProjectIdNotice, denyListPath, authHeader,
   request, readStdin, overlaySwitch, oldOverlayFlag, overlayNoticeText, startContext,
 } = require('./_common.js');
-const { projectLine } = require('./project-config.js');
+const { projectLine, rootLine } = require('./project-config.js');
 const { findOldPlaces, oldSettingsLine } = require('./old-settings.js');
 const { budgetMs } = require('./hook-time.js');
 const { toolFacts, toolLines } = require('./tool-setup.js');
@@ -74,11 +74,12 @@ function toolSetupLines(settings) {
 }
 
 // What the session start says about its settings: the project and its
-// source, then the lines of the settings, the line about old places and the
-// lines about the tools.
+// source, the root of this repository, then the lines of the settings, the
+// line about old places and the lines about the tools.
 function settingsLines(settings) {
   return {
     project: projectLine(settings),
+    root: rootLine(settings),
     lines: [...settings.lines, oldPlacesLine(settings), ...toolSetupLines(settings)].filter(Boolean),
   };
 }
@@ -96,10 +97,10 @@ const REENTRY_SOURCES = new Set(['resume', 'clear', 'compact']);
 // unreadable input still gets them: silence there would hide them for good.
 // Nothing to say prints nothing.
 async function tellSession(input, settings) {
-  const { project, lines } = settingsLines(settings);
+  const { project, root, lines } = settingsLines(settings);
   const notice = overlayNotice(settings);
-  const user = REENTRY_SOURCES.has(input.source) ? [] : [retiredProjectIdNotice(), project, ...lines].filter(Boolean);
-  const agent = startContext({ project, lines, notice });
+  const user = REENTRY_SOURCES.has(input.source) ? [] : [retiredProjectIdNotice(), project, root, ...lines].filter(Boolean);
+  const agent = startContext({ project, root, lines, notice });
   if (!user.length && !agent) return;
   const out = JSON.stringify({
     ...(user.length ? { systemMessage: user.join('\n') } : {}),

@@ -95,7 +95,7 @@ function sessionSettings(input, { fresh = false } = {}) {
     const cached = readSettingsCache(id);
     if (cached) return cached;
   }
-  const result = loadSettings({ cwd: sessionRoot(input), env: process.env, home: os.homedir() });
+  const result = loadSettings({ cwd: sessionRoot(input), env: process.env });
   const value = {
     root: result.root, mainRoot: result.mainRoot, project: result.project,
     source: result.source, settings: result.settings, lines: result.lines,
@@ -290,7 +290,7 @@ const OVERLAY_CONFIG = path.join('.superpowers', 'config.json');
 function overlayEnabled(dir) {
   let result;
   try {
-    result = loadSettings({ cwd: dir, env: process.env, home: os.homedir() });
+    result = loadSettings({ cwd: dir, env: process.env });
   } catch (err) {
     if (isForbiddenRoot(err)) throw err;
     return false;
@@ -388,13 +388,14 @@ function moreLinesLine(count) {
     'the user was shown them at the start of the session';
 }
 
-// The agent's start context: the project line first, then the settings lines,
-// then the overlay notice after a blank line. The notice and the project line
-// are always whole; when everything does not fit `budget` bytes, the settings
-// lines from the first one that does not fit on collapse into one line that
-// says how many were left out (the user is shown them all).
-function startContext({ project = null, lines = [], notice = null }, budget = START_CONTEXT_BUDGET) {
-  const head = project ? [project] : [];
+// The agent's start context: the project line first, then the root line, then
+// the settings lines, then the overlay notice after a blank line. The notice,
+// the project line and the root line are always whole; when everything does
+// not fit `budget` bytes, the settings lines from the first one that does not
+// fit on collapse into one line that says how many were left out (the user is
+// shown them all).
+function startContext({ project = null, root = null, lines = [], notice = null }, budget = START_CONTEXT_BUDGET) {
+  const head = [project, root].filter(Boolean);
   const compose = (body) => [body.join('\n'), notice].filter(Boolean).join('\n\n');
   const whole = compose([...head, ...lines]);
   if (utf8Bytes(whole) <= budget) return whole;

@@ -45,7 +45,7 @@ rest of `tasks`.
 |---|---|---|
 | `core` | 23 | The entry points, the answer to the questions of `init`, search, create / get / list / update of tasks, decisions, progress and documents, the journal entry of a task, the members of the project's team, and the update of the active context |
 | `session` | 1 | `init` |
-| `projects` | 2 | Listing and creating projects |
+| `projects` | 6 | Listing and creating projects, and the roots of a project |
 | `tasks` | 11 | Tasks, their dependencies, deleting, tasks in a linked project, the members of the project's team, the task journal |
 | `milestones` | 3 | Roadmap milestones |
 | `agenda` | 1 | The single-call briefing of a routine run |
@@ -72,7 +72,7 @@ To get a tool listed, find it here and add its group to the profile. A tool of
 |---|---|
 | `core` | `init`, `answer_question`, `create_project`, `list_projects`, `search`, `add_task`, `get_task`, `list_tasks`, `update_task`, `list_team_members`, `add_task_journal_entry`, `sync_decision`, `get_decision`, `list_decisions`, `update_decision`, `log_progress`, `list_progress`, `update_progress`, `add_document`, `get_document`, `list_documents`, `update_document`, `update_active_context` |
 | `session` | `init` |
-| `projects` | `list_projects`, `create_project` |
+| `projects` | `list_projects`, `create_project`, `project_roots`, `add_project_root`, `rename_project_root`, `remove_project_root` |
 | `tasks` | `add_task`, `update_task`, `list_tasks`, `get_task`, `delete_task`, `add_task_dep`, `add_linked_task`, `list_team_members`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
 | `milestones` | `add_milestone`, `update_milestone`, `list_milestones` |
 | `agenda` | `get_agenda` |
@@ -101,7 +101,7 @@ the profile of what you run:
 | Skill `conport` | `full` |
 | Skill `conport-routine` | `core,tasks,milestones,agenda,routine` |
 | Skill `conport-roadmap` | `tasks,milestones` |
-| Skill `superpowers-conport` | `core,tasks,milestones,links` |
+| Skill `superpowers-conport` | `core,projects,tasks,milestones,links` |
 | Hooks | `core,tasks,milestones` |
 
 Each profile is the fewest groups that list every tool the files of that part
@@ -111,7 +111,7 @@ row says `full`; loading the skill does not require `full`. The hooks call no
 tool themselves: their profile lists the tools they tell the agent to call and
 the tool calls they watch for. To run several parts on one connection, name the
 groups of all of them together —
-`core,tasks,milestones,links` for the `superpowers-conport` skill with the hooks.
+`core,projects,tasks,milestones,links` for the `superpowers-conport` skill with the hooks.
 
 ## Example: Claude Code
 

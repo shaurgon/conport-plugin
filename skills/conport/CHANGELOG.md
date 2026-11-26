@@ -1,5 +1,84 @@
 # conport changelog
 
+## 27.3.0
+
+**A project of several repositories.** A project may now be made of several
+git repositories — its roots. The session-start hook prints the root of the
+repository beside the project, `ConPort root: <root> (from .conport.json)`
+(`ConPort root: <handle>:<root> (from .conport.json)` when `project_name` is
+the handle), from `root` of `.conport.json` alone; `roots` of
+`.conport.local.json` holds the paths of the other roots on this machine. The
+conport skill passes that root to `init`: `init` takes `root`, answers
+`roots` and the `root` of the session, lists the debts of that root first,
+keeps `backlog.top` to its tasks and the tasks without a root, and refuses a
+root the project does not have with `root_not_found`. The new part *Roots* of
+the skill's *PROJECT MODEL* teaches the three states of a project, the code
+address `code:<root>:<label>`, anchors with `root`, `arch check` in every root
+— its repository found with `npx -y conport@^0.17.0 root path <root>` — the
+debts of a root and the refusals of the roots, each with its one action —
+`invalid_fingerprint` among them, for a `fingerprint` of `add_project_root`
+empty or longer than 64 characters. The MCP server adds the root tools
+`project_roots`, `add_project_root`, `rename_project_root` and
+`remove_project_root` to the profile group `projects`, and lists 88 tools. The backlog rules name
+`npx -y conport@^0.17.0 task list --in-root <root>|none`.
+
+**An anchor names its root.** In a project of several roots a path or a
+symbol anchor of a document portion carries `root` — the root of the project
+it lies in — and is refused `anchor_root_missing` without one; an anchor of a
+code portion takes the root of its source, and one naming another root is
+refused `anchor_root_foreign`. A root the project does not have is refused
+`root_not_found`. `arch_source`, `arch_names`, `arch_entity` and
+`arch_lookup` name the root of each path and symbol anchor, and
+`arch_lookup` takes `root` to look in one root.
+
+**An epic across the roots of a project.** In a project of several roots, the
+conport skill (*Epic in its own branch*) and the Superpowers overlay make the
+branch `epic-<id>` and its worktree in every root that holds tasks of the epic,
+the base of every other root being its default branch; a task works in the
+worktree of its root, and its reviewer compares `BASE` and `HEAD` of that
+repository. The final reviewer and the gap hunter take the list
+`(root, worktree, base)`; the release merges with `--no-ff`, pushes, runs
+`arch check` and removes the branch and its worktree in each root. The
+`superpowers-conport` bridge reads the `**Root:**` line of every task
+section, sends it as the task's `root`, refuses what `plan import` refuses,
+and writes the roots into the execution contract as `plan pull` does; it reads
+the roots with `project_roots`, so its tool profile is now
+`core,projects,tasks,milestones,links`. The `sdd-*` agents say the same.
+
+**The `conport` CLI keeps its key in a file of its own.** The CLI reads its
+API key from `CONPORT_API_KEY`, else from `~/.config/conport/conport.key`
+(`$XDG_CONFIG_HOME/conport/conport.key` when that is set) — a file that holds
+the key alone, one line; a file with more, or with a line that is not a key,
+is refused in one line that says to leave only the key there. The key of the
+`conport-agent` CLI is no longer read. `~/.config/conport/.env` is no longer
+read either: `CONPORT_BASE_URL`, `CONPORT_DOCS_BASE_URL` and
+`CONPORT_OPENAPI_CACHE` come from the environment only. A command run with no
+key of its own while `.env` is there moves the key out of it: it checks the
+key with `GET /api/v1/me`, writes `conport.key` with mode 600, removes
+`.env` and says so in one line on stderr. When `.env` holds other variables
+or two different keys, cannot be read, when the service refuses the key (`401`, `403`) or cannot be reached, nothing
+moves and the command refuses in one line naming what to do. With no key
+anywhere the refusal is
+`CONPORT_API_KEY is not set and ~/.config/conport/conport.key does not exist: put your API key, and only it, in ~/.config/conport/conport.key (issue one at https://me.conport.app/dashboard/connect).`
+The Superpowers overlay, the onboarding, the install guides and the connect
+page of the dashboard say where the key lives.
+
+**Every command runs the CLI with roots.** The skills, the commit guard of
+`check-command.js`, the install guides and the docs now run
+`npx -y conport@^0.17.0` in every command they give: an older CLI sends no
+root, and a project of several roots refuses it with `root_required`.
+
+**The settings read nothing of `~/.config/conport/`.** That folder holds only
+API keys. The session-start hook, the `conport` CLI, the Orca plugin and the
+Herdr mod no longer read `~/.config/conport/.env` to look for
+`CONPORT_PROJECT_NAME`, and the line
+`CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it`
+is gone. A settings file that holds an API key now says to keep the new key in
+`~/.config/conport/conport.key`:
+`<file> holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/conport.key`.
+The conport skill says the same in step 1, and the refusal `no_api_key` of
+Orca and Herdr names `~/.config/conport/conport.key`.
+
 ## 27.2.0
 
 **A task has an assignee.** In a project of a shared team a task, a Bug and an

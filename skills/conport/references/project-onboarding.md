@@ -20,7 +20,7 @@ Eleven steps, in this order:
 | 1. Interview 1 | Up to seven questions in one message | the user | The answers are in the draft |
 | 1a. Earlier records | What the user called no longer valid is marked | you | Everything the user named is marked |
 | 2. Documents | The inventory of the `.md` files of the repository and their upload | you, the user | The inventory is approved and the files are uploaded |
-| 3. Skeleton | `code:<unit>` portions of the code and the anchor check | you | The portions are submitted and the check ran |
+| 3. Skeleton | `code:<unit>` portions of the code of the session's repository (`code:<root>:<unit>` in a project of several roots) and the anchor check | you | The portions are submitted and the check ran |
 | 4. History | The stages of git and a retelling of each | you | The retelling of every stage is in the draft |
 | 5. Interview 2 | The questions the history left open | the user | The answers are in the draft |
 | 6. Approval | The whole draft: context, overview, chronicle, decisions | the user | Approved by the user's word |
@@ -47,7 +47,7 @@ Eleven steps, in this order:
   until it is `completed`, a declined one included. After `completed` there is
   no second onboarding: the project is worked on like any other.
 - **Every step that writes** names the MCP call and the form of the CLI
-  (`npx -y conport@^0.15.0 api …`), so an agent without the MCP server runs it
+  (`npx -y conport@^0.17.0 api …`), so an agent without the MCP server runs it
   too.
 - **The user approves** what a step asks to approve, by their word in the
   session.
@@ -57,7 +57,7 @@ Eleven steps, in this order:
 1. **The project.** No `.conport.json`, or `init` answers `project_not_found`:
    with the user's consent create the project with
    `create_project(name, description?)`, or
-   `npx -y conport@^0.15.0 api projects create --name <name>` (with
+   `npx -y conport@^0.17.0 api projects create --name <name>` (with
    `--team-id <team ID>` for a shared team) — by the user's word — write its
    handle into `project_name` of `.conport.json` and go on. A refusal `project_limit_reached` has one
    action: `change the plan or free a project`.
@@ -70,17 +70,17 @@ Eleven steps, in this order:
    product context, and the offer goes away by itself.
 3. **The CLI.** Read the state of the onboarding,
    `GET /api/v1/projects/{project}/onboarding`, with
-   `npx -y conport@^0.15.0 api arch onboarding --project <project>` (the name
-   of the operation is the one `npx -y conport@^0.15.0 api --help` builds from
+   `npx -y conport@^0.17.0 api arch onboarding --project <project>` (the name
+   of the operation is the one `npx -y conport@^0.17.0 api --help` builds from
    the server). No Node.js or no key gives one action:
-   `put CONPORT_API_KEY in the environment or in ~/.config/conport/.env`. The
+   `put your API key, and only it, in ~/.config/conport/conport.key`. The
    CLI does not see the key of the plugin of Claude Code.
 4. **Advice that blocks nothing.** No `plugins.superpowers` in
    `.conport.json` — offer to turn the Superpowers overlay on; no `codegraph`
    index of the repository — offer to build it. One action each; the
    onboarding goes on whatever the user answers.
 5. **The state.** `project_onboarding(project, state='in_progress')`, or
-   `npx -y conport@^0.15.0 api arch onboarding-put --project <project> --state in_progress`.
+   `npx -y conport@^0.17.0 api arch onboarding-put --project <project> --state in_progress`.
    It makes you the lead.
 6. **The draft.** Create `.conport/onboarding/draft.md` (*Draft and resume*)
    and write the step into it.
@@ -97,7 +97,8 @@ One message, at most seven questions, in the user's language:
 4. From when is the history of interest? The date becomes `--since` of step 4.
 5. Documents outside the repository: where are they? A `.md` file the user
    hands over goes into the inventory of step 2.
-6. Other repositories of the product (*Several repositories*).
+6. Other repositories of the product, and the separate products this one
+   works with (*Several repositories*).
 7. What is in progress now?
 
 Write the answers into the draft. A question the user skips stays open; do not
@@ -108,10 +109,10 @@ answer it yourself.
 What the user called no longer valid is marked, nothing is deleted:
 
 - a decision — `deprecate_decision(project, decision_id, reason=<the user's words>)`,
-  or `npx -y conport@^0.15.0 api decisions deprecate --project <project> --decision_id <N> --reason <the user's words>`;
+  or `npx -y conport@^0.17.0 api decisions deprecate --project <project> --decision_id <N> --reason <the user's words>`;
 - a document — the status `archived`:
   `update_document(project, document_id, status='archived')`, or
-  `npx -y conport@^0.15.0 api documents replace --project <project> --document_id <N> --status archived`.
+  `npx -y conport@^0.17.0 api documents replace --project <project> --document_id <N> --status archived`.
 
 Progress entries are not changed. Write what you marked into the draft; the
 summary names it.
@@ -123,7 +124,7 @@ ConPort is its copy as of the upload. A file changed after its upload is not
 uploaded again — its title is taken, and the CLI refuses another body under
 it. Renew the document in place with the file's body:
 `update_document(project, document_id, content=<the file's body>)`, or
-`npx -y conport@^0.15.0 api documents replace --project <project> --document_id <N> --content "$(cat '<file>')"`.
+`npx -y conport@^0.17.0 api documents replace --project <project> --document_id <N> --content "$(cat '<file>')"`.
 A `spec` is renewed as an amendment with its reason: add
 `--change_kind amend --reason '<why>'`, or pass `change_kind='amend'` and
 `reason` to `update_document` (live docs `projects/spec-append-only`). A file
@@ -148,31 +149,34 @@ into the inventory of the backfill (step 8) as it is. The user approves the
 inventory by their word, as a whole or after rows are edited.
 
 **The upload**, file by file:
-`npx -y conport@^0.15.0 documents upload <file> --doc-type <type> --title <title> --created-at <date>`.
+`npx -y conport@^0.17.0 documents upload <file> --doc-type <type> --title <title> --created-at <date>`.
 No `.md` file in the repository and none handed over: the step is empty. Write the number
 of each uploaded document into the draft.
 
 ## Step 3. Skeleton
 
-Step 1 of `references/model-backfill.md`, run here:
-`npx -y conport@^0.15.0 arch suggest --json` proposes the units, a
-`code:<unit>` portion is submitted for each unit, and
-`npx -y conport@^0.15.0 arch check` runs in the repository root after them.
-The step is skipped only when a decision of the project itself keeps the code
-out of the model and the user called it valid in interview 1 (*Several
-repositories*); the draft says so.
+Step 1 of `references/model-backfill.md`, run here in the repository of the
+session: `npx -y conport@^0.17.0 arch suggest --json` proposes the units, a
+`code:<unit>` portion is submitted for each unit — `code:<root>:<unit>` in a
+project of several roots, `<root>` the root of the session — and
+`npx -y conport@^0.17.0 arch check` runs in the repository root after them.
+Every other root of the product gets its skeleton in its own repository when
+it is attached (*Attaching a root*). The step is skipped only when a decision
+of the project itself keeps the code out of the model for a reason other than
+the several repositories of the product, and the user called it valid in
+interview 1; the draft says so.
 
 ## Step 4. History
 
 **The table of contents.** Take the tip of the main branch:
 `git symbolic-ref refs/remotes/origin/HEAD`, without a remote `main` or
 `master`. Work not merged into it is not part of the chronicle. Run
-`npx -y conport@^0.15.0 history --to <tip of the main branch> --json`, with
+`npx -y conport@^0.17.0 history --to <tip of the main branch> --json`, with
 `--since <YYYY-MM-DD>` and `--ignore <path>` (as many as needed) from
 interview 1. The answer lists the stages and prints the full hash `to`. Write
 the arguments and the table into the draft and to the server:
 `project_onboarding(project, state='in_progress', history={to, since, ignore})`,
-or `npx -y conport@^0.15.0 api arch onboarding-put --project <project> --state in_progress --history '{"to": "<to>", "since": <since>, "ignore": <ignore>}'`,
+or `npx -y conport@^0.17.0 api arch onboarding-put --project <project> --state in_progress --history '{"to": "<to>", "since": <since>, "ignore": <ignore>}'`,
 where `<since>` is the date of `--since` in quotes (`null` without it) and
 `<ignore>` is the list of the paths of `--ignore` (`[]` without them) — the
 arguments exactly as the table was read with, so a resume on another machine
@@ -183,7 +187,7 @@ messages and warn that the model of your agent reads the commit messages
 (*Cost*).
 
 **Each stage.** Run
-`npx -y conport@^0.15.0 history --stage N --to <to> --json` for N from 1 to
+`npx -y conport@^0.17.0 history --stage N --to <to> --json` for N from 1 to
 the last, with the same `--to`, `--since` and `--ignore` on every call, so new
 commits between sessions do not move the stages. The summary of a stage gives
 its dates, units, hot areas, the folders that appeared and went, the tags and
@@ -227,12 +231,12 @@ One progress entry per stage. Its title is
 changed and why, the units, the range of hashes `first..last` and the tags.
 The entries go in batches of up to 100 —
 `POST /api/v1/projects/{project}/batch/progress`, run as
-`npx -y conport@^0.15.0 api batch progress --project <project> --items '<json array>'`
+`npx -y conport@^0.17.0 api batch progress --project <project> --items '<json array>'`
 with `title`, `description` and `created_at` of each entry. The MCP tool
 `log_progress(project, description, title)` writes an entry without a past
 date: use it only when the CLI cannot run. Each entry is linked to the entities
 of its units: `link_items(project, source_type='progress', source_id=<N>, target_type='entity', target_id=<entity>, relationship='mentions')`,
-or `npx -y conport@^0.15.0 api links create --project <project> --source_type progress --source_id <N> --target_type entity --target_id <entity> --link_type mentions`.
+or `npx -y conport@^0.17.0 api links create --project <project> --source_type progress --source_id <N> --target_type entity --target_id <entity> --link_type mentions`.
 
 ### The decisions
 
@@ -243,15 +247,15 @@ or `npx -y conport@^0.15.0 api links create --project <project> --source_type pr
   is in the history) or `from-owner` (the user gave it in interview 2).
 - In batches of up to 100, with the `created_at` of the stage where the
   choice shows — `POST /api/v1/projects/{project}/batch/decisions`, run as
-  `npx -y conport@^0.15.0 api batch decisions --project <project> --items '<json array>'`.
+  `npx -y conport@^0.17.0 api batch decisions --project <project> --items '<json array>'`.
   The MCP tool `sync_decision(project, summary, rationale, tags)` writes one
   without a past date: use it only when the CLI cannot run.
 - A decision cancelled by a later stage or by the user is deprecated after it
   is written — `deprecate_decision(project, decision_id, reason)` or
-  `npx -y conport@^0.15.0 api decisions deprecate --project <project> --decision_id <N> --reason <reason>` —
+  `npx -y conport@^0.17.0 api decisions deprecate --project <project> --decision_id <N> --reason <reason>` —
   and the newer one is linked to it with `supersedes`:
   `link_items(project, source_type='decision', source_id=<new>, target_type='decision', target_id=<old>, relationship='supersedes')`,
-  or `npx -y conport@^0.15.0 api links create --project <project> --source_type decision --source_id <new> --target_type decision --target_id <old> --link_type supersedes`.
+  or `npx -y conport@^0.17.0 api links create --project <project> --source_type decision --source_id <new> --target_type decision --target_id <old> --link_type supersedes`.
 - After they are written, attach them to the entities of the model:
   `update_decision(project, decision_id, entities=[<names>])`. Without the
   MCP server, step 8 attaches them through the portion of the result (the
@@ -270,31 +274,33 @@ today, with five sections:
 3. **How it developed** — briefly, stage by stage, with links
    `[[progress-N]]` to the entries of the chronicle.
 4. **What is in progress now.**
-5. **Neighbouring repositories of the product** — with links to their
-   projects (*Several repositories*).
+5. **The roots and the neighbouring products** — the roots of the project,
+   each with its repository, and the linked projects of the separate products
+   (*Several repositories*).
 
 It is written after the chronicle, so section 3 carries the numbers of the
 written entries:
 `add_document(project, title, content, doc_type='architecture')`, or
-`npx -y conport@^0.15.0 documents upload <file> --doc-type architecture --title "Project overview <name>"`
+`npx -y conport@^0.17.0 documents upload <file> --doc-type architecture --title "Project overview <name>"`
 from a file kept next to the draft. Each document uploaded in step 2 is linked
 from the overview with `references`:
 `link_items(project, source_type='doc', source_id=<overview>, target_type='doc', target_id=<N>, relationship='references')`,
-or `npx -y conport@^0.15.0 api links create --project <project> --source_type doc --source_id <overview> --target_type doc --target_id <N> --link_type references`.
+or `npx -y conport@^0.17.0 api links create --project <project> --source_type doc --source_id <overview> --target_type doc --target_id <N> --link_type references`.
 
 ### The contexts
 
 - **The product context** — one request,
   `PATCH /api/v1/projects/{project}/context/product`:
-  `npx -y conport@^0.15.0 api context update --project <project> --context_type product --patch '{"vision": "…", "tech_stack": "…", "target_users": "…", "goals": "…"}'`.
+  `npx -y conport@^0.17.0 api context update --project <project> --context_type product --patch '{"vision": "…", "tech_stack": "…", "target_users": "…", "goals": "…"}'`.
   A field nothing told is not written: not the code, not the README, not the
   interviews. The MCP tool `update_product_context(project, field, value)`
   writes one field per call and takes `vision`, `goals`, `features`,
   `architecture`, `tech_stack` and `constraints` only.
 - **The active context** — the answer "what is in progress now":
   `update_active_context(project, field='current_focus', value=<answer>)`, or
-  `npx -y conport@^0.15.0 api context update --project <project> --context_type active --patch '{"current_focus": "…"}'`.
-- **The neighbours** — `link_project` by *Several repositories*.
+  `npx -y conport@^0.17.0 api context update --project <project> --context_type active --patch '{"current_focus": "…"}'`.
+- **The neighbouring products** — `link_project` for the separate products,
+  by *Several repositories*.
 
 ## Step 8. Model from the documents
 
@@ -309,11 +315,11 @@ fills it.
 ## Step 9. Summary
 
 1. **The mark** `onboarded_at` — a second request to the product context,
-   `npx -y conport@^0.15.0 api context update --project <project> --context_type product --patch '{"onboarded_at": "<YYYY-MM-DD>"}'`.
+   `npx -y conport@^0.17.0 api context update --project <project> --context_type product --patch '{"onboarded_at": "<YYYY-MM-DD>"}'`.
    No MCP tool writes this field: `update_product_context(project, field, value)`
    takes only the fields named in step 7.
 2. **The state.** `project_onboarding(project, state='completed')`, or
-   `npx -y conport@^0.15.0 api arch onboarding-put --project <project> --state completed`.
+   `npx -y conport@^0.17.0 api arch onboarding-put --project <project> --state completed`.
    A refusal `onboarding_not_ready` names in `blockers` what is left
    (*Refusals*).
 3. **The report** to the user, part by part: the product context and the
@@ -321,8 +327,9 @@ fills it.
    with the dates of its stages; the decisions, those marked deprecated
    among them, and the earlier records marked in step 1a; the documents with
    their dates and roles; the stages written with hashes the history no
-   longer has; one action per neighbouring repository (*Several
-   repositories*).
+   longer has; one action per repository of the product that is not a root
+   yet, `attach <repository> as the root <name> of this project`, and one per
+   separate product not connected yet (*Several repositories*).
 4. **The draft.** The summary deletes the draft and its folder.
 
 ## Draft and resume
@@ -356,14 +363,14 @@ fills it.
 
 - **The user declines the offer** —
   `project_onboarding(project, state='declined')`, or
-  `npx -y conport@^0.15.0 api arch onboarding-put --project <project> --state declined`.
+  `npx -y conport@^0.17.0 api arch onboarding-put --project <project> --state declined`.
   The offer is not shown again; an explicit start is still allowed.
 - **The user stops in the middle** without a rollback — the state `declined`
   the same way; what is written stays.
 - **The rollback** runs only on the user's word and only before `completed`,
   never as a step of your own; no refusal prescribes it. Delete what was
   written by the numbers of the draft, run
-  `npx -y conport@^0.15.0 arch withdraw --all --apply` (without `--apply` it
+  `npx -y conport@^0.17.0 arch withdraw --all --apply` (without `--apply` it
   only shows what it would remove), and set the state `declined`. After
   `completed`, what is not wanted is deleted by the ordinary means, as in any
   project.
@@ -388,27 +395,67 @@ procedure there: it needs the interviews.
 
 ## Several repositories
 
-One repository is one project of ConPort. Interview 1 asks for the other
-repositories of the product; the submodules of the repository are other
-repositories too.
+The repositories of one product are one project of ConPort, each of them a
+root of it: one backlog, one roadmap, one model, and the code part of the
+model kept apart for each repository (live docs `projects/project-settings`).
+Separate products, related by an idea but not by one backlog, are separate
+projects linked with `link_project`. Interview 1 asks for the other
+repositories of the product and for the products this one works with; the
+submodules of the repository are other repositories too.
 
-- **Already connected in the same team** — `link_project(project, target_project, link_type)`
-  with the fitting type (`part_of`, `calls`, `shares_data`, `depends_on`), or
+- **Another repository of the same product** is a new root of this project:
+  it needs no project of its own and no other plan. A project without roots
+  first names the repository of the session:
+  `npx -y conport@^0.17.0 root add <root of the session>` run in it, with
+  `--adopt` when the model already has `code:` portions (the command prints
+  the labels and the number of anchors the root takes over, and runs only
+  with the flag), and `"root": "<root of the session>"` into its
+  `.conport.json`. Then the other repository: `"root": "<name>"` into the
+  `.conport.json` of that repository, beside the same `project_name`;
+  `npx -y conport@^0.17.0 root add <name>` run in that repository; and the
+  skeleton of its code, `code:<name>:<unit>` portions and the anchor check
+  there (*Attaching a root*). Where it lies on this machine goes into `roots`
+  of `.conport.local.json`: `npx -y conport@^0.17.0 root path <name> --save`.
+- **A separate product already connected in the same team** —
+  `link_project(project, target_project, link_type)` with the fitting type
+  (`part_of`, `calls`, `shares_data`, `depends_on`), or
   `POST /api/v1/projects/{project}/project-links` with `target_project` and
-  `link_type` through `npx -y conport@^0.15.0 api` (its `--help` lists the
+  `link_type` through `npx -y conport@^0.17.0 api` (its `--help` lists the
   resource and the operation of that route), and section 5 of the overview
   links to its project.
-- **Not connected yet** — the summary gives one action:
-  `connect <repository> the same way and link the projects`. On the plan
-  `free` a second project needs another plan, and the summary says so.
+- **A separate product not connected yet** — the summary gives one action:
+  `connect <product> the same way and link the projects`.
 - **A project that already holds several repositories** (another repository
   names the same project in its `.conport.json`) is not split by the
   onboarding: the skeleton and the history are taken from the repository of
-  the session. The summary names each other repository with the action
-  `create a project of its own for the repository <name>, set it in .conport.json of that repository, connect it and link the projects`.
-  A decision of the project itself that keeps the code out of the model goes
-  to the user in interview 1: valid — step 3 is skipped and the draft says so;
-  not valid — it is deprecated by step 1a.
+  the session, and every other repository becomes a root of the project — the
+  summary names each with the action
+  `attach <repository> as the root <name> of this project`. A decision of the
+  project itself that keeps the code out of the model because the project
+  holds several repositories goes to the user in interview 1: the roots
+  replace it, and on the user's word it is deprecated by step 1a.
+
+### Attaching a root
+
+A repository of the product that is not a root yet joins a connected project
+— after the summary of its onboarding, or at any time later — in that
+repository, with a draft of its own (`.conport/onboarding/draft.md` there):
+
+1. **The root**, as *Another repository of the same product* above says.
+2. **The skeleton** of its code: step 3 run in that repository,
+   `code:<name>:<unit>` portions and `npx -y conport@^0.17.0 arch check`
+   there.
+3. **The history** of that repository: steps 4 to 7 for its chronicle and its
+   decisions — the stages, the retellings, the approval and the writing. The
+   server takes `history` only while the onboarding is `in_progress`, and
+   `completed` stays `completed`: the arguments of the history (`--to`,
+   `--since`, `--ignore`) are kept in the draft of that repository alone,
+   and `project_onboarding` is not called. Section 5 of the overview names
+   the new root: renew the overview in place,
+   `update_document(project, document_id, content=<the overview>)`, or
+   `npx -y conport@^0.17.0 api documents replace --project <project> --document_id <N> --content "$(cat '<file>')"`.
+4. **The report** to the user: the root, its skeleton and the stages of its
+   chronicle. The draft is deleted.
 
 ## Refusals
 

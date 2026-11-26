@@ -318,10 +318,10 @@ function refusal(root, rel) {
   const file = shellWord(path.join(root, rel));
   if (rel.startsWith(`${PLANS_DIR}/`)) {
     return `BLOCKED: ${file} is a new Superpowers plan, and with the ConPort overlay on plans live in ConPort: ` +
-      `run \`npx -y conport@^0.15.0 plan import ${file} --spec doc-N --milestone <id>\` with doc-N the plan's spec and <id> the milestone of the epic the import creates, then remove the file.`;
+      `run \`npx -y conport@^0.17.0 plan import ${file} --spec doc-N --milestone <id>\` with doc-N the plan's spec and <id> the milestone of the epic the import creates, then remove the file.`;
   }
   return `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.15.0 documents upload ${file} --doc-type spec --tags awaiting-plan\`, then remove the file.`;
+    `run \`npx -y conport@^0.17.0 documents upload ${file} --doc-type spec --tags awaiting-plan\`, then remove the file.`;
 }
 
 // The refusal for a command that commits a new spec or plan with the overlay

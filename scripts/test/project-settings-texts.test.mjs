@@ -136,18 +136,18 @@ test('finish compares the sidecar with the project of the settings, not with the
   assert.match(resolve, /`ConPort project:/)
 })
 
-test('every npx conport recipe names ^0.15.0', () => {
+test('every npx conport recipe names ^0.17.0', () => {
   const wrong = []
   let seen = 0
   for (const name of REWRITTEN) {
     for (const found of text(name).matchAll(/npx(?: -y)? conport(?![\w-])(?:@[^\s`'"]+)?/g)) {
       seen += 1
-      if (found[0] !== 'npx -y conport@^0.15.0') wrong.push(`${name}: ${found[0]}`)
+      if (found[0] !== 'npx -y conport@^0.17.0') wrong.push(`${name}: ${found[0]}`)
     }
   }
   assert.ok(seen > 0, 'no npx conport recipe was read')
   assert.deepEqual(wrong, [])
-  const recipe = 'npx -y conport@^0.15.0 api tasks list --project <project_name from .conport.json>'
+  const recipe = 'npx -y conport@^0.17.0 api tasks list --project <project_name from .conport.json>'
   for (const name of ['INSTALL.md', 'docs/install/other-agents.md']) {
     assert.ok(text(name).includes(recipe), `${name} does not show ${recipe}`)
   }

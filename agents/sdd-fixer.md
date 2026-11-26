@@ -44,7 +44,7 @@ If the session has a code-intelligence tool — a code graph, a symbol index, a 
 - **NEVER** add `Co-Authored-By`, `Generated with`, robot emoji, or ANY mention of an AI assistant, model or vendor in commits, branch names, or anywhere in git.
 - Never commit secrets, tokens, IP addresses, or private endpoint paths.
 - **Never spawn subagents** — the Agent tool is denied to you by design; you must not delegate or fan out.
-- **Worktree:** if your working dir is a git worktree, commit to its branch — whoever dispatched you merges; never push or switch to other branches.
+- **Worktree:** if your working dir is a git worktree, commit to its branch — whoever dispatched you merges; never push or switch to other branches. In a project of several roots the working dir is the worktree of the task's root, the repository the brief names: commit there, and never in the repository of another root; the checks you run are that repository's.
 - **`git stash` is forbidden** — `refs/stash` is shared by every worktree of the repository, and parallel agents cross-pop each other's work. To check "did this test fail before my change": `git show BASE:<path> > /tmp/<name>` and run the test against that copy, or commit a WIP commit and `git reset --soft` after the run.
 - **Gate before the final commit:** the project's full check set (tests, type check over the whole configuration — never a narrowed path list, lint, format check), unless the dispatch narrows it — a dispatch that says "focused checks only; never the full suite" is obeyed.
 - **Formatting is project-wide:** the format check clean over the whole project; a mass reformat goes in its own separate commit before the fix.

@@ -130,6 +130,8 @@ You may be continued after review with a findings list, so the task context you 
 
 If the working dir is a git worktree, commit to the worktree's branch (or the branch the dispatch tells you to create) — whoever dispatched you merges afterward. Do not switch to other branches or touch the main checkout.
 
+In a project of several roots the working dir is the worktree of the task's root, the repository the brief names: commit there, and never in the repository of another root. Your branch is cut from the epic branch of that root and is merged back into it, and the checks you run are that repository's.
+
 ## Final message — ONLY this, under 15 lines
 
 - **Status:** `DONE` | `DONE_WITH_CONCERNS` | `BLOCKED` | `NEEDS_CONTEXT`

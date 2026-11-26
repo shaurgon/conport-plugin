@@ -2,7 +2,7 @@
 name: conport
 description: "Use when managing project context - task planning, progress tracking, documentation, searching project information. Must run init at session start."
 metadata:
-  version: 27.2.0
+  version: 27.3.0
 ---
 
 # ConPort — Project Management System
@@ -39,8 +39,8 @@ The project name is written down explicitly, in this order and nowhere else:
    `project_name`.
 
 Never derive the name from the repository, the working directory or a guess.
-`CONPORT_PROJECT_NAME` in `~/.config/conport/.env` is never read: that file
-belongs to every repository of the user.
+The folder `~/.config/conport/` holds only API keys and never names the
+project: it belongs to every repository of the user.
 
 `.conport.json` is committed and shared by the team; `.conport.local.json` is
 the personal override, kept in `.gitignore`:
@@ -92,6 +92,17 @@ the action only with their consent:
   their consent. When the user declines, set the key to `false` (in
   `.conport.local.json` for one person or one working tree, in `.conport.json`
   for the team): the line is not said again.
+- `remove root from .conport.local.json — the root is set by .conport.json` —
+  the root is a property of the repository: move the key into `.conport.json`.
+- `roots is read from .conport.local.json only` — `roots` holds the paths of
+  the other roots on this machine: move the key into `.conport.local.json`.
+
+**The root line.** When `.conport.json` sets `root` — in a project with one
+root as with several — the hook prints a second line, `ConPort root: <root> (from .conport.json)` —
+`ConPort root: <handle>:<root> (from .conport.json)` when `project_name` is
+the handle. The root is the name after `<handle>:`; pass it to `init` as
+`root` (*Step 2*). No `ConPort root:` line — call `init` without `root`. The
+root is read from `.conport.json` alone (*Roots* under *PROJECT MODEL*).
 
 `CONPORT_PROJECT_ID` is no longer read. While it is set, the session-start hook
 shows the user the line
@@ -121,13 +132,12 @@ yourself before `init`:
 4. **No API key from the files.** A key named `api_key`, `apiKey` or
    `CONPORT_API_KEY` (any case, any level) and any string starting with
    `cport_` are never read and never printed. Tell the user
-   `<file> holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env`.
+   `<file> holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/conport.key`.
 5. **The name.** `project_name` of `.conport.local.json` over `.conport.json`,
    trimmed. `CONPORT_PROJECT_NAME` of your process (trimmed; blank is unset) is
-   read only when neither file sets `project_name`; `CONPORT_PROJECT_NAME` in
-   `~/.config/conport/.env` is never read. From the personal file only
-   `project_name`, `plugins.superpowers` and `plugins.codegraph` are read;
-   `arch` and `units` are read from `.conport.json` only. No ConPort component
+   read only when neither file sets `project_name`. From the personal file only
+   `project_name`, `plugins.superpowers`, `plugins.codegraph` and `roots` are
+   read; `arch`, `units` and `root` are read from `.conport.json` only. No ConPort component
    acts on `units`; a project's own release tools may read it.
 6. **Old places.** Look at the root for `env.CONPORT_PROJECT_NAME` in
    `.claude/settings.local.json` or `.claude/settings.json` and the key
@@ -155,6 +165,19 @@ yourself before `init`:
    *Superpowers overlay* below). When the user declines, set the key to `false`
    in `.conport.json` (in `.conport.local.json` for one person or one working
    tree) and do not ask again.
+9. **The root of the session.** `root` of `.conport.json` names this
+   repository among the roots of the project (*Roots* under *PROJECT MODEL*):
+   pass it to `init` as `root`. Without it, call `init` without `root`. A
+   value that is not a root name is a line to the user,
+   `.conport.json: root must be a root name: lower-case letters, digits and -, up to 32 characters, not none — fix it`,
+   and `init` goes without `root`. A `root` in `.conport.local.json` is not
+   read: tell the user
+   `remove root from .conport.local.json — the root is set by .conport.json`.
+   `roots` of `.conport.local.json` — `{"<root>": "<path>"}`, a path absolute
+   or relative to the folder of that file — holds the paths of the other roots
+   on this machine, which `npx -y conport@^0.17.0 root path <root>` reads;
+   `roots` in `.conport.json` is not read: tell the user
+   `roots is read from .conport.local.json only`.
 
 **Claude.ai Chat** — there are no settings files; the user names the
 project (its handle, `<project>`, or `k7m2qx9d/<project>` for a team's project).
@@ -167,7 +190,8 @@ mcp__conport__init({
   name: "<project_name>",  // the name of step 1 exactly as set, team ID included
   skill_id: "conport",
   skill_version: "<metadata.version from this SKILL.md frontmatter>",  // substitute the real value; never send this placeholder
-  client_type: "claude-code"  // or claude-ai / cursor / codex
+  client_type: "claude-code",  // or claude-ai / cursor / codex
+  root: "<root>",  // the root of step 1; leave it out when step 1 gives none
 })
 ```
 
@@ -180,9 +204,21 @@ handed to a run that cannot ask it is lost — handed out twice without an
 answer, it is settled by its default. When you dispatch a subagent that works
 with ConPort, tell it to call `init(questions=false)`.
 
+**The root of the session** is the repository the session works in, by its
+name among the roots of the project (*PROJECT MODEL → Roots*). In a project
+with roots the answer carries `roots` (each `id` and `name`) and `root` — the
+root named, or the only root when none was named; a project without roots
+carries neither key. With `root` the debts of that root come first in
+`arch.debts` and `backlog.top` keeps the tasks of that root and the tasks
+without one. A project of several roots called without `root` is loaded
+without a `root`, and `instructions` carries
+`The project has roots …: set root in .conport.json` — tell the user to set
+`root` in `.conport.json` of this repository to the name of its root: until
+then the CLI sends no code call (`arch check`, a code portion) from it.
+
 `init` only finds a project — it never creates one. Each refusal
 (`project_not_found`, `project_name_in_other_team`, `team_not_found`,
-`invalid_project_name`) has one prescribed action — see *TEAMS → Refusals* below. Do not answer a refusal by
+`invalid_project_name`, `root_not_found`) has one prescribed action — see *TEAMS → Refusals* below. Do not answer a refusal by
 trying another name.
 
 ### After init — MANDATORY:
@@ -196,7 +232,7 @@ trying another name.
 5. **If the response carries `questions`** — ask them before starting the user's work. See *Questions from init* below.
 6. **If `onboarding.offer` is true** — the project is not onboarded: no product context (or an empty one) and no portion of the model, whatever decisions, progress entries, documents and tasks it already has. A repository with history is connected by the onboarding procedure `references/project-onboarding.md`; a folder outside git or a repository with almost no history gets the first fill `references/bootstrap.md` instead (the procedure's step 0 tells which). Only a session with a person gets the line in `instructions` that offers it: show the offer once, and call `project_onboarding(project, state='declined')` only after the user declines it. The key `onboarding` (`state`, `offer`, `lead_is_caller`) comes whenever its `state` is not `not_started` or `offer` is true. While `state` is `in_progress`, the line for the lead (`lead_is_caller` true) says to resume the procedure from the step its draft names; the line for another member says not to start a second one and to take it over only on the user's word. A routine or a subagent (`questions=false`) gets the key alone and never starts the procedure. An empty project is one that was created explicitly: `init` does not create projects, so a missing name is refused with `project_not_found` instead of showing up here as a new, empty one.
 
-   **An agent without the MCP server** (only this skill and the `conport` CLI) gets no `init`: at the start of the session it reads `GET /api/v1/projects/{project}/onboarding` with `npx -y conport@^0.15.0 api arch onboarding --project <project>` and, when `offer` is true, offers the onboarding the same way.
+   **An agent without the MCP server** (only this skill and the `conport` CLI) gets no `init`: at the start of the session it reads `GET /api/v1/projects/{project}/onboarding` with `npx -y conport@^0.17.0 api arch onboarding --project <project>` and, when `offer` is true, offers the onboarding the same way.
 7. **If `routine_suggestion` is present in the response** — surface it to the user and offer to accept (`set_routine_config(...)`, e.g. with the `suggested_config`) or dismiss permanently (`set_routine_config(enabled=false)`).
 8. **If `skill_update_available` is present in the response** — emit ONE short notice at the very start of your first reply (after the `[CONPORT]` line). Format:
 
@@ -322,6 +358,7 @@ a different project for every user — a team's repository must carry the team I
 | `invalid_team_id` | The team was named by something that is not a team ID: a team's display name, a wrong-case `PERS`, or any other string in the name prefix or in `team`. | Use the short team ID from the team's settings page (for example `k7m2qx9d`) or `pers`. If it came from `project_name` of `.conport.json` (or `CONPORT_PROJECT_NAME`), ask the user to correct it there. Do not retry with a name of your own. |
 | `team_context_conflict` | Two parts of one call name two different teams of the user (for example the name prefix and the `team` argument). | Name the team once and repeat the call. |
 | `cross_team_link_not_supported` | A link or a linked task was requested between projects of two different teams. | Tell the user it is not supported. Do not retry. |
+| `root_not_found` | The `root` passed to `init` is not a root of the project: `root` of `.conport.json` is none of the roots `project_roots` lists. Nothing was loaded. | Tell the user, and add the root — `npx -y conport@^0.17.0 root add <root>` in the repository of that root — only on the user's word; then repeat `init`. Do not retry with another root. |
 
 `create_project(name, description?)` takes the same name forms as `init` and
 creates the project in the team the name points at. It is called on the user's
@@ -530,6 +567,22 @@ that worktree, not in the main checkout.
   command.
 - **No workarounds:** never push from a worktree into main, never override
   `core.hooksPath`, never script around the sandbox.
+- **An epic across roots.** In a project of several roots, each a git
+  repository of its own, the branch `epic-<id>` is made only in the roots that
+  hold tasks of the epic, each in a worktree of its own. The orchestrator works
+  in the branch of its own root (the `--worktree` and `--base` of
+  `npx -y conport@^0.17.0 prompt epic`), finds the repository of every other root
+  with `npx -y conport@^0.17.0 root path <root>` and adds the branch there, cut
+  from that root's default branch; a refusal `root_path_unknown` is a question
+  to the person. A task works in the worktree of its root (`root` of the
+  task): its branch is cut from `epic-<id>` of that root, its reviewer compares
+  `BASE` and `HEAD` of that repository, and it merges into `epic-<id>` of that
+  root after the checks of that repository; the final reviewer and the gap
+  hunter take the list `(root, worktree, base)` of every root of the epic.
+  Release, root by root: in each root, `git merge --no-ff epic-<id>` into its
+  base and its own push, in the order the plan of the epic gives; then
+  `npx -y conport@^0.17.0 arch check` in each root; then, in each root, the branch
+  `epic-<id>` deleted, locally and on the server, and its worktree removed.
 
 ConPort does not track git — this is a rule of the skill, not a server check.
 
@@ -668,6 +721,7 @@ return it in the `roadmap` section.
 | "What was decided about Y?" | `search` by topic |
 | "What replaced X?" / a removed or replaced part of the project model | `search` with `include_removed=true` (see *PROJECT MODEL → Search through the model*) |
 | "Which projects do I own?" / bootstrapping without a known project handle | `list_projects` |
+| "Which repositories is this project made of?" / add, rename or remove one | `project_roots`, `add_project_root`, `rename_project_root`, `remove_project_root` (from a repository the CLI `conport root` commands send its fingerprint) |
 
 ### Sync
 
@@ -869,7 +923,8 @@ dashboard draws its views from it. The model is made of **portions**: what one
 source says about the system. A source is a `spec` or `architecture`
 document (`doc-N`), a document of any type the backfill inventory gave the
 role `structure` or `history`, or a part of the code (`code:<label>`, as many
-labels as you need); a document with the role `none` is never a source. A new
+labels as you need; `code:<root>:<label>` in a project of several roots —
+*Roots* below); a document with the role `none` is never a source. A new
 submission of a source replaces its earlier portion as a whole and leaves the
 other sources alone. A portion also carries the **scenarios** of its source —
 how the system behaves, drawn from entities of the model: see *Scenarios*
@@ -883,16 +938,16 @@ below.
 | The whole model at once, with the decisions bound to its entities | `arch_get` with `view='graph'` (no other parameter; all active entities, their active relations and bound current decisions, without a node limit) |
 | "Which part of the model is this file or symbol?" | `arch_lookup` |
 | Before extracting a portion | `arch_names` (every page), `list_blocks` of the document |
-| Review a document portion before submitting it | `npx -y conport@^0.15.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
-| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.15.0 arch submit <file.json>`) |
-| Change a portion | `arch_source` (or `npx -y conport@^0.15.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
-| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.15.0 arch withdraw <source>`) |
+| Review a document portion before submitting it | `npx -y conport@^0.17.0 arch review-input doc-N --portion <draft> -o <dir>`, then the reviewer `conport:model-reviewer` on `<dir>` (*The review of a document portion*) |
+| Submit or replace a portion | `arch_submit` with its `review` (or `npx -y conport@^0.17.0 arch submit <file.json>`) |
+| Change a portion | `arch_source` (or `npx -y conport@^0.17.0 arch source <source>`; its `-o <file>` writes the portion without `review`), edit, review, `arch_submit` |
+| Take a source out of the model | `arch_withdraw` (or `npx -y conport@^0.17.0 arch withdraw <source>`) |
 | "Which behaviour scenarios does the project have?" | `arch_scenarios` |
 | One scenario with its participants, states or nodes and steps | `arch_scenario` |
 | "What does the model owe?" | `arch_status` |
-| Check the anchors against the code | `npx -y conport@^0.15.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*) |
-| Check the anchors and send no facts of git | `npx -y conport@^0.15.0 arch check --no-git` |
-| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.15.0 arch suggest --json` (any branch; it submits nothing) |
+| Check the anchors against the code | `npx -y conport@^0.17.0 arch check` in the repository root; on `main` or `master` it also sends the facts of git (*The anchor check*); in a project of several roots, in the repository of each root (*Roots*) |
+| Check the anchors and send no facts of git | `npx -y conport@^0.17.0 arch check --no-git` |
+| Propose the units of the code and their parts from git history and, with a `codegraph` index, the imports between the parts | `npx -y conport@^0.17.0 arch suggest --json` (any branch; it submits nothing) |
 | Fill the model of a project that lived before it | the procedure `references/model-backfill.md` |
 | Start or complete the backfill | `arch_backfill(project, state)` — `in_progress`, `completed`; filling the model is required, so `declined` is refused (`backfill_required`) |
 | The role of a document in the model | `update_document` with `model_role` — `structure`, `history`, `none` |
@@ -946,7 +1001,8 @@ entity has at most one owner. `references` goes only from `data` to `data`.
 case ignored; aliases count in the same check. An anchor is a `kind` — `path`
 (a file or a directory from the repository root, no line number), `symbol`,
 `command`, `route` or `table` — and a `value`; an entity without anchors is
-planned. `technologies` is a list of names, `properties` are name–value pairs
+planned. A `path` or `symbol` anchor may carry `root`: the root of the project
+it lies in (*Roots* below); a `command`, `route` or `table` has none. `technologies` is a list of names, `properties` are name–value pairs
 for modes, `constraints` are the text of a rule, a threshold or a schedule
 with the block that states it.
 
@@ -965,14 +1021,15 @@ with the block that states it.
 - **An `architecture` document** has no plan: review and submit its portion
   whenever it is written or changed.
 - **The code.** Write the skeleton yourself, reading the code through
-  `codegraph` or the files: one unit per source `code:<label>`.
-  `npx -y conport@^0.15.0 arch suggest --json` proposes the units with their
+  `codegraph` or the files: one unit per source `code:<label>`
+  (`code:<root>:<label>` in a project of several roots, a skeleton per root).
+  `npx -y conport@^0.17.0 arch suggest --json` proposes the units with their
   labels and their parts from git history and, with a `codegraph` index, the
   imports between the parts; it
   submits nothing, and what goes into the portion is yours to decide.
   Submitting one label leaves the others as they are; to add to a skeleton,
   read its portion, edit it and submit it again. Then run
-  `npx -y conport@^0.15.0 arch check`. A debt `code_portion_stale` asks for a
+  `npx -y conport@^0.17.0 arch check`. A debt `code_portion_stale` asks for a
   `code` portion again once files under its anchors were added, deleted or
   renamed.
 
@@ -1016,7 +1073,7 @@ runs or after it is completed; before that it owes nothing.
    below. A `code:` portion is not reviewed: the anchor check checks it.
 5. **Submit it** with `arch_submit(project, portion)`, the report of the
    reviewer in `review` of the portion, or write it to a file and run
-   `npx -y conport@^0.15.0 arch submit <file.json>`. The answer carries
+   `npx -y conport@^0.17.0 arch submit <file.json>`. The answer carries
    `review_id`, the number of the stored report (null without one), and
    `inferred_owners`, the owners the server inferred for the parts of a
    `code:` portion (*A code portion for one unit*).
@@ -1042,18 +1099,18 @@ it: no check of a portion runs on the server.
 
 1. **Write the draft** of the portion to a file.
 2. **Build the input directory**:
-   `npx -y conport@^0.15.0 arch review-input doc-N --portion <draft> -o <dir>`,
+   `npx -y conport@^0.17.0 arch review-input doc-N --portion <draft> -o <dir>`,
    with `<dir>` outside the working tree. It holds `document.md`,
    `blocks.json`, `portion.json`, `names.json`, `scenarios.json`, `meta.json`
    and, when the document has a report, `previous-review.json`.
 3. **Run the reviewer** on `<dir>`. In Claude Code dispatch the subagent
    `conport:model-reviewer` with the path of `<dir>`. A client without
    subagents starts a separate process whose prompt is the output of
-   `npx -y conport@^0.15.0 agent model-reviewer` followed by the path of
+   `npx -y conport@^0.17.0 agent model-reviewer` followed by the path of
    `<dir>`, and writes its answer to a file:
 
    ```
-   PROMPT="$(npx -y conport@^0.15.0 agent model-reviewer)
+   PROMPT="$(npx -y conport@^0.17.0 agent model-reviewer)
 
    Input directory: <dir>"
    claude -p --add-dir <dir> "$PROMPT" > <answer.json>
@@ -1082,7 +1139,7 @@ it: no check of a portion runs on the server.
    reader; it keeps no other finding away.
 5. **Recheck once when something was fixed.** Write the findings with their
    resolutions to a file, build the directory again with the new draft —
-   `npx -y conport@^0.15.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
+   `npx -y conport@^0.17.0 arch review-input doc-N --portion <draft> -o <dir> --findings <file>`
    — and run the reviewer once more. It checks only the fixed findings: did the
    fix close the finding and break no neighbouring entity, relation or
    scenario. Resolve its findings the same way; they go into the same report,
@@ -1115,7 +1172,7 @@ goes through the review again, or the portion owes `unchecked_portion`.
 the portion: it carries `id` and `at`, and a portion sent back with it is
 refused as `review_reused` — run the reviewer again, or submit the portion
 without `review`. Never strip `id` and `at` to send the old report as new.
-`npx -y conport@^0.15.0 arch source <source>` prints `review` the same way, but
+`npx -y conport@^0.17.0 arch source <source>` prints `review` the same way, but
 with `-o <file>` it writes the portion without `review`: that file submitted
 back without a new review is accepted, and the portion owes `unchecked_portion`.
 
@@ -1511,11 +1568,14 @@ finding for that reason:
 | `scenario_malformed` | A rule of the scenario's kind is broken; the message names the rule and the place | Correct the scenario at the place its message names so that it keeps the rule. |
 | `scenario_name_taken` | The name is the name of a scenario of another source | Submit the scenario with `takes_over` naming it when this source changes that behaviour, or leave it out when the source repeats it. |
 | `scenario_too_large` | A limit of the scenario is passed | Split the scenario into parts within the limit, linked by an `action` whose `scenario` names the next part or by the name of the next part ending in (part 2). |
-| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.15.0 arch check`. |
+| `review_not_for_code` | A `code:<label>` portion carries `review` | Submit the code portion without `review`: a code portion is checked by `npx -y conport@^0.17.0 arch check`. |
 | `dismissal_moved` | `dismissed` holds a finding of the kind `missing` or `invented` | Move the dismissal into `review.findings` with `resolution: dismissed` and its `reason`. |
 | `review_reused` | `review` is the report `arch_source` gave back: it carries `id` or `at` | Run the reviewer on the portion again and submit it with the new report, or submit it without `review`. |
 | `review_malformed` | A rule of `review` is broken or a required field of it is left out; the error names the field and the finding | Fix the named field of `review` and submit again. |
 | `part_without_owner` | A document portion whose role is not `history` introduces a component, an interface, data or a setting that has no active owner once the model with the portion is folded: no active entity holds it by an active `contains`, from this portion, from another source or inferred by the server for code. An archived or replaced `structure` document is held to it too; a mentioned part is not. The action names the part in place of <name> | Claim `contains` to <name> from the entity that holds it, or leave <name> out of the portion. |
+| `anchor_root_missing` | In a project of several roots a path or a symbol anchor of a document portion names no `root` | Set `root` on the anchor to the root of the project its path or symbol lies in. |
+| `anchor_root_foreign` | A path or a symbol anchor of a code portion names a `root` other than the root of its source | Remove `root` from the anchor: an anchor of a code portion takes the root of its source. |
+| `root_not_found` | A path or a symbol anchor names a `root` the project does not have | Add the root the anchor names: run `conport root add` with its name. |
 
 When the end a relation names is an entity only the submitted source held and the portion no longer carries, `relation_endpoint_missing` prescribes instead: Return entity <name> to `entities` of the portion.
 
@@ -1526,6 +1586,10 @@ For a `code:` portion `portion_too_large` prescribes instead: Split the portion 
 For a part portion `code:<unit>.<part>` whose `code:<unit>` does not introduce exactly one unit, `code_portion_unit` prescribes instead: Submit the portion code:<unit> with exactly one entity of the type unit first.
 
 When a part portion introduces an entity of the type unit itself, `code_portion_unit` prescribes instead: A part portion introduces no unit: leave the unit out, the part takes the unit of code:<unit>.
+
+In a project of several roots a code source addressed without its root is
+refused before this check — `code_address_needs_root`, and `root_required` or
+`root_repo_mismatch` for the root of the call: *Roots* below.
 
 ### A code portion for one unit
 
@@ -1589,12 +1653,16 @@ When a part portion introduces an entity of the type unit itself, `code_portion_
 
 A scenario of a `code:` portion is grounded in an anchor of the kind `path` or
 `symbol`, never a block. Save it as a file and run
-`npx -y conport@^0.15.0 arch submit <file.json>`, then
-`npx -y conport@^0.15.0 arch check`.
+`npx -y conport@^0.17.0 arch submit <file.json>`, then
+`npx -y conport@^0.17.0 arch check`. In a project with roots write the source
+as `code:<root>:billing`, or keep `code:billing` and let
+`npx -y conport@^0.17.0 arch submit` put `root` of `.conport.json` into it
+(*Roots*).
 
 **One unit a portion.** A `code:<label>` portion but a part portion, `code:root` too, introduces
 exactly one entity of the type `unit`, or it is refused `code_portion_unit`;
-the unit of `code:root` is the repository, anchored at the `path` `.`. A unit
+the unit of `code:root` is the repository, anchored at the `path` `.` (of
+`code:<root>:root`, the repository of that root). A unit
 too large for one portion is split into part portions `code:<unit>.<part>`:
 submit `code:<unit>` with its unit first, then each part portion, which
 introduces no unit and takes the unit of `code:<unit>`; a nested part
@@ -1622,13 +1690,15 @@ refused: the part then owes `part_without_owner`.
 
 ### The anchor check
 
-`npx -y conport@^0.15.0 arch check` in the repository root reads the anchors
+`npx -y conport@^0.17.0 arch check` in the repository root reads the anchors
 of the model — of its entities and of the scenarios of `code:` portions —
 checks `path` anchors on the file system and `symbol` anchors through the
 `codegraph` index when the repository has one (without it they are left
 unchecked, as are the other kinds), and sends the outcome with the commit it
 checked. Run it by hand **on the main branch after an epic is merged into
-it** and **after submitting a `code` portion**.
+it** and **after submitting a `code` portion**. In a project with roots it
+sends its root and the fingerprint of the repository, and checks the anchors of
+its own root only: run it in the repository of each root (*Roots*).
 
 The check decides what an entity looks like: **planned** — no anchors;
 **declared** — anchors, none of them found by the latest check, or no check
@@ -1661,7 +1731,7 @@ the outcome of the anchors and the commit: the name of the branch; the dates
 of commits; the paths of files and directories under the anchors of the model
 (`recent_files`, `changes`, `symbol_files`); the paths of the hot directories
 and of the units; the patterns of `arch.ignore`; the numbers of commits and of
-index nodes. `npx -y conport@^0.15.0 arch check --no-git`, or the key
+index nodes. `npx -y conport@^0.17.0 arch check --no-git`, or the key
 `arch.git: false` in `.conport.json`, sends none of the facts: the server then
 knows no facts will come and owes nothing by them.
 
@@ -1704,7 +1774,9 @@ them:
 
 `arch_status` carries `git_pass`: `checked_at`, `commit`, `branch`, `head_at`,
 `history_truncated`, `shallow`, `codegraph` and `disabled` of the latest check
-with facts, or null when there is none.
+with facts, or null when there is none, and `git_passes`: the latest check
+with facts of each root, `root` and the fields of `git_pass` (`root` null in a
+project without roots); `git_pass` stays the latest of them all.
 
 ### Debts of the model in init
 
@@ -1730,12 +1802,21 @@ one. When `total` is above five, `arch_status` lists them all.
 | `code_portion_stale` | The latest check with git facts saw a file added, deleted or renamed under an anchor of an entity of the `code:` portion after it was submitted; `detail` names the paths | Read the changed paths, bring the portion code:<label> in line with the code and submit it again; if the model does not change, submit it as it is. |
 | `unchecked_portion` | The document's portion was submitted without the reviewer's report (`review`) | Run the reviewer on the portion and submit it again with `review`. |
 | `anchor_missing` | The latest anchor check did not find an anchor | Correct the anchor in the portion that claims it and submit that portion again. |
-| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.15.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.15.0 arch check` in the repository root on main or master. |
+| `check_stale` | The model has anchors and the latest anchor check is older than the latest portion with anchors, or there was none; or the model has `code` portions and no check from main or master has sent its git facts; or the latest check with git facts is older than 7 days and a portion was submitted or a task closed after it. A check that sent no facts by choice (`--no-git`, `arch.git: false`) or for want of a main branch (`no_main_branch`) counts as a check with facts and clears it too. When the latest check with git facts came from a shallow clone — it sent none and the earlier facts are dropped — the debt comes whatever its age, with the action: Run `git fetch --unshallow`, then `npx -y conport@^0.17.0 arch check` in the repository root on main or master. | Run `npx -y conport@^0.17.0 arch check` in the repository root on main or master. |
 | `area_uncovered` | A hot directory of a unit that no active entity is anchored at or above, or inside within the same unit; `area` gives its unit, path, commits, share, index nodes and `unit_entity_id`. No pattern of `arch.ignore` reaches the root, so the debt of the root `.` has the action: Describe it in the portion of the root unit with an anchor path on a directory or file of that unit, outside every nested unit. | Describe it in the portion of its unit with an anchor path, or add the path to arch.ignore in .conport.json. |
-| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.15.0 arch check`. |
+| `removed_but_present` | A removed entity whose anchor the latest anchor check found | Delete the code the anchors of the removed entity point to, then run `npx -y conport@^0.17.0 arch check`. |
 | `part_without_owner` | An active component, interface, data or setting that no active entity contains by an active relation. `detail` says where the composition draws it: nowhere when nothing contains it (its neighbours then count its relations), at the top level marked owner removed when its owner is removed, still inside its owner when only the `contains` was taken back; and how many relations it has. At most 12 are listed, the part with the most relations first; the last one counts the rest | Claim the relation `contains` to it from the entity that holds it, or claim it `removed` if it is gone, in the portion of a living source that names it, then submit that portion. |
 | `step_without_relation` | A step of a sequence scenario joins two entities the model does not relate; `detail` gives the step numbers | Add the missing relation to the portion or correct the step. |
 | `scenario_participant_gone` | An entity a scenario names is removed or replaced at the document source position (current state for code), or the scenario an action runs was deleted | Correct the invalid participant at the document source position (current state for code), or the deleted scenario link, and resubmit; preserve valid earlier history. |
+
+**Debts of a root.** In a project with roots a debt carries `root` — the root
+it is of, or `null`. `check_stale`, `anchor_missing`, `code_portion_stale`,
+`area_uncovered` and `removed_but_present` are counted in each root, by the
+latest check and facts of git of that root, and their action ends with the
+check in that root; `check_stale` of a root reads: Run `npx -y conport@^0.17.0 arch check` in the root <root> (`npx -y conport@^0.17.0 root path <root>`) on main or master.
+The subject of `check_stale` of a root is `<handle>:<root>`. A root never
+checked owes `check_stale`, even with no code yet. `init` with `root` lists
+the debts of that root first.
 
 **Entities without a living source.** An active entity with no anchor, no
 active relation and no scenario that no living source holds — only documents
@@ -1754,6 +1835,120 @@ source*), and the count `no_living_source` grows; entities that relate to
 each other hold each other and stay. When a newer document replaces only a part of
 `doc-N`, name the block it replaces — `[!supersedes] [[doc-N#<block>]]` — and
 keep the link to the whole document for a document replaced as a whole.
+
+### Roots
+
+A project may be made of several git repositories — its **roots**. A root is
+a repository as a whole: the units of a monorepo are units of one root, not
+roots. Its name is made of lowercase Latin letters, digits and `-`, starting
+with a letter or a digit, up to 32 characters, never `none`; it is shown as `<handle>:<root>`.
+
+| Roots | What the project is | What changes |
+|---|---|---|
+| none | one repository without a name | Nothing: every call works as before |
+| one | one repository with a name | A call without a root takes the only root; `code:<label>` stays the address |
+| two or more | several repositories | A code portion, an anchor check, a `code:` address and a `path` or `symbol` anchor of a document portion name their root |
+
+**The root of the session** is `root` of `.conport.json` of the repository
+you work in (*Step 1*), passed to `init` (*Step 2*). `roots` of
+`.conport.local.json` holds the paths of the other roots on this machine;
+`npx -y conport@^0.17.0 root path <root>` prints the path of a root — from
+`roots`, else a folder beside the main working copy whose `.conport.json`
+names the same project and that root (`--save` writes it into `roots`).
+
+**The roots are managed** with `project_roots`, `add_project_root`,
+`rename_project_root` and `remove_project_root`, or from the repository with
+`npx -y conport@^0.17.0 root list`, `root add <root>`, `root rename <root> <new>`
+and `root remove <root>`. Add a root from its own repository with the CLI:
+`root add` sends the fingerprint of the repository (its smallest root commit),
+and a clone or a worktree of another root is refused `root_repo_mismatch`.
+Two repositories with a common history (one split off the other) share that
+fingerprint: add the second one with `root add <root> --no-fingerprint`
+(`no_fingerprint: true` of `add_project_root`), bound to no repository and
+never checked against one. Each of these changes the project: run it on the user's word only.
+
+- The first root of a project with code names that code: `root add` lists the
+  labels and the number of anchors it would give the root and runs only with
+  `--adopt`.
+- A second root makes the project one of several roots: every repository then
+  writes its `root` into its `.conport.json`.
+- A rename changes the addresses `code:<root>:…`; the person changes `root` in
+  `.conport.json` of that repository.
+- Removing the only root returns the project to no roots. One of several is
+  refused `root_in_use` while code sources, tasks or anchors of document
+  portions name it.
+
+**The model in several roots.**
+
+- A code source is `code:<root>:<label>`; `code:<root>:root` is the root unit
+  of that repository (the `path` `.` in its root), and a part portion is
+  `code:<root>:<unit>.<part>`. `code:<label>` is refused there with
+  `code_address_needs_root`, whose message names the full addresses. With one
+  root `code:<label>` still works, and `code:<root>:<label>` is accepted too.
+  `npx -y conport@^0.17.0 arch submit`, `arch source` and `arch withdraw` turn
+  a bare `code:<label>` into `code:<root>:<label>` by `root` of `.conport.json`
+  and send the fingerprint of the repository; over MCP write the full address
+  yourself.
+- An anchor `path` or `symbol` of a code portion takes the root of its source:
+  leave `root` out (another root is refused `anchor_root_foreign`). An anchor
+  `path` or `symbol` of a document portion carries `root`, the root its path
+  or symbol lies in, or the portion is refused `anchor_root_missing`. A
+  `command`, a `route` or a `table` has no root.
+
+  ```json
+  {
+    "source": "doc-N",
+    "entities": [
+      {"name": "Order store", "type": "store", "action": "introduced", "block": "<block ULID>",
+       "note": "The orders both services read",
+       "anchors": [{"kind": "path", "value": "db/migrations", "root": "backend"}]}
+    ]
+  }
+  ```
+
+- Entity names stay common to the project: two roots that name one entity
+  speak of one thing — a database two services share is one `store` with
+  anchors in both roots. Name entities by `arch_names`, as always.
+- **`arch check` runs in every root**: `npx -y conport@^0.17.0 arch check` in the repository of each root, on
+  `main` or `master`. It sends its root and the fingerprint of the repository,
+  checks the anchors of its own root only and sends the facts of git of that
+  root. Find the repository of another root with
+  `npx -y conport@^0.17.0 root path <root>`. After an epic is merged, run it in
+  every root the epic merged into. `npx -y conport@^0.17.0 arch suggest --json`
+  proposes the labels of its own root as `code:<root>:<label>`.
+- Without `root` in `.conport.json` the CLI sends no code call of a project of
+  several roots and prints `write root in .conport.json (project roots: …)`:
+  tell the user to set it.
+
+**Tasks.** A task may name its root — the repository it is about: `add_task`
+and `update_task` take `root` (a name; `"none"` removes it), and an epic
+takes none. `list_tasks(root=<root>)` lists the tasks of that root and
+`root="none"` the tasks without one; with `ready=true`, and in `get_agenda`,
+a root lists its own tasks and the tasks without a root. From the shell:
+`npx -y conport@^0.17.0 task list --in-root <root>|none`. A task of another root
+is worked in the repository of that root (`root path`); an epic across several
+roots: *Epic in its own branch* under *Execution*.
+
+**Refusals of the roots.** `anchor_root_missing`, `anchor_root_foreign` and
+`root_not_found` of an anchor are refusals of a portion (*Refusals of a
+portion* above). The others:
+
+| Code | When | Do exactly this |
+|---|---|---|
+| `root_not_found` | A root name the project does not have — in `init`, a task, a filter, a call of the model | Add the root on the user's word: `npx -y conport@^0.17.0 root add <root>` in the repository of that root. |
+| `root_required` | Several roots: a code portion, a check or a call of a code tool without its root | Pass `root`; from the CLI, update it: `npx -y conport@^0.17.0` passes `root` of `.conport.json`. |
+| `code_address_needs_root` | Several roots: an address `code:<label>` | Address the source as `code:<root>:<label>`, by the full addresses the message names. |
+| `root_repo_mismatch` | The fingerprint of the repository is not the one of the root of the call, or the repository is bound to another root | Set `root` in `.conport.json` to the root of this repository the message names; a repository bound to no root is a new root (`npx -y conport@^0.17.0 root add <root>`). |
+| `root_adopt_required` | The first root of a project with code, added without `adopt` | Show the user the labels and anchors it would name, and on their word repeat with `--adopt` (`adopt: true`). |
+| `root_in_use` | Removing one of several roots that code sources, tasks or anchors of document portions name | Withdraw the listed portions and clear the root of the listed tasks (`root: "none"`), then remove the root. |
+| `root_exists` | Adding or renaming into a name the project has | Take another name. |
+| `invalid_root_name` | The name is not a root name, or it is `none` | Name the root with lowercase Latin letters, digits and hyphens, starting with a letter or a digit, up to 32 characters, not `none`. |
+| `invalid_fingerprint` | `add_project_root` with a `fingerprint` empty or longer than 64 characters | Send the smallest root commit of the repository (`git rev-list --max-parents=0 HEAD`), or no `fingerprint`. |
+| `root_on_epic` | A root on an epic, or a task with a root turned into an epic without `root: "none"` | Set the root on the epic's child tasks. |
+| `root_path_unknown` | `npx -y conport@^0.17.0 root path`: no path in `roots` and no folder found beside the main working copy | Write the path of the root into `roots` of `.conport.local.json`. |
+
+The `**Root:**` line of a task section of a plan, and what `plan import`
+refuses about it: `references/superpowers-overlay.md`, step *Plan*.
 
 ### Filling the model of an existing project
 
@@ -2121,7 +2316,8 @@ claim it was posted.
 - [ ] Milestone finished → `update_milestone` with `resolution` (and, if `is_release`, only after the release actually shipped)?
 - [ ] Decision made → `sync_decision`?
 - [ ] Important information → document created?
-- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.15.0 arch check` run on the main branch? `init` returned `arch` → the action of each debt taken?
+- [ ] A spec got its plan imported → its portion reviewed (`conport:model-reviewer`) and submitted with `arch_submit` and its `review`? An epic merged into the main branch (with `--no-ff`) or a `code` portion submitted → `npx -y conport@^0.17.0 arch check` run on the main branch? `init` returned `arch` → the action of each debt taken?
+- [ ] A project of several roots → `root` of `.conport.json` passed to `init`, code sources addressed `code:<root>:<label>`, `arch check` run in the repository of every root?
 - [ ] After every write → response echo verified (tags / description / priority match intent)?
 - [ ] Cross-references in write payload → all in canonical `<type>-<number>` form (no `#N`, no `decision #N`)?
 - [ ] A problem of the service itself → showed the user the title and body and posted only after they agreed (a run with no person: the report in its summary, nothing posted), searched the open `[agent-report]` issues first, no project content, and told the user the URL — or gave the search and form links and said the report is not sent until they submit it?

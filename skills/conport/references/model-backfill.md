@@ -20,7 +20,7 @@ Six steps, in this order:
 
 | Step | What is done | Done when |
 |---|---|---|
-| 1. Skeleton | The entities of the code, unit by unit, submitted as `code:<unit-name>` sources; the anchor check run | Every unit of the list has its source; the anchor check ran |
+| 1. Skeleton | The entities of the code, unit by unit, submitted as `code:<unit-name>` sources (`code:<root>:<unit-name>` in a project of several roots); the anchor check run | Every unit of the list has its source in every root; the anchor check ran in every root |
 | 2. Inventory | Every document of the project gets a role; types, `supersedes` links, links to epics and disputed dates are corrected | The user's approval is recorded; every document of the inventory has a role |
 | 3. Pass | The documents with a role submit their portions, oldest first | No debt `no_portion` is left |
 | 4. What is gone | Things of the documents not found in the code are marked by the portion of the result document | The result is submitted and the user has read it |
@@ -31,9 +31,12 @@ Six steps, in this order:
   backfill (`arch_status`), the inventory document, the list of portions
   (`arch_sources`) and the debts: they show which step runs and which
   documents are submitted.
-- **The session of the project fills it**, in the project's repository. A
-  project of several repositories is out of the procedure's scope: it runs on
-  one repository.
+- **The session of the project fills it**, in the project's repository. In a
+  project of several roots the skeleton is built per root: step 1 runs in the
+  repository of each root, and the other steps run once, from the repository
+  of any root, after step 1 has run in every root. "The code" of those steps is
+  the skeleton and the code of all the roots, not the tree of the current
+  repository: step 4 marks nothing removed that lives in another root.
 - **Approval.** At every step below where something is approved, the user of
   the project approves it, by their word in the session. The backfill of a
   project of another team is approved by a user of that team.
@@ -62,7 +65,7 @@ Six steps, in this order:
 - A file belongs to the deepest unit.
 - The files outside every unit make up the root (`code:root`).
 
-`npx -y conport@^0.15.0 arch suggest --json` applies this rule to the tree of
+`npx -y conport@^0.17.0 arch suggest --json` applies this rule to the tree of
 `HEAD` and proposes the units with their labels, the parts of each unit — its
 hot directories over the whole history of commits, and with a `codegraph`
 index also the large ones — and, with that index, the imports between the
@@ -78,6 +81,14 @@ the unit `cli/conport` → `code:cli-conport`. Every `code:` portion but a part 
 its label, or it is refused `code_portion_unit`; `code:root` introduces a unit for the repository with the anchor `path` `.`. A unit with
 more than 400 entities is split into `code:<unit-name>.<part>` sources; the
 portion with the unit itself goes first. A part portion `code:<unit-name>.<part>` introduces no unit and takes the unit of `code:<unit-name>`.
+
+**A project of several roots** — two roots or more, each a repository of the
+product — builds the skeleton per root: step 1 runs in the repository of each
+root, and every address carries its root: `code:<root>:<unit-name>`,
+`code:<root>:root` for the files outside every unit, and
+`code:<root>:<unit-name>.<part>` for a part. The address `code:<unit-name>`
+is refused there with `code_address_needs_root`. A project of one root keeps
+`code:<unit-name>`.
 
 **What holds each part.** Write the unit and its parts with their `path`
 anchors: the server infers the entity that holds each part a `code:` portion
@@ -107,7 +118,10 @@ the inferred one.
 **Anchors.** Every entity of the skeleton carries a `path` or `symbol`
 anchor, or it stays declared after the anchor check: a table — `table` and the
 `path` of the migration that created it; a setting — the `symbol` of its
-settings field or the `path` of the file that reads it.
+settings field or the `path` of the file that reads it. In a project of
+several roots an anchor of a `code:` portion takes the root of its source; a
+`path` or `symbol` anchor of a document portion (step 3) names it in `root`,
+or the portion is refused `anchor_root_missing`.
 
 **Relations of the skeleton** — `contains`, and only those `calls`, `reads`
 and `writes` the code shows: `calls` — a direct import and call between parts,
@@ -120,8 +134,9 @@ submitted: the documents bring it.
 migrations, routes against the API description or the route files, tools
 against their registry. A difference goes into the inventory.
 
-**After every `code` portion** run `npx -y conport@^0.15.0 arch check` in the
-repository root. A skeleton submitted earlier grows by submitting the same
+**After every `code` portion** run `npx -y conport@^0.17.0 arch check` in the
+repository of the root the portion describes — the repository root of a
+project of one repository. A skeleton submitted earlier grows by submitting the same
 source again: read it with `arch_source`, add to it, submit it. No tool of its
 own builds the skeleton: it is this step.
 
@@ -219,7 +234,7 @@ old document, and never rename an entity to get past a refusal.
 **The review.** Every document portion is reviewed before it is submitted,
 in the order of the part *The review of a document portion* of the skill's
 section *PROJECT MODEL*: the input directory
-(`npx -y conport@^0.15.0 arch review-input doc-N --portion <draft> -o <dir>`),
+(`npx -y conport@^0.17.0 arch review-input doc-N --portion <draft> -o <dir>`),
 the reviewer, every finding fixed or dismissed with a reason, one recheck
 when something was fixed, and the portion submitted with `review`. A long
 document is reviewed like any other: the reviewer reads it block by block.
@@ -374,7 +389,8 @@ each item and call again:
   any other debt: run the reviewer on the portion and submit it again with
   `review`;
 - `code_source_unchecked` — a `code` source was submitted after the latest
-  anchor check: run `npx -y conport@^0.15.0 arch check`.
+  anchor check of its root: run `npx -y conport@^0.17.0 arch check` in that
+  root.
 
 ## Refusals
 
@@ -387,7 +403,7 @@ each item and call again:
 ## Rollback
 
 The rollback runs only on the user's word, never as a step of your own; no
-refusal prescribes it. `npx -y conport@^0.15.0 arch withdraw --all` shows what
+refusal prescribes it. `npx -y conport@^0.17.0 arch withdraw --all` shows what
 would be removed — without `--apply` it removes nothing. With `--apply` it
 withdraws every source of the project, documents and code alike: the state of
 the backfill returns to the start. The roles, types and links of the documents
@@ -398,7 +414,9 @@ and step 5 attaches them again on the next pass.
 
 In a project whose model has `code` sources: merge an epic that changed the
 code into the main branch with `--no-ff`, then run
-`npx -y conport@^0.15.0 arch check` in the repository root on that branch.
+`npx -y conport@^0.17.0 arch check` in the repository root on that branch —
+in a project of several roots, in the repository of each root the epic
+changed.
 For each debt `code_portion_stale` it brings, read the paths its `detail`
 names, bring the portion in line with the code and submit it again — as it is
 when the model does not change. The debt sees files added, deleted and

@@ -260,7 +260,7 @@ const injectsNoRules = (out) => !out || !(JSON.parse(out).hookSpecificOutput?.ad
 test('the rules file ships with the visibility line and the versioned CLI', () => {
   const text = rulesText()
   assert.match(text, /\[CONPORT\] Superpowers overlay: on/)
-  assert.match(text, /npx -y conport@\^0\.15\.0 plan import/)
+  assert.match(text, /npx -y conport@\^0\.17\.0 plan import/)
   assert.match(text, /<!-- conport-pull-tail -->/)
   assert.doesNotMatch(text, /\b(decision|doc|task)-\d+/)
 })
@@ -309,7 +309,7 @@ test('an idea task comes before the design, the spec closes it with awaiting-pla
   assert.match(brainstorming, /the design needs none/)
 
   const upload = step('Upload the spec')
-  assert.match(upload, /`npx -y conport@\^0\.15\.0 documents upload <draft> --doc-type spec --tags awaiting-plan`/)
+  assert.match(upload, /`npx -y conport@\^0\.17\.0 documents upload <draft> --doc-type spec --tags awaiting-plan`/)
   assert.match(upload, /link_items\(project=<project>, source_type='doc', source_id=N, target_type='task', target_id=<the idea task>, relationship='clarifies'\)/)
   assert.match(upload, /update_task\(project=<project>, task_id=<the idea task>, status='DONE', resolution=/)
   assert.match(upload, /close the idea task with a resolution naming the spec/)
@@ -323,13 +323,13 @@ test('an idea task comes before the design, the spec closes it with awaiting-pla
   assert.ok(upload.indexOf("status='DONE'") < upload.indexOf('Plan and build now?'), 'the question comes last')
 
   const plan = step('Plan')
-  assert.match(plan, /`npx -y conport@\^0\.15\.0 plan import <draft> --spec doc-N --milestone <id>`/)
+  assert.match(plan, /`npx -y conport@\^0\.17\.0 plan import <draft> --spec doc-N --milestone <id>`/)
   assert.match(plan, /the import of the plan creates the epic/)
   assert.match(plan, /roadmap rules/)
   assert.match(plan, /`spec_has_epic`/)
-  assert.match(plan, /`npx -y conport@\^0\.15\.0 plan import <draft> --spec doc-N --epic <id>`/, 'the epic of the former chain takes its plan by --epic')
+  assert.match(plan, /`npx -y conport@\^0\.17\.0 plan import <draft> --spec doc-N --epic <id>`/, 'the epic of the former chain takes its plan by --epic')
   assert.ok(plan.indexOf('--milestone <id>`') < plan.indexOf('--epic <id>`'), 'the new epic comes first')
-  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.15\.0 plan import <draft> \[--milestone <id>\]`/)
+  assert.match(plan, /A plan with no design.*`npx -y conport@\^0\.17\.0 plan import <draft> \[--milestone <id>\]`/)
   assert.doesNotMatch(plan, /\[--epic <id>\]/, 'the epic of a designed plan is not optional')
 })
 
@@ -429,6 +429,96 @@ test('every journal tool call of the rules names its project', () => {
   const calls = rulesText().match(/\b(?:add_task_journal_entry|get_task_journal_entry|list_task_journal)\([^)]*\)/g) ?? []
   assert.ok(calls.length >= 3, `expected the brief, dispatch and history calls, got ${calls.length}`)
   for (const call of calls) assert.match(call, /\(project=<project>, /, call)
+})
+
+// An epic across the roots of a project: each root is a git repository of its own.
+const oneLine = (text) => text.replace(/\s+/g, ' ')
+const AGENTS = join(SCRIPTS, '..', 'agents')
+const BRIDGE = join(SCRIPTS, '..', 'skills', 'superpowers-conport', 'SKILL.md')
+const SKILL = join(SCRIPTS, '..', 'skills', 'conport', 'SKILL.md')
+
+function overlayStep(n) {
+  const flow = rulesText().split('## The flow')[1].split('\n## ')[0]
+  const from = flow.search(new RegExp(`^${n}\\. \\*\\*`, 'm'))
+  assert.ok(from >= 0, `no step ${n} in the flow`)
+  const to = flow.slice(from + 1).search(/^\d+\. \*\*/m)
+  return oneLine(to < 0 ? flow.slice(from) : flow.slice(from, from + 1 + to))
+}
+
+/** The paragraph of `text` that starts with `lead`, up to the next blank line, on one line. */
+function paragraph(text, lead) {
+  const at = text.indexOf(lead)
+  assert.ok(at >= 0, `no paragraph ${lead}`)
+  const end = text.indexOf('\n\n', at)
+  return oneLine(text.slice(at, end < 0 ? text.length : end))
+}
+
+test('the epic branch lives in every root of the epic', () => {
+  const skill = readFileSync(SKILL, 'utf8')
+  const section = oneLine(skill.slice(skill.indexOf('**Epic in its own branch.**'), skill.indexOf('ConPort does not track git')))
+  const rules = paragraph(rulesText(), '**An epic across roots.**')
+  for (const [name, text] of [['the skill', section], ['the rules', rules]]) {
+    assert.match(text, /the branch `epic-<id>` is made only in the roots that hold tasks of the epic, each in a worktree of its own/, name)
+    assert.match(text, /`npx -y conport@\^0\.17\.0 root path <root>`/, name)
+    assert.match(text, /cut from that root's default branch/, name)
+    assert.match(text, /a refusal `root_path_unknown` is a question to the person/, name)
+    assert.match(text, /A task works in the worktree of its root \(`root` of the task\)/, name)
+    assert.match(text, /its reviewer compares `BASE` and `HEAD` of that repository/, name)
+    assert.match(text, /the final reviewer and the gap hunter take the list `\(root, worktree, base\)` of every root of the epic/, name)
+  }
+  // The release of an epic across roots, root by root, in the skill and in the step Finish.
+  const finish = overlayStep(8)
+  for (const [name, text] of [['the skill', section], ['the step Finish', finish]]) {
+    const merge = text.search(/in each root, `git merge --no-ff epic-<id>` into its base and its own push, in the order the plan of the epic gives/)
+    const check = text.search(/then `npx -y conport@\^0\.17\.0 arch check` in each root/)
+    const clean = text.search(/then, in each root, the branch `epic-<id>` deleted, locally and on the server, and its worktree removed/)
+    assert.ok(merge >= 0 && check > merge && clean > check, `${name}: merge, check, cleanup in each root, in this order: ${[merge, check, clean]}`)
+  }
+  // The implementer and the fixer commit in the worktree of the task's root.
+  for (const file of ['sdd-implementer.md', 'sdd-fixer.md']) {
+    const text = oneLine(readFileSync(join(AGENTS, file), 'utf8'))
+    assert.match(text, /In a project of several roots the working dir is the worktree of the task's root, the repository the brief names: commit there, and never in the repository of another root/, file)
+  }
+})
+
+test("the overlay hands a reviewer BASE and HEAD of the task's root", () => {
+  const execution = overlayStep(6)
+  assert.match(execution, /A reviewer gets, in addition, the two commits to diff: `BASE` and `HEAD` of the repository of the task's root, with its worktree/)
+})
+
+test('the bridge reads Root and the contract lists the roots', () => {
+  const bridge = readFileSync(BRIDGE, 'utf8')
+  const tasks = oneLine(bridge.slice(bridge.indexOf('**Tasks:**'), bridge.indexOf('### 4.5')))
+  assert.match(tasks, /mcp__conport__project_roots\(\{ project \}\)/)
+  assert.match(tasks, /the first line `\*\*Root:\*\* <root>` of the block outside fenced code, as `plan import` reads it \(the `conport-task` anchor may sit between it and the heading\)/)
+  assert.doesNotMatch(tasks, /Root:\*\* <root>` right under the heading/, 'the bridge reads the line where plan import reads it')
+  // Every refusal of the CLI's plan import, before any write.
+  for (const code of ['plan_final_review_root', 'plan_root_unknown', 'plan_section_needs_root']) {
+    assert.match(tasks, new RegExp(`\\(\`${code}\`\\)`), code)
+  }
+  assert.match(tasks, /write `\*\*Root:\*\* <root>` under each of those headings \(`\*\*Root:\*\* none` for a task outside every repository\)/)
+  assert.match(tasks, /write nothing: no epic, no task, no anchor/)
+  assert.match(tasks, /add_task\(\{ project, title: <title>, description: <short summary>, parent_task_id: <epic_id>, kind: [^}]*, priority: 3, root: <the section's root> \}\)/)
+  assert.match(tasks, /update_task\(\{ project, task_id: <task_id>, title: <title>, description: <short summary>, root: <the section's root> \}\)/)
+  assert.match(tasks, /a project without roots is sent no `root` at all/)
+
+  // The item of the roots in the contract: the words of `plan pull` (cli/conport/src/core/plan.ts).
+  const source = readFileSync(join(SCRIPTS, '..', '..', '..', 'cli', 'conport', 'src', 'core', 'plan.ts'), 'utf8')
+  const tuples = '${roots.map((r) => `(${r}, epic-${e}, its base)`).join(", ")}'
+  const template = source.slice(source.indexOf('const rootsItem ='), source.indexOf('const first ='))
+  assert.ok(template.includes(tuples), 'plan.ts lists the roots of the contract another way')
+  const cliItem = [...template.replace(tuples, 'TUPLES').matchAll(/`([^`]*)`/g)]
+    .map((m) => m[1]).join('')
+    .replaceAll('\\n', '\n')
+    .replaceAll('${e}', '<epic_id>')
+    .replace('TUPLES', '(backend, epic-<epic_id>, its base), (web, epic-<epic_id>, its base)')
+  const contract = bridge.slice(bridge.indexOf('### 4.5 Write the execution contract'), bridge.indexOf('Block boundaries for replacement'))
+  assert.ok(contract.includes(cliItem), `the bridge does not write the item of the roots plan pull writes:\n${cliItem}`)
+  const rule = oneLine(contract.slice(contract.indexOf('**The roots of the plan.**')))
+  assert.match(rule, /right under the line `- Project <project> · Epic task-<epic_id> · Spec doc-<doc_id>\.`/)
+  assert.match(rule, /only with two roots or more/)
+  assert.match(rule, /sorted by name, `none` not counted/)
+  assert.match(rule, /The item is not part of the template above/)
 })
 
 test('with the overlay on and no project configured, the hook names the rules from the stdin cwd', () => withRepo(async ({ tmp, main }) => {
@@ -616,6 +706,31 @@ test('the start context keeps the project line and the notice whole and counts t
   assert.equal(startContext({ project, lines: [lines[0]], notice }, 10), `${project}\n1 more ConPort settings line did not fit here: the user was shown them at the start of the session\n\n${notice}`)
   // Nothing to say is nothing.
   assert.equal(startContext({}), '')
+})
+
+// The root line is the project's second line: it stays whole beside the
+// project line, and only the settings lines collapse.
+test('startContext keeps the root line whole', () => {
+  const project = 'ConPort project: prk7m2qx9d (from .conport.json)'
+  const root = 'ConPort root: prk7m2qx9d:backend (from .conport.json)'
+  const notice = overlayNotice('old')
+  const lines = Array.from({ length: 12 }, (_, i) => `.conport.json: setting ${i} must be true or false — fix it`)
+  const whole = `${project}\n${root}\n${lines.join('\n')}\n\n${notice}`
+  const bytes = Buffer.byteLength(whole)
+  assert.equal(startContext({ project, root, lines, notice }, bytes), whole)
+
+  const cut = startContext({ project, root, lines, notice }, bytes - 1)
+  assert.ok(Buffer.byteLength(cut) <= bytes - 1)
+  const shown = cut.split('\n\n')[0].split('\n')
+  assert.deepEqual(shown.slice(0, 2), [project, root])
+  const more = shown[shown.length - 1].match(/^(\d+) more ConPort settings lines? did not fit here/)
+  assert.ok(more, shown[shown.length - 1])
+  assert.deepEqual(shown.slice(2, -1), lines.slice(0, lines.length - Number(more[1])))
+
+  assert.equal(
+    startContext({ project, root, lines, notice }, 10),
+    `${project}\n${root}\n12 more ConPort settings lines did not fit here: the user was shown them at the start of the session\n\n${notice}`)
+  assert.equal(startContext({ project, root }), `${project}\n${root}`)
 })
 
 // A pile of settings lines with the overlay on: the agent's context keeps

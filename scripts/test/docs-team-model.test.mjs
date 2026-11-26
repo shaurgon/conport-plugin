@@ -204,7 +204,7 @@ test('the superpowers bridge takes the project from the settings and creates not
 })
 
 test('the CLI guides name the one command that creates a project', () => {
-  const command = 'npx -y conport@^0.15.0 api projects create --name <project>'
+  const command = 'npx -y conport@^0.17.0 api projects create --name <project>'
   for (const [name, heading] of [
     ['INSTALL.md', /^Step 4\b/],
     ['docs/install/other-agents.md', NAME_SECTION],

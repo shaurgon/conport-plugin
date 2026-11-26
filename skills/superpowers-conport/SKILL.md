@@ -2,7 +2,7 @@
 name: superpowers-conport
 description: "Use when superpowers brainstorming/writing-plans produced a design.md + plan.md and the work needs to land in ConPort as a spec doc + epic + tasks. Use when such a plan has been executed and the final whole-branch review is clean, and the work is about to be declared finished — finish mode audits the plan's epic and prints a release-readiness verdict. Idempotent via inline HTML-comment anchors written back into the source files."
 metadata:
-  version: 27.2.0
+  version: 27.3.0
 ---
 
 # superpowers-conport — Bridge
@@ -71,7 +71,7 @@ with that single action and stops:
 ```
 [superpowers-conport]
   Superpowers overlay: on — nothing written
-  Do now: npx -y conport@^0.15.0 plan import <plan> --spec doc-N --milestone <id>
+  Do now: npx -y conport@^0.17.0 plan import <plan> --spec doc-N --milestone <id>
 ```
 
 `<plan>` is the plan draft the bridge was invoked on (`<plan_path>`); `doc-N` is the
@@ -98,7 +98,7 @@ pulled plan's epic exists, and the bridge, finding no anchors, would start a sec
 is never the answer on the anchor route with the overlay on either, because it writes
 nothing then. On the anchor route the overlay changes only the prescriptions that would name
 it: the missing-tasks item (last bullet below), and the no-epic-anchor report and the
-no-project case, which both prescribe `npx -y conport@^0.15.0 plan import <plan_path> --spec doc-N --milestone <id>`
+no-project case, which both prescribe `npx -y conport@^0.17.0 plan import <plan_path> --spec doc-N --milestone <id>`
 directly, then re-run `finish` on the file `plan pull` writes (see `### Sources` and
 `### Output — no epic anchor`). On the anchor route with the overlay off, the bridge's
 `import` stays the answer, as written in `## Mode: finish`.
@@ -113,14 +113,14 @@ inputs only, taken in this order:
 
 - **The sidecar is read first** — it is local, so it is read before any ConPort call. A
   sidecar that is missing, unreadable or carries no `epic_id` leaves the audit with no
-  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.15.0 plan pull …`, reported
+  subject: RELEASE BLOCKED with the single action `npx -y conport@^0.17.0 plan pull …`, reported
   by `### Output — no sidecar`, and nothing else is checked. It is never read as "nothing left
   to close".
 - **Then the project.** `project` is resolved as in step 1. When `init` finds no project,
   or finds one whose handle is not the sidecar's `project`, the plan came from another
   project: RELEASE BLOCKED naming both (see the no-project case in `### Sources`). A sidecar
   whose `project` is a string of digits was written by an earlier CLI: RELEASE BLOCKED with
-  the single action `npx -y conport@^0.15.0 plan pull <epic_id> -o <plan_path>`.
+  the single action `npx -y conport@^0.17.0 plan pull <epic_id> -o <plan_path>`.
 - **Epic and spec come from the sidecar.** `epic_id` replaces the `conport-epic` anchor and
   `spec_doc_id` replaces the `conport-spec` anchor of the paired design file; no design file
   is read. A sidecar whose `spec_doc_id` is absent or null omits the spec header line,
@@ -134,8 +134,8 @@ inputs only, taken in this order:
 - **Missing tasks are answered by the CLI, not by the bridge's import** — on the pulled
   route always, and on the anchor route when the overlay is on.
   Wherever the audit would prescribe the bridge's import for plan tasks absent from the epic
-  `<M>`, it prescribes instead: `npx -y conport@^0.15.0 plan import <plan_path> --epic <M>`, then
-  `npx -y conport@^0.15.0 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
+  `<M>`, it prescribes instead: `npx -y conport@^0.17.0 plan import <plan_path> --epic <M>`, then
+  `npx -y conport@^0.17.0 plan pull <M>`, then re-run `finish` on the pulled file. `--epic` keeps
   the tasks on the epic being audited; without it a plan never imported through the CLI
   would start a new epic.
 
@@ -290,6 +290,25 @@ and is not sufficient.
 
 Split the plan body into blocks at every `^### Task \d+:` heading.
 
+**The roots of the sections.** Before the **Epic** step writes anything — together with the
+Final review check above — read the roots of the project:
+`mcp__conport__project_roots({ project })`. Its refusals are those of `plan import`, and each
+one means write nothing: no epic, no task, no anchor, and answer with its one action (the
+terminal block is never checked):
+- the Final review section names a root other than `none` (`plan_final_review_root`): its
+  task carries no root — remove the `**Root:**` line from the Final review section and import
+  again;
+- a section names a root the project lacks (`plan_root_unknown`): name the sections and the
+  roots of the project — add each root with `conport root add <name>` and import again;
+- in a project of several roots, a section other than Final review has no `**Root:**` line
+  (`plan_section_needs_root`): write `**Root:** <root>` under each of those headings
+  (`**Root:** none` for a task outside every repository) and import again.
+
+The section's root goes into the write of its task — `root` below is sent only when the
+project has roots and the section has the line (`none` removes the root of the task); a
+project without roots is sent no `root` at all. A re-import updates the root as it updates the
+title. The Final review task carries no root.
+
 **Skip the terminal block.** A block is terminal when the terminal anchor
 `<!-- conport-finish -->` sits on the line immediately after its heading, outside fenced
 code blocks. Position matters: a plan about this bridge mentions the anchor throughout its
@@ -302,6 +321,11 @@ For each block:
 
 - Extract `<title>` from the heading line. Strip leading `Task N: ` so the ConPort task title is just the human name (e.g. `Parser` from `### Task 1: Parser`).
 - Derive a short summary (one sentence) from the heading + the `**Files:**` block, or from the first non-empty line after the heading. Trim to ≤ 2000 chars.
+- Read its root: the first line `**Root:** <root>` of the block outside fenced code, as
+  `plan import` reads it (the `conport-task` anchor may sit between it and the heading) — the
+  label as written, the text after it trimmed: the root of the project whose repository the
+  task changes, `none` for a task that changes none of them. A block without such a line, or
+  with nothing after the label, names no root.
 
 Within the block, search for `<!--\s*conport-task:\s*(\d+)\s*-->` (outside fenced code blocks).
 
@@ -310,7 +334,8 @@ Within the block, search for `<!--\s*conport-task:\s*(\d+)\s*-->` (outside fence
   mcp__conport__update_task({
     project, task_id: <task_id>,
     title: <title>,
-    description: <short summary>
+    description: <short summary>,
+    root: <the section's root>
   })
   ```
 
@@ -326,7 +351,8 @@ Within the block, search for `<!--\s*conport-task:\s*(\d+)\s*-->` (outside fence
     description: <short summary>,
     parent_task_id: <epic_id>,
     kind: <'bug' when the section has the label, otherwise 'task'>,
-    priority: 3
+    priority: 3,
+    root: <the section's root>
   })
   ```
   Then write `<!-- conport-task: <id> -->` on a new line immediately after the `### Task N: <title>` heading in the file.
@@ -509,6 +535,24 @@ Constraints` section, wrapped in the paired delimiter anchor:
 <!-- /conport-contract -->
 ```
 
+**The roots of the plan.** When the task sections name two roots or more by their `**Root:**`
+lines (step 4) — sorted by name, `none` not counted — the contract carries one more item, right
+under the line `- Project <project> · Epic task-<epic_id> · Spec doc-<doc_id>.`, in the words
+`plan pull` writes:
+
+~~~markdown
+- Roots: (root, branch, base) — (backend, epic-<epic_id>, its base), (web, epic-<epic_id>, its base).
+  Each root is a git repository of its own, with its own branch epic-<epic_id>, working copy, checks
+  and merge; the base of a root is the branch the lead cuts its epic-<epic_id> from: the --base of
+  conport prompt epic in the lead's root, that root's default branch in every other root.
+~~~
+
+One `(<root>, epic-<epic_id>, its base)` per root; `backend` and `web` stand for the roots of the
+plan. The item goes in only with two roots or more: with one root or none the contract is the
+block above as it stands. The item is not part of the template above — that block is the text
+`plan pull` shares word for word —, so it is inserted into the plan's contract after the
+template is filled in, and a re-import replaces it with the rest of the block.
+
 Block boundaries for replacement: **the paired anchor, and nothing else.** In the masked
 view, find `<!-- conport-contract -->` and the first `<!-- /conport-contract -->` after it,
 each on its own line, and replace everything from the opening line through the closing line
@@ -615,7 +659,7 @@ and the input on the anchor route, the bridge's import writes nothing and asks n
 the prescription is the CLI command itself:
 
 ```
-  Сделай сейчас: npx -y conport@^0.15.0 plan import <plan_path> --spec doc-N --milestone <id>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.17.0 plan import <plan_path> --spec doc-N --milestone <id>, затем повтори finish на выгруженном файле.
 ```
 
 On the pulled route the order is fixed: the sidecar is read first, and with no usable
@@ -814,8 +858,8 @@ the missing-tasks item names the CLI instead of the bridge's import (see
 `## Overlay mode`):
 
 ```
-    1. npx -y conport@^0.15.0 plan import <plan_path> --epic <M>, затем
-       npx -y conport@^0.15.0 plan pull <M>, затем повтори finish на выгруженном файле
+    1. npx -y conport@^0.17.0 plan import <plan_path> --epic <M>, затем
+       npx -y conport@^0.17.0 plan pull <M>, затем повтори finish на выгруженном файле
 ```
 
 **The fix-round item prescribes finishing the round and nothing else.** An item that also
@@ -853,7 +897,7 @@ With the overlay on, the prescription line is the CLI command instead of the bri
 which writes nothing then:
 
 ```
-  Сделай сейчас: npx -y conport@^0.15.0 plan import <plan_path> --spec doc-N --milestone <id>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.17.0 plan import <plan_path> --spec doc-N --milestone <id>, затем повтори finish на выгруженном файле.
 ```
 
 `doc-N` is the spec's document — the plan's paired design file's `conport-spec` anchor when it
@@ -871,7 +915,7 @@ header line is omitted. The reason line names the case actually found, one of th
 [superpowers-conport finish]
   план: <plan_path> — RELEASE BLOCKED
   файл <plan_path>.conport.json <не найден | не читается | без epic_id> — план не выгружен из ConPort
-  Сделай сейчас: npx -y conport@^0.15.0 plan pull <target>, затем повтори finish на выгруженном файле.
+  Сделай сейчас: npx -y conport@^0.17.0 plan pull <target>, затем повтори finish на выгруженном файле.
 ```
 
 `<target>` is filled from the first source that has it:

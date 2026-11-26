@@ -71,6 +71,7 @@ mcp__conport__init({
 | skill_version | string | no | Semver of the installed SKILL.md content (independent of the plugin release tag) |
 | client_type | string | no | Calling environment: `claude-code` \| `claude-ai` \| `cursor` \| `openclaw` \| `mcporter` \| `paperclip`. Picks the install-guide URL of an update notice |
 | questions | boolean | no | `true` (default) when a person is at the session: up to three questions are returned and marked as asked. Pass `false` for a run with no person — a subagent, a routine cycle: no question is returned or marked, and `instructions` carries no warning that filling the project model is required (the key `arch.backfill.required` stays) |
+| root | string | no | The root of the session — the repository you work in, by its name, from `root` of `.conport.json`. Omit it in a project without roots; a project of one root takes its root without it |
 
 **Returns:** `project` (the project's handle — pass it as `project` to every
 other tool), `name` (the short name), `canonical_name`
@@ -116,6 +117,16 @@ you see roots + orphans; `effective_priority` rolls up the most-important
 priority across direct children (priority is industry-standard 1-5 where
 1=critical and 5=idle, so "most important" = the smallest number).
 
+**In a project with roots** (repositories, see `project_roots`) the answer
+carries `roots` (every root of the project: `id`, its number inside the
+project, and `name`) and `root` (the root of the session: the one named, or
+the only root when none was named). With a named root its debts come first in
+`arch.debts` and `backlog.top` keeps the tasks of that root and the tasks
+without a root. A project of several roots called without `root` is loaded
+with no `root`, and `instructions` carries
+"The project has roots …: set root in .conport.json". A project without roots
+carries neither key.
+
 **In a shared team** the answer is shaped by the tasks' assignees ("your own":
 the assignee is the caller; "free": no assignee; "another's": anyone else):
 `me` (`handle`, `email`, `former_member`, `role` of the caller; absent for a
@@ -150,6 +161,10 @@ out twice without an answer is settled by its default.
   and `team_name`. Ask the user which of them they mean and to set its
   `canonical_name` as `project_name` of `.conport.json`; do not retry `init` with
   another name yourself.
+- `root_not_found` (with `message`, whose one action adds the root) — `root`
+  is not a root of the project. Nothing is loaded. Tell the user; add the root
+  (`npx -y conport@^0.17.0 root add <root>` in its repository) only on their
+  word, then call `init` again.
 
 A string of digits addresses no project: it is answered `project_not_found`,
 exactly like a project that does not exist.
@@ -227,6 +242,110 @@ is left out. With `team` it is that one team, and the reply names it in a
 top-level `team`.
 
 **Errors:** `team_not_found` when `team` is not a team of yours.
+
+### project_roots
+
+List the roots of a project: the git repositories it is made of, in the order
+they were added. A project has no roots (the code of one repository,
+unnamed), one root (a call without a root takes it) or several (a code call
+names its root).
+
+```
+mcp__conport__project_roots({
+  project: "my-project"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+
+**Returns:** `project` (the project's handle) and `roots` (`id` — the
+root's number inside the project, `name`, `created_at`).
+
+### add_project_root
+
+Add a root to a project. A second root makes the project one of several
+roots, where every code call names its root. The first root of a project with
+code names that code — every code source, anchor check and path and symbol
+anchor takes it — and is added only with `adopt`. From a repository, prefer
+`conport root add <name>`: it sends the repository's fingerprint.
+
+```
+mcp__conport__add_project_root({
+  project: "my-project",
+  name: "api",
+  adopt: true
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| name | string | yes | The root's name: lowercase Latin letters, digits and hyphens, starting with a letter or a digit, up to 32 characters, not `none` |
+| fingerprint | string | no | The fingerprint of the root's repository: its smallest root commit (`git rev-list --max-parents=0 HEAD`), 1 to 64 characters. Omitted: the first call with the root binds it |
+| no_fingerprint | boolean | no | Add the root bound to no repository and never checked against one (default false) |
+| adopt | boolean | no | The first root of a project with code: give it that code (default false) |
+
+**Returns:** `id`, `name`, `created_at` and `adopted` (`labels`,
+`anchors`: what the root named).
+
+**Refusals** (`error`, `message`, `context`; nothing was written):
+`invalid_root_name`, `invalid_fingerprint` (a `fingerprint` empty or longer
+than 64 characters), `root_exists`, `root_repo_mismatch` (the repository is
+another root already) and `root_adopt_required` (`context`: the `labels`
+and the number of `anchors` the root would name — repeat with `adopt`).
+
+### rename_project_root
+
+Rename a root. Its code sources, checks, anchors and tasks keep it; their
+`code:<root>:<label>` addresses take the new name. `root` in
+`.conport.json` of the root's repository is changed by the person: tell them
+the new name.
+
+```
+mcp__conport__rename_project_root({
+  project: "my-project",
+  name: "api",
+  new_name: "backend"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| name | string | yes | The root's name now |
+| new_name | string | yes | Its new name, in the form of a root name |
+
+**Returns:** `id`, `name` and `created_at` of the renamed root.
+
+**Refusals** (`error`, `message`, `context`): `root_not_found`,
+`root_exists` and `invalid_root_name`.
+
+### remove_project_root
+
+Remove a root. The only root: the project goes back to no roots — its code
+sources, checks, anchors and tasks lose the root. One of several: refused
+while a code source, a task or a document portion names it; otherwise its
+checks and the anchors stamped with it are deleted with it.
+
+```
+mcp__conport__remove_project_root({
+  project: "my-project",
+  name: "worker"
+})
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| project | string | yes | Project handle or name |
+| name | string | yes | The root's name |
+
+**Returns:** `id`, `name` and `created_at` of the removed root.
+
+**Refusals** (`error`, `message`, `context`): `root_not_found` and
+`root_in_use` (`context`: the code `sources`, `tasks` and document
+portions `doc_sources` to release first).
 
 ---
 
@@ -1208,7 +1327,7 @@ and on the upload below.
 
 **Uploading a file** — the `conport` CLI sends a Markdown file of the
 repository as a new document:
-`npx -y conport@^0.15.0 documents upload <file> --doc-type <type> [--title <title>] [--created-at <date>] [--tags <tags>] [--author <author>]`.
+`npx -y conport@^0.17.0 documents upload <file> --doc-type <type> [--title <title>] [--created-at <date>] [--tags <tags>] [--author <author>]`.
 
 | Flag | Required | Description |
 |------|----------|-------------|
@@ -1545,8 +1664,8 @@ runs it.
 ### conport history
 
 ```
-npx -y conport@^0.15.0 history [--since <YYYY-MM-DD>] [--to <sha>] [--ignore <path>]... [--json]
-npx -y conport@^0.15.0 history --stage <N> [--since …] [--to …] [--ignore …] [--json]
+npx -y conport@^0.17.0 history [--since <YYYY-MM-DD>] [--to <sha>] [--ignore <path>]... [--json]
+npx -y conport@^0.17.0 history --stage <N> [--since …] [--to …] [--ignore …] [--json]
 ```
 
 | Flag | Description |
@@ -1601,7 +1720,7 @@ document from `list_blocks`. To change a portion, read it (`arch_source`),
 edit it and submit it again.
 
 A document portion is reviewed before every submission: the reviewer
-(`conport:model-reviewer`, or the prompt `npx -y conport@^0.15.0 agent model-reviewer`
+(`conport:model-reviewer`, or the prompt `npx -y conport@^0.17.0 agent model-reviewer`
 in a separate process) compares the draft with the document, the author
 resolves each finding as `fixed` or `dismissed`, and the report goes with the
 portion in `review`. The server stores the report, trusts it and runs no check
@@ -1612,18 +1731,18 @@ A decision is linked to an entity with `link_items` (`decision` → `entity`,
 `clarifies`), or by its number in the `decisions` of the entity in a portion.
 
 The `conport` CLI does the same from the shell —
-`npx -y conport@^0.15.0 arch submit <file.json>`,
-`npx -y conport@^0.15.0 arch withdraw <source>`,
-`npx -y conport@^0.15.0 arch source <source> [-o <file>]` (printed, the portion
+`npx -y conport@^0.17.0 arch submit <file.json>`,
+`npx -y conport@^0.17.0 arch withdraw <source>`,
+`npx -y conport@^0.17.0 arch source <source> [-o <file>]` (printed, the portion
 comes with `review` as from `arch_source`; the file of `-o` holds it without
 `review`) — and three things no tool
-does: `npx -y conport@^0.15.0 arch check` in the repository root checks the
+does: `npx -y conport@^0.17.0 arch check` in the repository root checks the
 anchors of the model against the code there and sends the outcome, and on
 `main` or `master` the facts of git as well (`--no-git` sends none of them);
-`npx -y conport@^0.15.0 arch suggest --json` proposes the units and their
+`npx -y conport@^0.17.0 arch suggest --json` proposes the units and their
 parts from git history and, with a `codegraph` index, the imports between the
 parts, and submits nothing; and
-`npx -y conport@^0.15.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
+`npx -y conport@^0.17.0 arch review-input doc-N --portion <draft> -o <dir> [--findings <file>]`
 writes the reviewer's input directory — the document, its blocks, the draft,
 the names and scenarios of the model, the previous report — outside the
 working tree. No code, no commit message and no author leaves the machine;
@@ -1644,7 +1763,7 @@ the backfill with `arch_backfill` (`in_progress`, `completed`; `declined` is
 refused with `backfill_required`), and reads the active decisions
 without an entity from `arch_status` while the backfill runs
 (`unlinked_decisions`, page by page with `unlinked_after`).
-`npx -y conport@^0.15.0 arch withdraw --all` reports every source of the project
+`npx -y conport@^0.17.0 arch withdraw --all` reports every source of the project
 and removes nothing; with `--apply` it withdraws them all, documents and code,
 and returns the backfill to its start. It runs only on the user's word.
 
@@ -1680,7 +1799,7 @@ mcp__conport__arch_submit({
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
-| portion | object | yes | `source` (`doc-N` or `code:<label>`), `entities`, `relations`, `dismissed`, `scenarios`, `review` |
+| portion | object | yes | `source` (`doc-N`, `code:<label>`, or `code:<root>:<label>` in a project with roots), `entities`, `relations`, `dismissed`, `scenarios`, `review`, `fingerprint` (a code portion: the smallest root commit of its repository; the first one binds the root, another one is refused `root_repo_mismatch`) |
 
 An entity: `name`, `type` (required for a new one), `action` (introduced \|
 changed \| removed \| replaced \| mentioned), `block` (a block ULID of the
@@ -1766,8 +1885,13 @@ with every error at once, and nothing is written. The codes:
 `scenario_participant_removed`, `scenario_ref_unknown`, `scenario_malformed`,
 `scenario_name_taken`, `scenario_too_large`, `review_not_for_code`,
 `dismissal_moved`, `review_reused`, `review_malformed`,
-`part_without_owner`.
-A portion off the schema is `portion_invalid`.
+`part_without_owner`, `anchor_root_missing`, `anchor_root_foreign`,
+`root_not_found`.
+A portion off the schema is `portion_invalid`. In a project of several roots a
+code source without its root is refused before the check:
+`code_address_needs_root` for `code:<label>` (the message names the full
+addresses `code:<root>:<label>`), `root_repo_mismatch` for a `fingerprint`
+of another repository.
 
 ### arch_withdraw
 
@@ -1866,6 +1990,11 @@ mcp__conport__arch_names({
 
 **Returns:** `names` (`id`, `name`, `type`, `aliases`, `state`), `total`,
 `next_offset` (null on the last page).
+
+Over REST, `GET /api/v1/projects/<project>/arch/names?root=<root>` keeps to
+the entities with a path or a symbol anchor of that root, each with those
+anchors only (`anchors=true` gives them); a root the project lacks is 422
+`root_not_found`.
 
 **Refusals:** `invalid_page` (a `limit` or an `offset` out of bounds).
 
@@ -1976,7 +2105,8 @@ table, and those anchored at a directory above a path.
 ```
 mcp__conport__arch_lookup({
   project: <project>,
-  anchor: "src/search/service.py"
+  anchor: "src/search/service.py",
+  root: "backend"
 })
 ```
 
@@ -1984,9 +2114,12 @@ mcp__conport__arch_lookup({
 |-----------|------|----------|-------------|
 | project | string | yes | Project handle or name |
 | anchor | string | yes | The value of an anchor |
+| root | string | no | The root of the project a path or a symbol lies in: a path or a symbol matches in that root only, a command, a route or a table in any |
 
 **Returns:** `entities` (`id`, `name`, `type`, `state`, `stage`, `anchors` —
-the ones that matched, nearest first).
+the ones that matched, nearest first; a path or a symbol names its `root`).
+
+**Refusals:** `root_not_found` (a `root` the project does not have).
 
 ### arch_status
 
@@ -2013,12 +2146,14 @@ its `role`, an `area_uncovered` debt its `area` (`unit` — `""` for the root,
 `path`, `commits`, `share`, `nodes` — null without codegraph,
 `unit_entity_id` — the smallest number of an active `unit` entity anchored on
 the root of the unit, or null), and for a debt of a scenario its
-`scenario_id`), `git_pass` (`checked_at`, `commit`, `branch`, `head_at`,
+`scenario_id`; `root` — the root the debt is of, null for none), `git_pass` (`checked_at`, `commit`, `branch`, `head_at`,
 `history_truncated`, `shallow`, `codegraph`, `disabled` of the latest anchor
 check that sent a block of git facts — the facts from the main branch, a
 shallow clone, or a refusal (`disabled`: `--no-git` or `arch.git: false`
 from any branch, or no main branch) — or null when there is none),
-`backfill` (`state`, `completed_at`,
+`git_passes` (`root` and the fields of `git_pass`: the latest such check of
+each root, `root` null in a project without roots; `git_pass` is the latest of
+them), `backfill` (`state`, `completed_at`,
 `documents` — the documents with the role structure or history, `submitted`
 — those of them with a portion, `code_sources`, `filled`, `offer`,
 `required` — the project has documents or decisions but no model, and filling
@@ -2057,7 +2192,12 @@ mcp__conport__arch_scenarios({
 
 **Returns:** `scenarios` (`id`, `name`, `kind` — sequence \| states \|
 activity, `source`, `steps` — the number of steps or transitions, `block`,
-`anchor`, `submitted_at`), `total`, `next_offset` (null on the last page).
+`anchor` — of a scenario of the code with the `root` of its source,
+`submitted_at`), `total`, `next_offset` (null on the last page).
+
+Over REST, `GET /api/v1/projects/<project>/arch/scenarios?root=<root>` keeps
+to the scenarios of the code of that root; a root the project lacks is 422
+`root_not_found`.
 
 **Refusals:** `invalid_page` (a `limit` or an `offset` out of bounds).
 
@@ -2083,7 +2223,8 @@ mcp__conport__arch_scenario({
 `kind`, `document_id`, `title`, `submitted_at`, `stale`, `review` — the
 summary of the current report: `reviewer`, `model`, `found`, `fixed`,
 `dismissed`, `recheck`, `at`, null without one — `document_state`), `block`,
-`block_missing`, `anchor`, `anchor_status`
+`block_missing`, `anchor` (of a scenario of the code, in a project with
+roots, with the `root` of its source), `anchor_status`
 (found \| missing \| unchecked, null without a check), `debt_dismissal`
 (`reason`, null without one), `subject`, `nodes`, `steps`.
 
@@ -3077,6 +3218,7 @@ kept, or a decision tagged `error-solution` by hand.
 | Category | Tools |
 |----------|-------|
 | Session | `init`, `create_project`, `list_projects` |
+| Project roots | `project_roots`, `add_project_root`, `rename_project_root`, `remove_project_root` |
 | Context | `update_product_context`, `update_active_context`, `context_history` |
 | Tasks | `add_task`, `update_task`, `list_tasks`, `get_task`, `add_task_dep`, `delete_task`, `add_linked_task`, `list_team_members`, `add_task_journal_entry`, `list_task_journal`, `get_task_journal_entry` |
 | Milestones | `add_milestone`, `update_milestone`, `list_milestones` |

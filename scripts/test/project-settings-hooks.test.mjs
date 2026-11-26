@@ -152,6 +152,28 @@ test('session start names the project and its source to the agent and the user',
   assert.equal(fromEnv.user, fromEnv.agent)
 }))
 
+// The root line follows the project line, which is said as before; a compacted
+// session hears both again.
+test('session start names the root after the project line', () => withSession(async (ctx) => {
+  const dir = repo({ '.conport.json': '{"project_name": "prk7m2qx9d", "root": "backend"}' })
+  const lines = 'ConPort project: prk7m2qx9d (from .conport.json)\nConPort root: prk7m2qx9d:backend (from .conport.json)'
+  assert.deepEqual(told(await start(ctx, dir)), { user: lines, agent: lines })
+  assert.deepEqual(told(await start(ctx, dir, { source: 'compact' })), { user: null, agent: lines })
+
+  const named = repo({
+    '.conport.json': '{"project_name": "shared-proj", "root": "web", "units": 3}',
+    '.conport.local.json': '{"project_name": "mine"}',
+    '.gitignore': '.conport.local.json\n',
+  })
+  const namedLines = [
+    'ConPort project: mine (from .conport.local.json)',
+    'ConPort root: web (from .conport.json)',
+    '.conport.json: units must be a list — fix it',
+    'project_name from .conport.local.json (mine) overrides .conport.json (shared-proj)',
+  ].join('\n')
+  assert.deepEqual(told(await start(ctx, named, { session: 's2' })), { user: namedLines, agent: namedLines })
+}))
+
 test('a resumed session tells the agent only', () => withSession(async (ctx) => {
   const dir = repo({ '.conport.json': '{"project_name": "prk7m2qx9d", "units": 3}' })
   const lines = 'ConPort project: prk7m2qx9d (from .conport.json)\n.conport.json: units must be a list — fix it'
@@ -281,7 +303,7 @@ test("the commit guard reads the settings of the command's folder", () => withSe
   const res = await bash(ctx, session, `cd ${word(other)} && git commit -m x`)
   assert.equal(res.code, 2, res.err)
   assert.equal(res.err, `BLOCKED: ${file} is a new Superpowers spec, and with the ConPort overlay on specs live in ConPort: ` +
-    `run \`npx -y conport@^0.15.0 documents upload ${file} --doc-type spec --tags awaiting-plan\`, then remove the file.\n`)
+    `run \`npx -y conport@^0.17.0 documents upload ${file} --doc-type spec --tags awaiting-plan\`, then remove the file.\n`)
 
   // The other way round: the session's overlay is on, the command's folder has none.
   const on = repo({ '.conport.json': '{"plugins": {"superpowers": true}}' })

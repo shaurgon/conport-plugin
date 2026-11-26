@@ -21,7 +21,7 @@ Offer the bootstrap flow when **both** of the following hold after `init`:
    (or an empty one) and no portion of its model. The decisions, progress
    entries and documents it already has do not matter. An agent without the
    MCP server reads `offer` from `GET /api/v1/projects/{project}/onboarding`
-   (`npx -y conport@^0.15.0 api arch onboarding --project <project>`).
+   (`npx -y conport@^0.17.0 api arch onboarding --project <project>`).
 2. The repository has no history to onboard from (the condition above).
 
 The onboarding procedure sends a project here at its step 0 by the same
@@ -63,7 +63,7 @@ After the user responds:
    `PATCH /api/v1/projects/{project}/context/product` with
    `{"patch": {…}}`, run through the CLI:
    ```
-   npx -y conport@^0.15.0 api context update --project <project> --context_type product --patch '{
+   npx -y conport@^0.17.0 api context update --project <project> --context_type product --patch '{
      "vision":          "<answer 1>",
      "tech_stack":      "<answer 2>",
      "target_users":    "<answer 3>",

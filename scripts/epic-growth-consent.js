@@ -8,21 +8,16 @@
 const fs = require('fs');
 const path = require('path');
 const { dataDir, parseProject } = require('./_common.js');
+const { isHandle } = require('./project-config.js');
 
 const CONSENT_FILE = 'epic-growth-allow.json';
 
 // The whole message, nothing before or after it but spaces and line breaks.
 // The project is the rest of the line: a name may hold spaces.
 const PHRASE = /^allow[ \t]+epic[ \t]+(\d+)(?:[ \t]+in[ \t]+([^\r\n]+))?$/i;
-// A project handle: `pr` and 8 characters of the team-handle alphabet.
-const HANDLE = /^pr[a-hjkmnp-z2-9]{8}$/i;
 
 function consentPath() {
   return path.join(dataDir(), CONSENT_FILE);
-}
-
-function isHandle(value) {
-  return typeof value === 'string' && HANDLE.test(value);
 }
 
 // A handle is lower case; a name keeps its spelling.

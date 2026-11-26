@@ -23,6 +23,8 @@ The dispatch also gives you **global constraints** (exact values, formats, and s
 
 Do not re-derive the diff in other ways. Do not crawl the broader codebase. If a named diff package file is genuinely missing, fetch it yourself once: `git diff --stat BASE..HEAD` and `git diff BASE..HEAD`.
 
+In a project of several roots, `BASE` and `HEAD` are commits of the repository of the task's root, and the dispatch names its worktree: run every git command of the review there. Another root is another repository: its commits are not in this one, and a diff run there shows nothing of this task.
+
 ## Outside-diff checks: only for concrete NAMED risks
 
 Inspect code outside the diff ONLY to evaluate a concrete risk you can name — one focused check per named risk, and name both the risk and what you checked in your report. Cross-cutting changes are legitimate named risks: if the diff changes lock ordering, a function/API contract, or shared mutable state, checking the call sites is the right method. Everything else stays inside the diff.

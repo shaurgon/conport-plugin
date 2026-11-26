@@ -2,7 +2,9 @@
 // file `references/project-onboarding.md` the conport skill links from its
 // part *After init*, the first fill `references/bootstrap.md` it hands a
 // repository without history to, the install page of Cursor and the changelog.
-// The lines of `init` are the server's own text, word for word.
+// The lines of `init` are the server's own text, word for word. A product of
+// several repositories is one project with a root per repository, and the
+// routine runs in the root of its session.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -92,9 +94,9 @@ test('the entry checks the repository, the CLI and the project before the state 
   assert.match(entry, /older than 30 days/)
   assert.match(entry, /`references\/bootstrap\.md` without its own condition/)
   // The CLI reads the state of the onboarding; without Node.js or a key, one action.
-  assert.match(entry, /`npx -y conport@\^0\.15\.0 api arch onboarding --project <project>`/)
+  assert.match(entry, /`npx -y conport@\^0\.17\.0 api arch onboarding --project <project>`/)
   assert.match(entry, /`GET \/api\/v1\/projects\/\{project\}\/onboarding`/)
-  assert.match(entry, /put CONPORT_API_KEY in the environment or in ~\/\.config\/conport\/\.env/)
+  assert.match(entry, /put your API key, and only it, in ~\/\.config\/conport\/conport\.key/)
   // Advice that blocks nothing, one action each.
   assert.match(entry, /`plugins\.superpowers`/)
   assert.match(entry, /`codegraph` index/)
@@ -109,13 +111,13 @@ test('the entry checks the repository, the CLI and the project before the state 
 
 test('the skeleton and the history run the commands of the CLI', () => {
   const skeleton = part('## Step 3. Skeleton')
-  assert.match(skeleton, /`npx -y conport@\^0\.15\.0 arch suggest --json`/)
-  assert.match(skeleton, /`npx -y conport@\^0\.15\.0 arch check`/)
+  assert.match(skeleton, /`npx -y conport@\^0\.17\.0 arch suggest --json`/)
+  assert.match(skeleton, /`npx -y conport@\^0\.17\.0 arch check`/)
   assert.match(skeleton, /`references\/model-backfill\.md`/)
   const history = part('## Step 4. History')
-  assert.match(history, /`npx -y conport@\^0\.15\.0 history --to <tip of the main branch> --json`/)
+  assert.match(history, /`npx -y conport@\^0\.17\.0 history --to <tip of the main branch> --json`/)
   assert.match(history, /`git symbolic-ref refs\/remotes\/origin\/HEAD`/)
-  assert.match(history, /`npx -y conport@\^0\.15\.0 history --stage N --to <to> --json`/)
+  assert.match(history, /`npx -y conport@\^0\.17\.0 history --stage N --to <to> --json`/)
   assert.match(history, /`project_onboarding\(project, state='in_progress', history=\{to, since, ignore\}\)`/)
   // The same arguments on every call, so new commits do not move the stages.
   assert.match(history, /the same `--to`, `--since` and `--ignore`/)
@@ -143,23 +145,23 @@ test('the procedure keeps raw commit messages and authors out of ConPort', () =>
 
 /** The calls of every writing step: the MCP tool and the form of `conport api`. */
 const WRITING_PAIRS = [
-  ['## Step 0. Entry', 'create_project(name, description?)', 'npx -y conport@^0.15.0 api projects create --name <name>'],
-  ['## Step 0. Entry', "project_onboarding(project, state='in_progress')", 'npx -y conport@^0.15.0 api arch onboarding-put'],
-  ['## Step 1a. Earlier records', 'deprecate_decision(', 'npx -y conport@^0.15.0 api decisions deprecate'],
-  ['## Step 1a. Earlier records', "update_document(project, document_id, status='archived')", 'npx -y conport@^0.15.0 api documents replace --project <project> --document_id <N> --status archived'],
-  ['## Step 2. Documents', 'update_document(project, document_id, content=', 'npx -y conport@^0.15.0 api documents replace --project <project> --document_id <N> --content'],
-  ['## Step 4. History', 'project_onboarding(project, state=', 'npx -y conport@^0.15.0 api arch onboarding-put'],
-  ['## Step 7. Writing', 'log_progress(', 'npx -y conport@^0.15.0 api batch progress'],
-  ['## Step 7. Writing', 'sync_decision(', 'npx -y conport@^0.15.0 api batch decisions'],
-  ['## Step 7. Writing', 'deprecate_decision(', 'npx -y conport@^0.15.0 api decisions deprecate'],
-  ['## Step 7. Writing', "relationship='mentions'", 'npx -y conport@^0.15.0 api links create --project <project> --source_type progress --source_id <N> --target_type entity --target_id <entity> --link_type mentions'],
-  ['## Step 7. Writing', "relationship='supersedes'", 'npx -y conport@^0.15.0 api links create --project <project> --source_type decision --source_id <new> --target_type decision --target_id <old> --link_type supersedes'],
-  ['## Step 7. Writing', "relationship='references'", 'npx -y conport@^0.15.0 api links create --project <project> --source_type doc --source_id <overview> --target_type doc --target_id <N> --link_type references'],
-  ['## Step 7. Writing', 'update_product_context(', 'npx -y conport@^0.15.0 api context update --project <project> --context_type product'],
-  ['## Step 7. Writing', "update_active_context(project, field='current_focus'", 'npx -y conport@^0.15.0 api context update --project <project> --context_type active'],
-  ['## Step 7. Writing', 'add_document(', 'npx -y conport@^0.15.0 documents upload'],
-  ['## Step 9. Summary', "project_onboarding(project, state='completed')", 'npx -y conport@^0.15.0 api arch onboarding-put'],
-  ['## Step 9. Summary', 'update_product_context(', 'npx -y conport@^0.15.0 api context update --project <project> --context_type product'],
+  ['## Step 0. Entry', 'create_project(name, description?)', 'npx -y conport@^0.17.0 api projects create --name <name>'],
+  ['## Step 0. Entry', "project_onboarding(project, state='in_progress')", 'npx -y conport@^0.17.0 api arch onboarding-put'],
+  ['## Step 1a. Earlier records', 'deprecate_decision(', 'npx -y conport@^0.17.0 api decisions deprecate'],
+  ['## Step 1a. Earlier records', "update_document(project, document_id, status='archived')", 'npx -y conport@^0.17.0 api documents replace --project <project> --document_id <N> --status archived'],
+  ['## Step 2. Documents', 'update_document(project, document_id, content=', 'npx -y conport@^0.17.0 api documents replace --project <project> --document_id <N> --content'],
+  ['## Step 4. History', 'project_onboarding(project, state=', 'npx -y conport@^0.17.0 api arch onboarding-put'],
+  ['## Step 7. Writing', 'log_progress(', 'npx -y conport@^0.17.0 api batch progress'],
+  ['## Step 7. Writing', 'sync_decision(', 'npx -y conport@^0.17.0 api batch decisions'],
+  ['## Step 7. Writing', 'deprecate_decision(', 'npx -y conport@^0.17.0 api decisions deprecate'],
+  ['## Step 7. Writing', "relationship='mentions'", 'npx -y conport@^0.17.0 api links create --project <project> --source_type progress --source_id <N> --target_type entity --target_id <entity> --link_type mentions'],
+  ['## Step 7. Writing', "relationship='supersedes'", 'npx -y conport@^0.17.0 api links create --project <project> --source_type decision --source_id <new> --target_type decision --target_id <old> --link_type supersedes'],
+  ['## Step 7. Writing', "relationship='references'", 'npx -y conport@^0.17.0 api links create --project <project> --source_type doc --source_id <overview> --target_type doc --target_id <N> --link_type references'],
+  ['## Step 7. Writing', 'update_product_context(', 'npx -y conport@^0.17.0 api context update --project <project> --context_type product'],
+  ['## Step 7. Writing', "update_active_context(project, field='current_focus'", 'npx -y conport@^0.17.0 api context update --project <project> --context_type active'],
+  ['## Step 7. Writing', 'add_document(', 'npx -y conport@^0.17.0 documents upload'],
+  ['## Step 9. Summary', "project_onboarding(project, state='completed')", 'npx -y conport@^0.17.0 api arch onboarding-put'],
+  ['## Step 9. Summary', 'update_product_context(', 'npx -y conport@^0.17.0 api context update --project <project> --context_type product'],
 ]
 
 test('every writing step names the MCP call and its conport api form', () => {
@@ -183,14 +185,14 @@ test('every writing step names the MCP call and its conport api form', () => {
   assert.match(writing, /up to 100/)
 })
 
-test('every command runs npx -y conport@^0.15.0', () => {
+test('every command runs npx -y conport@^0.17.0', () => {
   const text = procedure()
   const ranges = [...text.matchAll(/conport@[^\s`]+/g)].map((m) => m[0])
   assert.ok(ranges.length > 0)
-  assert.deepEqual([...new Set(ranges)], ['conport@^0.15.0'])
+  assert.deepEqual([...new Set(ranges)], ['conport@^0.17.0'])
   assert.doesNotMatch(text, /npx conport/)
   // No command of the CLI is told bare: whatever `conport` is installed may lack it.
-  assert.doesNotMatch(text, /`conport (?:history|api|arch|documents)\b/)
+  assert.doesNotMatch(text, /`conport (?:history|api|arch|documents|root)\b/)
 })
 
 test('the chronicle, the overview and the context are written as the spec says', () => {
@@ -217,7 +219,7 @@ test('the documents step dates, titles and uploads each file', () => {
   assert.match(documents, /`<path>: <H1 or file name>`/)
   assert.match(documents, /`\.mdx`, `\.rst`, `\.adoc`/)
   assert.match(documents, /"not uploaded: format"/)
-  assert.match(documents, /`npx -y conport@\^0\.15\.0 documents upload <file> --doc-type <type> --title <title> --created-at <date>`/)
+  assert.match(documents, /`npx -y conport@\^0\.17\.0 documents upload <file> --doc-type <type> --title <title> --created-at <date>`/)
   assert.match(documents, /approves the inventory/)
   assert.match(documents, /No `\.md` file in the repository and none handed over: the step is empty/)
   assert.doesNotMatch(documents, /Without a repository/)
@@ -229,7 +231,7 @@ test('a changed file renews its document in place, never by a second upload', ()
   assert.doesNotMatch(oneLine(procedure()), /renewed by uploading it again/)
   assert.match(documents, /is not uploaded again/)
   assert.match(documents, /`update_document\(project, document_id, content=<the file's body>\)`/)
-  assert.match(documents, /`npx -y conport@\^0\.15\.0 api documents replace --project <project> --document_id <N> --content "\$\(cat '<file>'\)"`/)
+  assert.match(documents, /`npx -y conport@\^0\.17\.0 api documents replace --project <project> --document_id <N> --content "\$\(cat '<file>'\)"`/)
   // A spec only as an amendment with its reason: the server refuses `amend` without one.
   assert.match(documents, /`--change_kind amend --reason '<why>'`/)
   assert.match(documents, /`change_kind='amend'` and\s+`reason` to `update_document`/)
@@ -270,7 +272,7 @@ test("the procedure declines, stops and rolls back only on the user's word and b
   assert.match(decline, /only on the user's word/)
   assert.match(decline, /never as a step of your own/)
   assert.match(decline, /before `completed`/)
-  assert.match(decline, /`npx -y conport@\^0\.15\.0 arch withdraw --all --apply`/)
+  assert.match(decline, /`npx -y conport@\^0\.17\.0 arch withdraw --all --apply`/)
   // No other part of the procedure names the command.
   const outside = text.replace(section(text, '## Decline, stop and rollback'), '')
   assert.doesNotMatch(outside, /withdraw --all/)
@@ -278,18 +280,72 @@ test("the procedure declines, stops and rolls back only on the user's word and b
   assert.match(part('## Without a person'), /never starts the procedure/)
 })
 
-test('the summary and the several repositories give the actions of the spec', () => {
+test('the summary gives the actions of the spec', () => {
   const summary = part('## Step 9. Summary')
   for (const what of ['product context', 'overview', 'model', 'chronicle', 'decisions', 'documents']) {
     assert.ok(summary.toLowerCase().includes(what), `the summary does not name ${what}`)
   }
   assert.match(summary, /deletes the draft/)
+})
+
+test('a second repository of the product is a new root', () => {
   const several = part('## Several repositories')
+  assert.match(several, /The repositories of one product are one project of ConPort, each of them a root of it/)
+  // The repository of the session is named first; in a project with code its first root adopts the code.
+  assert.match(several, /`npx -y conport@\^0\.17\.0 root add <root of the session>`/)
+  assert.match(several, /with `--adopt` when the model already has `code:` portions/)
+  // The other repository: its own root, set in its .conport.json, and the skeleton of its code.
+  assert.match(several, /`"root": "<name>"` into the `\.conport\.json` of that repository/)
+  assert.match(several, /`npx -y conport@\^0\.17\.0 root add <name>` run in that repository/)
+  assert.match(several, /`code:<name>:<unit>`/)
+  assert.match(several, /`npx -y conport@\^0\.17\.0 root path <name> --save`/)
+  // A second repository of the product needs no project and no plan of its own.
+  assert.match(several, /needs no project of its own and no other plan/)
+  const text = oneLine(procedure())
+  assert.doesNotMatch(text, /create a project of its own|a second project needs|connect <repository> the same way/)
+  assert.doesNotMatch(several, /`free`/)
+  // A connected project takes a root with its skeleton and the history of its repository;
+  // the server keeps no history of it: the arguments stay in a draft of that repository.
+  const attach = part('### Attaching a root')
+  assert.match(attach, /step 3/)
+  assert.match(attach, /steps 4 to 7/)
+  assert.match(attach, /a draft of its own/)
+  assert.match(attach, /`history` only while the onboarding is `in_progress`/)
+  assert.match(attach, /`completed` stays `completed`/)
+  // The summary names each repository of the product that is not a root yet.
+  assert.match(part('## Step 9. Summary'), /`attach <repository> as the root <name> of this project`/)
+  // The skeleton is never skipped for want of a root: it is built in the root of the session.
+  const skeleton = part('## Step 3. Skeleton')
+  assert.match(skeleton, /in the repository of the session/)
+  assert.match(skeleton, /`code:<root>:<unit>`/)
+  assert.doesNotMatch(skeleton, /\*Several repositories\*/)
+  assert.match(skeleton, /for a reason other than the several repositories of the product/)
+})
+
+test('link_project stays for separate products', () => {
+  const several = part('## Several repositories')
+  assert.match(several, /Separate products[^.]*are separate projects linked with `link_project`/)
   assert.match(several, /`link_project\(project, target_project, link_type\)`/)
   for (const type of ['`part_of`', '`calls`', '`shares_data`', '`depends_on`']) assert.ok(several.includes(type), type)
-  assert.match(several, /connect <repository> the same way and link the projects/)
-  assert.match(several, /create a project of its own for the repository <name>, set it in \.conport\.json of that repository, connect it and link the projects/)
-  assert.match(several, /`free`/)
+  assert.match(several, /`connect <product> the same way and link the projects`/)
+  // Step 7 links only the separate products; the overview names the roots and the linked products.
+  assert.match(part('### The contexts'), /\*\*The neighbouring products\*\* — `link_project` for the separate products/)
+  assert.match(part('### The overview'), /5\. \*\*The roots and the neighbouring products\*\*/)
+})
+
+test('the routine passes the session root to the agenda', () => {
+  const routine = oneLine(readFileSync(join(PLUGIN_DIR, 'skills', 'conport-routine', 'SKILL.md'), 'utf8'))
+  // The root of the session is the root of .conport.json, as the session start names it.
+  assert.match(routine, /`root` of that `\.conport\.json` \(the `ConPort root:` line of session start\)/)
+  // A repository with a named root passes it even when the project has one root.
+  assert.match(routine, /A repository whose `\.conport\.json` names no root passes none/)
+  assert.doesNotMatch(routine, /A project of one repository has none/)
+  assert.match(routine, /`init\(questions=false, root=<the root of the session>\)`/)
+  assert.match(routine, /`get_agenda\(project, root=<the root of the session>\)`/)
+  assert.match(routine, /`list_tasks\(\.\.\., ready=true, order="priority", offset=N, root=<the root of the session>\)`/)
+  // The agenda gives the tasks of the root and those without one; a task of another root is named, not executed.
+  assert.match(routine, /the tasks of that root and those without a root/)
+  assert.match(routine, /A task of another root is not executed: the digest names it with its root/)
 })
 
 test('the procedure carries no internal numbers and no project handle', () => {
@@ -308,7 +364,7 @@ test('bootstrap starts from the onboarding condition and writes the context by P
   assert.match(head, /`onboarding\.offer`/)
   assert.doesNotMatch(bootstrap, /update_product_context\(\{[\s\S]*?content:/)
   assert.match(bootstrap, /`PATCH \/api\/v1\/projects\/\{project\}\/context\/product`/)
-  assert.match(bootstrap, /npx -y conport@\^0\.15\.0 api context update --project <project> --context_type product --patch/)
+  assert.match(bootstrap, /npx -y conport@\^0\.17\.0 api context update --project <project> --context_type product --patch/)
   // A document is created with its type.
   assert.match(oneLine(bootstrap), /`add_document` with its `doc_type`/)
 })
@@ -327,7 +383,7 @@ test('the skill tells an agent without MCP to read GET /onboarding', () => {
   const after = afterInit()
   assert.match(after, /without the MCP server/)
   assert.match(after, /`GET \/api\/v1\/projects\/\{project\}\/onboarding`/)
-  assert.match(after, /`npx -y conport@\^0\.15\.0 api arch onboarding --project <project>`/)
+  assert.match(after, /`npx -y conport@\^0\.17\.0 api arch onboarding --project <project>`/)
 })
 
 test('cursor install replaces the whole skills/conport folder with references/', () => {
@@ -360,6 +416,7 @@ test('the changelog names the breaking changes and the rollback in the release t
     '`--created-at`',
     '`--title`',
     'conport history',
+    // The released entry keeps the range it shipped with, ^0.15.0, on purpose.
     'npx -y conport@^0.15.0',
     '`references/project-onboarding.md`',
     '`projects/project-onboarding`',

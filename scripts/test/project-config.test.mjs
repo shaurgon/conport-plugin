@@ -14,7 +14,7 @@ import { isolatedDir, isolatedEnv, REPO_ROOT } from './support/isolated.mjs'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const {
-  resolveSettings, settingsLocations, jsonErrorPosition, loadSettings, normalizePath, projectLine,
+  resolveSettings, settingsLocations, jsonErrorPosition, loadSettings, normalizePath, projectLine, rootLine, isHandle,
 } = require(join(HERE, '..', 'project-config.js'))
 const CASES = JSON.parse(readFileSync(join(HERE, 'fixtures', 'project-config-cases.json'), 'utf8'))
 
@@ -75,6 +75,50 @@ test('projectLine names the project and where it came from', () => {
   assert.equal(projectLine({ project: null, source: null, settings: { plugins: {}, arch: {} }, lines: [] }), null)
 })
 
+// The root is read from .conport.json alone, so its line names that file
+// whichever source named the project.
+test('rootLine names the root from .conport.json', () => {
+  const env = {}
+  const shared = '{"project_name": "billing", "root": "backend"}'
+  assert.equal(rootLine(resolveSettings({ shared, local: null, env })), 'ConPort root: backend (from .conport.json)')
+  const local = '{"project_name": "mine"}'
+  assert.equal(
+    rootLine(resolveSettings({ shared, local, localIgnored: true, env })),
+    'ConPort root: backend (from .conport.json)')
+  assert.equal(
+    rootLine(resolveSettings({ shared: '{"root": "web"}', local: null, env: { CONPORT_PROJECT_NAME: 'team/billing' } })),
+    'ConPort root: web (from .conport.json)')
+})
+
+// A handle names the project by itself, so the root is shown as
+// <handle>:<root>, the handle in lower case; a name, a team/name or a string
+// one letter off the handle alphabet is not a handle.
+test('rootLine prefixes a handle project', () => {
+  const line = (project) => rootLine({ project, source: '.conport.json', settings: { plugins: {}, arch: {}, root: 'backend' }, lines: [] })
+  assert.equal(line('prk7m2qx9d'), 'ConPort root: prk7m2qx9d:backend (from .conport.json)')
+  assert.equal(line('PRK7M2QX9D'), 'ConPort root: prk7m2qx9d:backend (from .conport.json)')
+  assert.equal(line('prk7m2qx9l'), 'ConPort root: backend (from .conport.json)')
+  assert.equal(line('pers/prk7m2qx9d'), 'ConPort root: backend (from .conport.json)')
+  assert.equal(
+    rootLine(resolveSettings({ shared: '{"project_name": "prk7m2qx9d", "root": "backend"}', local: null, env: {} })),
+    'ConPort root: prk7m2qx9d:backend (from .conport.json)')
+  assert.equal(isHandle('prk7m2qx9d'), true)
+  assert.equal(isHandle('prk7m2qx9l'), false)
+  // The consent of epic growth tells a handle by the same rule.
+  assert.equal(require(join(HERE, '..', 'epic-growth-consent.js')).isHandle, isHandle)
+})
+
+test('rootLine is null without a root or without a project', () => {
+  const env = {}
+  assert.equal(rootLine(resolveSettings({ shared: '{"project_name": "billing"}', local: null, env })), null)
+  assert.equal(rootLine(resolveSettings({ shared: '{"root": "backend"}', local: null, env })), null)
+  // A broken root is not read, so there is no root to name.
+  assert.equal(rootLine(resolveSettings({ shared: '{"project_name": "billing", "root": "none"}', local: null, env })), null)
+  // A broken personal file names no project.
+  assert.equal(rootLine(resolveSettings({ shared: '{"project_name": "billing", "root": "backend"}', local: '{', env })), null)
+  assert.equal(rootLine(null), null)
+})
+
 // The roots are normalized (forward slashes, `C:/…` on Windows), so a root is
 // compared with the normalized folder.
 test('loadSettings reads the local file of the main worktree when the current one has none, on windows paths too', () => {
@@ -84,24 +128,37 @@ test('loadSettings reads the local file of the main worktree when the current on
   const wt = join(isolatedDir(), 'wt')
   git(main, env, 'worktree', 'add', '-q', wt)
   mkdirSync(join(wt, 'sub'))
-  const got = loadSettings({ cwd: join(wt, 'sub'), env, home: isolatedDir() })
+  const got = loadSettings({ cwd: join(wt, 'sub'), env })
   assert.equal(got.root, normalizePath(wt))
   assert.equal(got.mainRoot, normalizePath(main))
+  assert.equal(got.localDir, normalizePath(main))
   assert.equal(got.project, 'mine')
   assert.equal(got.source, '.conport.local.json')
   assert.deepEqual(got.settings.plugins, { superpowers: true })
   assert.deepEqual(got.lines, ['project_name from .conport.local.json (mine) overrides .conport.json (team-project)'])
 })
 
+test('loadSettings names the folder of the local file read: the current worktree when it holds one', () => {
+  const env = isolatedEnv()
+  const main = repo(env, { '.gitignore': '.conport.local.json\n' })
+  writeFileSync(join(main, '.conport.local.json'), '{"roots": {"frontend": "../frontend"}}')
+  const wt = join(isolatedDir(), 'wt')
+  git(main, env, 'worktree', 'add', '-q', wt)
+  writeFileSync(join(wt, '.conport.local.json'), '{"roots": {"docs": "../docs"}}')
+  const got = loadSettings({ cwd: wt, env })
+  assert.equal(got.localDir, normalizePath(wt))
+  assert.deepEqual(got.settings.roots, { docs: '../docs' })
+})
+
 test('loadSettings refuses a root inside CONPORT_SETTINGS_FORBID_ROOT', () => {
   const env = isolatedEnv()
   assert.throws(
-    () => loadSettings({ cwd: join(REPO_ROOT, 'plugins'), env, home: isolatedDir() }),
+    () => loadSettings({ cwd: join(REPO_ROOT, 'plugins'), env }),
     { message: `settings root ${normalizePath(REPO_ROOT)} is inside CONPORT_SETTINGS_FORBID_ROOT: run the test in a temporary folder` },
   )
   // A root outside the named path is read as usual.
   const dir = isolatedDir({ '.conport.json': '{"project_name": "outside"}' })
-  assert.equal(loadSettings({ cwd: dir, env, home: isolatedDir() }).project, 'outside')
+  assert.equal(loadSettings({ cwd: dir, env }).project, 'outside')
 })
 
 test('loadSettings refuses a root named through a symlink in CONPORT_SETTINGS_FORBID_ROOT, a junction on windows', () => {
@@ -111,7 +168,7 @@ test('loadSettings refuses a root named through a symlink in CONPORT_SETTINGS_FO
   symlinkSync(REPO_ROOT, link, 'junction')
   const env = isolatedEnv({ CONPORT_SETTINGS_FORBID_ROOT: link })
   assert.throws(
-    () => loadSettings({ cwd: join(REPO_ROOT, 'plugins'), env, home: isolatedDir() }),
+    () => loadSettings({ cwd: join(REPO_ROOT, 'plugins'), env }),
     /is inside CONPORT_SETTINGS_FORBID_ROOT: run the test in a temporary folder$/,
   )
   // Outside git the root is the folder as given; through the link it is still the repository.
@@ -122,7 +179,7 @@ test('loadSettings refuses a root named through a symlink in CONPORT_SETTINGS_FO
     throw err
   }
   assert.throws(
-    () => loadSettings({ cwd: join(link, 'plugins'), env: outside, home: isolatedDir(), run }),
+    () => loadSettings({ cwd: join(link, 'plugins'), env: outside, run }),
     /is inside CONPORT_SETTINGS_FORBID_ROOT/,
   )
 })
@@ -135,13 +192,13 @@ test('loadSettings checks ignore only when the local file exists', () => {
     calls.push(args.slice(2).join(' '))
     return execFileSync('git', args, { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] })
   }
-  const without = loadSettings({ cwd: dir, env, home: isolatedDir(), run })
+  const without = loadSettings({ cwd: dir, env, run })
   assert.deepEqual(calls, ['rev-parse --show-toplevel --git-common-dir'])
   assert.deepEqual(without.lines, [])
 
   calls.length = 0
   writeFileSync(join(dir, '.conport.local.json'), '{"plugins": {"codegraph": false}}')
-  const exposed = loadSettings({ cwd: dir, env, home: isolatedDir(), run })
+  const exposed = loadSettings({ cwd: dir, env, run })
   assert.deepEqual(calls, [
     'rev-parse --show-toplevel --git-common-dir',
     'ls-files --error-unmatch -- .conport.local.json',
@@ -150,35 +207,33 @@ test('loadSettings checks ignore only when the local file exists', () => {
   assert.deepEqual(exposed.lines, ['.conport.local.json is not ignored by git: add it to .gitignore'])
 
   writeFileSync(join(dir, '.gitignore'), '.conport.local.json\n')
-  assert.deepEqual(loadSettings({ cwd: dir, env, home: isolatedDir(), run }).lines, [])
+  assert.deepEqual(loadSettings({ cwd: dir, env, run }).lines, [])
 })
 
-test('loadSettings outside git reads the folder itself and the user env file, on windows paths too', () => {
+test('loadSettings outside git reads the folder itself, on windows paths too', () => {
   const env = isolatedEnv()
   const dir = isolatedDir({ '.conport.json': '{"project_name": "loose"}' })
-  mkdirSync(join(env.XDG_CONFIG_HOME, 'conport'), { recursive: true })
-  writeFileSync(join(env.XDG_CONFIG_HOME, 'conport', '.env'), 'CONPORT_PROJECT_NAME=elsewhere\n')
-  const got = loadSettings({ cwd: dir, env, home: isolatedDir() })
+  const got = loadSettings({ cwd: dir, env })
   assert.equal(got.root, normalizePath(dir))
   assert.equal(got.mainRoot, null)
+  assert.equal(got.localDir, null)
   assert.equal(got.project, 'loose')
-  assert.deepEqual(got.lines, [
-    'CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it',
-  ])
+  assert.deepEqual(got.lines, [])
 })
 
-test('loadSettings reads the user env file under home without XDG_CONFIG_HOME', () => {
+test('loadSettings reads nothing of the user config folder: a project named there is no project and no line', () => {
   const env = isolatedEnv()
-  delete env.XDG_CONFIG_HOME
-  const home = isolatedDir({ '.config/conport/.env': 'CONPORT_PROJECT_NAME=elsewhere\n' })
-  const got = loadSettings({ cwd: isolatedDir(), env, home })
-  assert.equal(got.lines.length, 1)
+  mkdirSync(join(env.XDG_CONFIG_HOME, 'conport'), { recursive: true })
+  writeFileSync(join(env.XDG_CONFIG_HOME, 'conport', '.env'), 'CONPORT_PROJECT_NAME=elsewhere\n')
+  const got = loadSettings({ cwd: isolatedDir(), env })
+  assert.equal(got.project, null)
+  assert.deepEqual(got.lines, [])
 })
 
 test('loadSettings says a directory named .conport.json cannot be read', () => {
   const env = isolatedEnv({ CONPORT_PROJECT_NAME: 'from-env' })
   const dir = isolatedDir({ '.conport.json/inner': 'x' })
-  const got = loadSettings({ cwd: dir, env, home: isolatedDir() })
+  const got = loadSettings({ cwd: dir, env })
   assert.equal(got.project, null)
   assert.deepEqual(got.lines, ['.conport.json cannot be read (EISDIR): fix it'])
 })
@@ -206,7 +261,7 @@ test(
     chmodSync(join(bin, 'git'), 0o755)
     const env = isolatedEnv({ ...RUSSIAN, PATH: `${bin}${delimiter}${process.env.PATH}` })
     const dir = isolatedDir({ '.conport.json': '{"project_name": "loose"}' })
-    const got = loadSettings({ cwd: dir, env, home: isolatedDir() })
+    const got = loadSettings({ cwd: dir, env })
     assert.deepEqual(got.lines, [])
     assert.equal(got.root, normalizePath(dir))
     assert.equal(got.project, 'loose')
@@ -219,7 +274,7 @@ test(
 test('loadSettings with the real git under a Russian locale reads a folder outside git', () => {
   const env = isolatedEnv(RUSSIAN)
   const dir = isolatedDir({ '.conport.json': '{"project_name": "loose"}' })
-  const got = loadSettings({ cwd: dir, env, home: isolatedDir() })
+  const got = loadSettings({ cwd: dir, env })
   assert.deepEqual(got.lines, [])
   assert.equal(got.root, normalizePath(dir))
   assert.equal(got.project, 'loose')
@@ -233,9 +288,10 @@ test('loadSettings with a git failure reads no file and takes no variable', () =
     err.stderr = "fatal: detected dubious ownership in repository at '/x'\nmore\n"
     throw err
   }
-  const got = loadSettings({ cwd: dir, env, home: isolatedDir(), run })
+  const got = loadSettings({ cwd: dir, env, run })
   assert.equal(got.project, null)
   assert.equal(got.root, null)
+  assert.equal(got.localDir, null)
   assert.deepEqual(got.lines, ["git failed (fatal: detected dubious ownership in repository at '/x'): ConPort settings were not read"])
-  assert.equal(loadSettings({ cwd: dir, env, home: isolatedDir(), run, explicit: 'flag' }).project, 'flag')
+  assert.equal(loadSettings({ cwd: dir, env, run, explicit: 'flag' }).project, 'flag')
 })

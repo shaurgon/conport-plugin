@@ -41,7 +41,7 @@ leading its epic by subagent-driven development, take it into a local file
 with `plan pull` and work from that file:
 
 ```
-npx -y conport@^0.15.0 plan pull <epic id>
+npx -y conport@^0.17.0 plan pull <epic id>
 ```
 
 The JSON answer of `plan pull` names the file it wrote (`file`, for example

@@ -2,7 +2,7 @@
 name: conport-routine
 description: "Use when running one iteration of a periodic ConPort backlog cycle (daily/weekly routine) - fetch the agenda, reconcile stale work, do housekeeping, execute ready tasks per the configured autonomy level, and file a run digest. Requires the conport skill for base tool discipline."
 metadata:
-  version: 27.2.0
+  version: 27.3.0
 ---
 
 # ConPort Routine — Periodic Backlog Cycle
@@ -33,7 +33,7 @@ structure on top.
 
 | Tool | Purpose |
 |------|---------|
-| `get_agenda(project, ready_limit=10, delta_hours=24)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`; an open Bug goes first among the children of its epic and lifts neither itself nor its epic here), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`), `activity_delta`. Empty sections are omitted. |
+| `get_agenda(project, ready_limit=10, delta_hours=24, root=None)` | One-call agenda: `roadmap` (current milestone with its epics, plus `next`), `epic_tails` (epics near closing, each with a prescribed `suggested_action`), `woken_tasks`, `ready_top` (ranked by `effective_priority`, only unblocked & non-snoozed; rows of the current milestone float up and every row carries `milestone_id`; an open Bug goes first among the children of its epic and lifts neither itself nor its epic here), `housekeeping` (`stale_in_progress`, `stale_review` — tasks in REVIEW untouched for over 24 hours, with `hours_in_review`: hours since the task in REVIEW was last touched (a journal entry or an edit) — `blocked_too_long`), `activity_delta`. Empty sections are omitted. With `root` — the root of the session — `ready_top` holds the tasks of that root and those without a root; the other sections stay project-wide. |
 | `list_milestones(project, include_closed=false)` | Roadmap view when the agenda's `roadmap` isn't enough — milestones by `sequence`, each with its epics, `ready_to_close` and the current marker. |
 | `update_milestone(project, milestone_id, status=..., resolution=...)` | Close a finished milestone. Refused with `milestone_not_ready` while any of its epics is open. |
 | `get_routine_config(project)` | Policy: `enabled`, `cadence` (`daily`\|`weekly`), `max_tasks_per_run`, `priority_threshold`, `autonomy_level` (0\|1\|2), `selection` (`threshold`\|`tagged`). `is_default=true` means no config row exists — run on the returned defaults. |
@@ -42,7 +42,7 @@ structure on top.
 | `routine_run_finish(project, run_id, outcome, summary, task_ids)` | Closes the run. `outcome`: `completed` \| `empty` \| `aborted`. Auto-creates the progress entry. |
 | `list_routine_runs(project, limit=10)` | Recent runs, newest first — the run journal. An open (running or crashed) run has `finished_at: null` and no outcome. |
 | `get_estimation_stats(project, limit=50)` | Plan/actual calibration stats — call before estimating: `sample_size`, `median_ratio`, p50/p90 actual seconds, `by_priority` breakdown, `recent` samples. |
-| `list_tasks(..., ready=true, order="priority", offset=N)` | Deep priority-ordered slice of ready tasks when `ready_top` isn't enough. Accepts a `routine_eligible` filter (true — only marked tasks). |
+| `list_tasks(..., ready=true, order="priority", offset=N, root=...)` | Deep priority-ordered slice of ready tasks when `ready_top` isn't enough. Accepts a `routine_eligible` filter (true — only marked tasks); `root` with `ready=true` keeps the tasks of that root and those without a root, as in `get_agenda`. Each row carries its `root`. |
 | `update_task` → IN_PROGRESS | Sets a lease on the task (auto-returns to TODO if the lease expires). Close with `resolution=...` as usual. |
 | `add_task_journal_entry(project, task_id, kind, body, author=None, verdict=None)` | One entry in the task's journal: `report` (the work done), `review` (the reviewer's verdict, `approve` or `changes_requested`), `fix` (the report on the fixes), `brief` (an assignment). The server stamps the round. The entry moves the task: a `report` takes it to REVIEW (a TODO or BLOCKED task is started first), a `fix` back to REVIEW, `changes_requested` back to IN_PROGRESS for the next round — no `update_task` around it. `author` is the role or name of who wrote the entry, by default the role of the kind (`implementer`, `reviewer`, `orchestrator`): the implementer and the reviewer sign with different names, and a `review` signed like a `report` or `fix` of the same round is refused with `reviewer_is_author`. |
 | `list_task_journal(project, task_id, round=None, include_body=false)` | The task's journal, oldest first — the reviewer reads the round's `brief` and `report` with `include_body=true`; a page carries `next_offset` while entries remain. |
@@ -79,6 +79,10 @@ the same for all of them. See *TEAMS* in the **conport** skill.
   `CONPORT_PROJECT_NAME` of the environment only when no file names a project.
   A team's project is `k7m2qx9d/<project>`; a bare `<project>` is a project of
   the user's own `Private Team`. A run without a project does not start.
+- **The root of the session** is `root` of that `.conport.json` (the
+  `ConPort root:` line of session start): in a project of several
+  repositories, the repository the run works in. A repository whose
+  `.conport.json` names no root passes none.
 - **A run never changes team.** It does not look the project up under another
   name, does not create projects, does not create or administer teams (there
   are no MCP tools for that), and does not move projects.
@@ -109,7 +113,7 @@ configured level.
 
 ### Phase 1: Start
 
-1. `init(questions=false)` (per the conport skill) if not already done this session — a run has no person to answer questions.
+1. `init(questions=false, root=<the root of the session>)` (per the conport skill) if not already done this session — a run has no person to answer questions; without a root of the session, no `root`.
 2. `get_routine_config(project)`.
    - `enabled=false` → **report that the routine is disabled and exit.** Do not
      start a run, do not touch the backlog.
@@ -120,7 +124,7 @@ configured level.
      surface in Phase 2). If the run is dead — no live work attached — close it
      with `routine_run_finish(outcome='aborted')` and a one-line summary, then
      start your run.
-4. `get_agenda(project)` — this single call feeds Phases 2–4.
+4. `get_agenda(project, root=<the root of the session>)` — this single call feeds Phases 2–4.
 
 ### Phase 2: Reconcile (all autonomy levels)
 
@@ -203,7 +207,14 @@ Then the ready pool:
   ordering as `backlog.top` and filtered for readiness; apply
   `priority <= priority_threshold`. If the pool is thinner than
   `max_tasks_per_run`, you may extend it with
-  `list_tasks(ready=true, order="priority", offset=N)` — same threshold filter.
+  `list_tasks(..., ready=true, order="priority", offset=N, root=<the root of the session>)`
+  — same threshold filter.
+- **Only the root of the session.** The run works in one repository, so it
+  executes the tasks of its root and those without a root. A task of another
+  root is not executed: the digest names it with its root. `ready_top`
+  already leaves such tasks out; a child in a tail's `open_tasks` or a row
+  added from `list_tasks` whose `root` is another root is skipped, and its
+  epic is closed only once that task is closed.
 - **Only your own and free work.** `ready_top` leaves out what another person
   leads, and `epic_tails` the epics another person leads — but a child of your
   own or a free epic may still be assigned to another person and show up in
@@ -356,6 +367,7 @@ separate report entity.
 - [ ] No task another person leads was taken, returned, unblocked or closed — only named with its assignee, and `take_over` never passed?
 - [ ] Housekeeping done only at autonomy >= 1; execution only at autonomy == 2?
 - [ ] Execute phase worked `epic_tails` first (closable epics closed with `resolution`), and only then `ready_top` — inside each epic its open Bugs first?
+- [ ] `init` and `get_agenda` got the root of the session — and a task of another root was named in the digest, not executed?
 - [ ] Executed at most `max_tasks_per_run` tasks, one at a time, each through IN_PROGRESS → verify → DONE with `resolution`?
 - [ ] A task that needed a check went through `report` → REVIEW → a `review` by a separate reviewer — and tasks waiting in REVIEW were reviewed or named in the digest, never moved back to TODO or BLOCKED?
 - [ ] Digest names the current milestone — and a release milestone was left for the owner to close?

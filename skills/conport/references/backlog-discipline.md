@@ -338,7 +338,7 @@ assignee change of a task another person leads; nothing is written. Its
 your person `<name> leads task-N` and ask what to do. Pass `take_over=true`
 only on your person's word about that task — never on your own initiative: not
 because the assignee looks idle, not to unblock your own work. A launch with
-`npx -y conport@^0.16.0 prompt … --take-over` is that word, for the task the
+`npx -y conport@^0.17.0 prompt … --take-over` is that word, for the task the
 launch names.
 
 **Assigning.** `assignee` on `add_task`, `add_linked_task` and `update_task`
@@ -375,8 +375,10 @@ name.
 **People change the assignee themselves** in the dashboard (the task list
 filters Mine, Free and a member; the task card picks the assignee and asks
 `<name> leads this task. Take it over?` before a take over) and with the CLI:
-`npx -y conport@^0.16.0 task assign <id> <handle|email|me|none> [--take-over]`
-and `npx -y conport@^0.16.0 task list --assignee me|<handle>|none`.
+`npx -y conport@^0.17.0 task assign <id> <handle|email|me|none> [--take-over]`
+and `npx -y conport@^0.17.0 task list --assignee me|<handle>|none`. In a
+project with roots, `npx -y conport@^0.17.0 task list --in-root <root>|none`
+lists the tasks of one root (`none`: the tasks without a root).
 
 **Leaving the team.** When a member leaves or is removed, when their account is
 deleted, or when the project moves to a team without them, their open tasks

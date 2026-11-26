@@ -31,7 +31,20 @@ const TYPE_WORDS = {
   'arch.ignore': 'a list of path patterns or {"path", "reason"} objects',
   'arch.git': 'true or false',
   units: 'a list',
+  root: 'a root name: lower-case letters, digits and -, up to 32 characters, not none',
+  roots: 'an object of root names and paths',
 };
+
+// The name of a root of the project: lower-case letters, digits and -, up to
+// 32 characters, not `none` (which names "no root" where a root is asked for).
+const ROOT_NAME = /^(?!none$)[a-z0-9][a-z0-9-]{0,31}$/;
+
+// A project handle: `pr` and 8 characters of the team-handle alphabet.
+const HANDLE = /^pr[a-hjkmnp-z2-9]{8}$/i;
+
+function isHandle(value) {
+  return typeof value === 'string' && HANDLE.test(value);
+}
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -365,10 +378,27 @@ function isIgnoreEntry(e) {
 
 const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
+function isRootName(v) {
+  return typeof v === 'string' && ROOT_NAME.test(v);
+}
+
+// The paths of the other roots, as written: an object of root names and
+// non-blank strings, or null when one entry is not — the whole key is dropped.
+function readRoots(v) {
+  if (!isObject(v)) return null;
+  const roots = {};
+  for (const [name, p] of Object.entries(v)) {
+    if (!isRootName(name) || typeof p !== 'string' || !p.trim()) return null;
+    roots[name] = p;
+  }
+  return roots;
+}
+
 // One file's text read by the rules: {lines, values, blocks, name}. `values`
-// holds the keys that passed (project_name trimmed, plugins.*, arch.*,
-// units); `blocks` is set when the file exists but cannot name a project, so
-// no project is named at all.
+// holds the keys that passed (plugins.*, arch.*, units and root of the shared
+// file, roots of the personal one); `name` is project_name trimmed; `blocks`
+// is set when the file exists but cannot name a project, so no project is
+// named at all.
 function readFile(file, input, isLocal) {
   const out = { readError: null, lines: [], values: {}, blocks: false, name: null };
   if (input === null || input === undefined) return out;
@@ -395,7 +425,7 @@ function readFile(file, input, isLocal) {
   const nameIsKey = has(parsed, 'project_name') && isApiKeyValue(parsed.project_name);
   const data = scrub(parsed, found);
   if (found.any) {
-    out.lines.push(`${file} holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/.env`);
+    out.lines.push(`${file} holds an API key: revoke it at https://me.conport.app/dashboard/connect, create a new one and keep it in ~/.config/conport/conport.key`);
   }
   if (nameIsKey) out.blocks = true;
   const wrong = (key) => out.lines.push(`${file}: ${key} must be ${TYPE_WORDS[key]} — fix it`);
@@ -447,18 +477,23 @@ function readFile(file, input, isLocal) {
       if (Array.isArray(data.units)) out.values.units = data.units;
       else wrong('units');
     }
+    if (has(data, 'root')) {
+      if (isRootName(data.root)) out.values.root = data.root;
+      else wrong('root');
+    }
+    if (has(data, 'roots')) out.lines.push(`roots is read from ${LOCAL_SETTINGS_FILE} only`);
   } else {
     for (const k of ['arch', 'units']) {
       if (has(data, k)) out.lines.push(`${k} is read from .conport.json only`);
     }
+    if (has(data, 'root')) out.lines.push(`remove root from ${LOCAL_SETTINGS_FILE} — the root is set by ${SETTINGS_FILE}`);
+    if (has(data, 'roots')) {
+      const roots = readRoots(data.roots);
+      if (roots) out.values.roots = roots;
+      else wrong('roots');
+    }
   }
   return out;
-}
-
-// Whether the text of ~/.config/conport/.env assigns CONPORT_PROJECT_NAME.
-function userEnvNamesProject(text) {
-  if (typeof text !== 'string') return false;
-  return text.split(/\r?\n/).some((l) => /^\s*(export\s+)?CONPORT_PROJECT_NAME\s*=/.test(l));
 }
 
 function envName(env) {
@@ -472,7 +507,7 @@ function envName(env) {
 // then from CONPORT_PROJECT_NAME when no file names one. A file that exists
 // but is broken (unreadable, not JSON, not an object, a bad project_name)
 // names no project, and neither the other file nor the variable stands in
-// for it. ~/.config/conport/.env never names it.
+// for it.
 function resolveSettings(input) {
   const shared = readFile(SETTINGS_FILE, input.shared, false);
   const local = readFile(LOCAL_SETTINGS_FILE, input.local, true);
@@ -486,6 +521,8 @@ function resolveSettings(input) {
   const plugins = { ...(shared.values.plugins || {}), ...(local.values.plugins || {}) };
   const settings = { plugins, arch: { ...(shared.values.arch || {}) } };
   if (shared.values.units) settings.units = shared.values.units;
+  if (shared.values.root !== undefined) settings.root = shared.values.root;
+  if (local.values.roots) settings.roots = local.values.roots;
 
   let project = null;
   let source = null;
@@ -519,9 +556,6 @@ function resolveSettings(input) {
       source = 'CONPORT_PROJECT_NAME';
     }
   }
-  if (userEnvNamesProject(input.userEnv)) {
-    lines.push('CONPORT_PROJECT_NAME in ~/.config/conport/.env is not read: it would apply to every repository — remove it');
-  }
   return { project, source, settings, lines };
 }
 
@@ -529,6 +563,16 @@ function resolveSettings(input) {
 function projectLine(result) {
   if (!result || !result.project || !result.source || result.source === 'explicit') return null;
   return `ConPort project: ${result.project} (from ${result.source})`;
+}
+
+// The line the session start says about the root of this repository, or null
+// without a project or a root. The root is read from .conport.json alone; a
+// handle project shows it as <handle>:<root>, the handle in lower case.
+function rootLine(result) {
+  const root = result && result.settings && result.settings.root;
+  if (!result || !result.project || !root) return null;
+  const shown = isHandle(result.project) ? `${result.project.toLowerCase()}:${root}` : root;
+  return `ConPort root: ${shown} (from ${SETTINGS_FILE})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -602,23 +646,21 @@ function insidePath(child, parent) {
   return child === parent || child.startsWith(parent.endsWith('/') ? parent : parent + '/');
 }
 
-// The settings of the project `cwd` belongs to, read from its files, git and
-// the user env file (<XDG_CONFIG_HOME | home/.config>/conport/.env). With
+// The settings of the project `cwd` belongs to, read from its files and git,
+// with the folder of the personal file read (`localDir`, null when none was): the
+// relative paths of `settings.roots` are from there. With
 // CONPORT_SETTINGS_FORBID_ROOT set, a root inside that path throws: a test
 // must not read the settings of the repository it runs in.
-function loadSettings({ cwd, env = process.env, explicit = null, home, run }) {
+function loadSettings({ cwd, env = process.env, explicit = null, run }) {
   const git = run || defaultRun(env);
-  const configHome = env.XDG_CONFIG_HOME || path.join(home, '.config');
-  const userEnv = readText(path.join(configHome, 'conport', '.env'));
-  const userEnvText = typeof userEnv === 'string' ? userEnv : null;
 
   const facts = readGitFacts(cwd, git);
   const where = settingsLocations(cwd, facts);
   if (!where.ok) {
     const result = resolveSettings({
-      shared: null, local: null, localIgnored: null, env: {}, explicit, userEnv: userEnvText,
+      shared: null, local: null, localIgnored: null, env: {}, explicit,
     });
-    return { ...result, lines: [where.line, ...result.lines], root: null, mainRoot: null };
+    return { ...result, lines: [where.line, ...result.lines], root: null, mainRoot: null, localDir: null };
   }
   const forbid = env[FORBID_VAR];
   if (forbid) {
@@ -648,9 +690,9 @@ function loadSettings({ cwd, env = process.env, explicit = null, home, run }) {
   if (localPath && facts.ok) localIgnored = localIgnoredIn(parentPath(localPath), git);
 
   const result = resolveSettings({
-    shared, local, localIgnored, env: { CONPORT_PROJECT_NAME: env.CONPORT_PROJECT_NAME }, explicit, userEnv: userEnvText,
+    shared, local, localIgnored, env: { CONPORT_PROJECT_NAME: env.CONPORT_PROJECT_NAME }, explicit,
   });
-  return { ...result, root: where.root, mainRoot: where.mainRoot };
+  return { ...result, root: where.root, mainRoot: where.mainRoot, localDir: localPath ? parentPath(localPath) : null };
 }
 
 module.exports = {
@@ -663,6 +705,8 @@ module.exports = {
   resolveSettings,
   jsonErrorPosition,
   projectLine,
+  rootLine,
+  isHandle,
   readGitFacts,
   loadSettings,
 };

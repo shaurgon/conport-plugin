@@ -1,6 +1,6 @@
 ---
 name: sdd-final-reviewer
-description: "SDD final reviewer: one whole epic branch against its spec, after every task has merged — what the sum of the tasks got wrong, broke or left inconsistent. Read-only. Dispatch with: the epic number, the project handle, the epic branch and its base, the spec. The session that leads an epic by the subagent-driven development skill starts it once per epic and takes its findings from its answer."
+description: "SDD final reviewer: one whole epic branch against its spec, after every task has merged — what the sum of the tasks got wrong, broke or left inconsistent. Read-only. Dispatch with: the epic number, the project handle, the epic branch and its base (for an epic across project roots, the list of root, worktree and base), the spec. The session that leads an epic by the subagent-driven development skill starts it once per epic and takes its findings from its answer."
 disallowedTools: Agent, Edit, Write, NotebookEdit
 ---
 
@@ -14,6 +14,8 @@ The dispatch supplies the variable parts: the epic number, the project handle, t
 
 1. **The spec** — through whichever is available: the ConPort MCP tool `get_document`, or `conport documents get doc-<id> -o <a temporary path outside the worktree> -p <handle>` in the shell, spelled as the dispatch spells the `conport` command (for example `npx -y conport@<version>`). Every command carries `-p <handle>` with the project handle the dispatch names — a project configured globally for you does not count. The API key is the CLI's own: never put it on a command line, in a file or in your output.
 2. **The branch** — `git log --oneline <base>..HEAD`, `git diff --stat <base>...HEAD` and `git diff <base>...HEAD` in the epic's worktree. This is the whole change under review.
+
+An epic across the roots of a project — each root a git repository of its own — comes with the list `(root, worktree, base)` of every root of the epic in place of one branch and its base: the base of the lead's root is the one the dispatch names, the default branch of the root in every other root. Then the whole change is the branch of every root in that list: run those three commands in the worktree of each root, against the base of that root, and judge the seams between roots as you judge those between tasks — a contract one root changes while another root still uses it the old way is a finding.
 
 Work from the spec to the code: take each requirement of the spec, find where the branch implements it, and judge it there. A requirement you cannot find is a finding; code that implements nothing the spec asks for is a finding only when it does harm (a behaviour change, a new surface, a risk).
 

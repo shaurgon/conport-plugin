@@ -42,8 +42,9 @@ function skillRefusals() {
 
 test('the conport skill names every write-time refusal of the model', () => {
   const codes = referenceCodes()
-  // Fifteen codes of the entities, eight of the scenarios and four of the reviewer's report.
-  assert.equal(codes.length, 28, `the reference lists ${codes.length} codes: ${codes}`)
+  // Fifteen codes of the entities, eight of the scenarios, four of the reviewer's report and three of
+  // the root of an anchor.
+  assert.equal(codes.length, 31, `the reference lists ${codes.length} codes: ${codes}`)
   const refusals = skillRefusals()
   for (const code of codes) {
     assert.ok(refusals.has(code), `the skill has no row for ${code}`)
@@ -103,12 +104,12 @@ test('the overlay submits the portion right after plan import', () => {
   // The portion is reviewed before it is submitted, by the order the skill gives.
   const flat = submit.replace(/\s+/g, ' ')
   const submitted = flat.indexOf('arch_submit(')
-  for (const step of ['*The review of a document portion*', 'npx -y conport@^0.15.0 arch review-input doc-N']) {
+  for (const step of ['*The review of a document portion*', 'npx -y conport@^0.17.0 arch review-input doc-N']) {
     const at = flat.indexOf(step)
     assert.ok(at >= 0, `the step has no ${step}`)
     assert.ok(at < submitted, `${step} comes after arch_submit(`)
   }
-  assert.match(submit, /npx -y conport@\^0\.15\.0 arch submit /)
+  assert.match(submit, /npx -y conport@\^0\.17\.0 arch submit /)
   assert.match(submit, /"source": "doc-N"/)
   // Nothing submits a portion before the plan is imported.
   for (const step of steps.slice(0, steps.findIndex((s) => s.title === 'Plan'))) {
@@ -214,9 +215,9 @@ test('the skill dismisses a whole-scenario finding for a missing kind in the rev
 test('the skill runs the reviewer before a document portion is submitted', () => {
   const model = section(read('SKILL.md'), '## PROJECT MODEL').replace(/\s+/g, ' ')
   // The input directory, then the reviewer: a subagent, or a separate process by a ready command.
-  assert.match(model, /npx -y conport@\^0\.15\.0 arch review-input doc-N --portion <draft> -o <dir>/)
+  assert.match(model, /npx -y conport@\^0\.17\.0 arch review-input doc-N --portion <draft> -o <dir>/)
   assert.match(model, /`conport:model-reviewer`/)
-  assert.match(model, /npx -y conport@\^0\.15\.0 agent model-reviewer/)
+  assert.match(model, /npx -y conport@\^0\.17\.0 agent model-reviewer/)
   for (const command of ['claude -p', 'codex exec --sandbox read-only --output-last-message', 'cursor-agent -p']) {
     assert.ok(model.includes(command), `no ready command ${command}`)
   }
@@ -233,7 +234,7 @@ test('the skill runs the reviewer before a document portion is submitted', () =>
   assert.match(model, /a portion sent back with it is\s+refused as `review_reused` — run the reviewer again, or submit the portion\s+without `review`/)
   assert.doesNotMatch(model, /sent back with it is\s+`portion_invalid`/)
   // The file of `arch source -o` holds no `review`: sent back unreviewed, the portion owes the debt.
-  assert.match(model, /`npx -y conport@\^0\.15\.0 arch source <source>` prints `review` the same way, but with `-o <file>` it writes the portion without `review`: that file submitted back without a new review is accepted, and the portion owes `unchecked_portion`/)
+  assert.match(model, /`npx -y conport@\^0\.17\.0 arch source <source>` prints `review` the same way, but with `-o <file>` it writes the portion without `review`: that file submitted back without a new review is accepted, and the portion owes `unchecked_portion`/)
   // A dismissal holds while its evidence stands, so the evidence is carried over as the reviewer gave it.
   assert.match(model, /`evidence` exactly as the reviewer gave it/)
   // A ULID stands as the `ulid` of a block or of an item of a list block: reviewers cite item ULIDs too.
@@ -260,6 +261,64 @@ test('the skill tells to remove a debt dismissal record after it is accepted', (
   const part = scenariosPart().replace(/\s+/g, ' ')
   assert.match(part, /once the submission is accepted, remove the record from `dismissed`/i)
   assert.match(part, /only with a new reason/i)
+})
+
+/** The part Roots of the skill's section PROJECT MODEL. */
+const rootsPart = () => section(section(read('SKILL.md'), '## PROJECT MODEL'), '### Roots')
+
+test('the model names code:<root>:<label> and arch check in every root', () => {
+  const flat = (text) => text.replace(/\s+/g, ' ')
+  const model = flat(section(read('SKILL.md'), '## PROJECT MODEL'))
+  // A source of code in a project with roots, its root unit and its parts.
+  assert.match(model, /a part of the code \(`code:<label>`, as many labels as you need; `code:<root>:<label>` in a project of several roots — \*Roots\* below\)/)
+  const roots = flat(rootsPart())
+  for (const address of ['`code:<root>:<label>`', '`code:<root>:root`', '`code:<root>:<unit>.<part>`']) {
+    assert.ok(roots.includes(address), `the part Roots does not name ${address}`)
+  }
+  assert.match(roots, /`code:<label>` is refused there with `code_address_needs_root`/)
+  // An anchor of a document portion names its root; one of a code portion takes the root of its source.
+  const anchor = jsonBlocks(rootsPart()).flatMap((block) => block.entities ?? []).flatMap((e) => e.anchors ?? [])
+    .find((a) => a.root)
+  assert.ok(anchor, 'the part Roots shows no anchor with a root')
+  assert.ok(['path', 'symbol'].includes(anchor.kind))
+  assert.match(roots, /an anchor `path` or `symbol` of a code portion takes the root of its source/i)
+  assert.match(model, /A `path` or `symbol` anchor may carry `root`/)
+  // The check runs in the repository of every root, found by `root path`.
+  assert.match(roots, /\*\*`arch check` runs in every root\*\*/)
+  assert.ok(roots.includes('`npx -y conport@^0.17.0 arch check` in the repository of each root'), 'the part Roots does not run the check in each root')
+  assert.ok(roots.includes('`npx -y conport@^0.17.0 root path <root>`'), 'the part Roots does not find a root by root path')
+  const check = flat(section(section(read('SKILL.md'), '## PROJECT MODEL'), '### The anchor check'))
+  assert.match(check, /checks the anchors of its own root only: run it in the repository of each root/)
+  assert.match(check, /`git_passes`/)
+  // The debts of a root name the root and carry it.
+  const debts = flat(section(section(read('SKILL.md'), '## PROJECT MODEL'), '### Debts of the model in init'))
+  assert.match(debts, /a debt carries `root`/)
+  assert.match(debts, /The subject of `check_stale` of a root is `<handle>:<root>`/)
+})
+
+test('the Roots part answers each refusal of the roots with one action', () => {
+  const rows = new Map(rootsPart().split('\n')
+    .filter((line) => /^\| `[a-z_]+` \|/.test(line))
+    .map((line) => line.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()))
+    .map((cells) => [cells[0].replace(/`/g, ''), cells.at(-1)]))
+  // The refusals of the server's roots and the one of `conport root path`.
+  for (const code of [
+    'root_not_found', 'root_required', 'code_address_needs_root', 'root_repo_mismatch', 'root_adopt_required',
+    'root_in_use', 'root_exists', 'invalid_root_name', 'root_on_epic', 'root_path_unknown',
+  ]) {
+    assert.ok(rows.has(code), `the part Roots has no row for ${code}`)
+    assert.notEqual(rows.get(code), '', `the row of ${code} names no action`)
+  }
+  // The name rule is the server's: a letter or a digit first.
+  assert.match(rows.get('invalid_root_name'), /starting with a letter or a digit/)
+  const flat = rootsPart().replace(/\s+/g, ' ')
+  assert.match(flat, /Its name is made of lowercase Latin letters, digits and `-`, starting with a letter or a digit/)
+  // Two repositories of one history share a fingerprint: the second one goes without it.
+  assert.match(flat, /`root add <root> --no-fingerprint` \(`no_fingerprint: true` of `add_project_root`\)/)
+  // A refusal of a write of the model keeps its row in Refusals of a portion, not here.
+  for (const code of ['anchor_root_missing', 'anchor_root_foreign']) {
+    assert.ok(!rows.has(code), `the part Roots repeats ${code}`)
+  }
 })
 
 test('the overlay keeps scenarios in the portion submitted right after plan import', () => {

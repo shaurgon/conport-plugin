@@ -50,7 +50,7 @@ creates).
    put their findings into the draft.
 3. **Approval.** The user reads and approves the draft with the findings in it.
 4. **Upload the spec, once.**
-   `npx -y conport@^0.15.0 documents upload <draft> --doc-type spec --tags awaiting-plan`
+   `npx -y conport@^0.17.0 documents upload <draft> --doc-type spec --tags awaiting-plan`
    → `doc-N`. Delete the draft. The tag `awaiting-plan` says the spec waits
    for its plan; no epic is created now — the import of the plan creates the
    epic (step 5). When the design started from an idea task, link the spec to
@@ -61,7 +61,7 @@ creates).
    `update_task(project=<project>, task_id=<the idea task>, status='DONE', resolution='Spec doc-N')`.
    Until the plan, the spec is not edited; if it must be, edit it with
    ConPort's block tools (`update_block`, `insert_block`, an `amend` change).
-   For a local copy run `npx -y conport@^0.15.0 documents get doc-N` →
+   For a local copy run `npx -y conport@^0.17.0 documents get doc-N` →
    `.superpowers/docs/doc-N.md`. Then ask the person one question:
 
    ```
@@ -75,16 +75,16 @@ creates).
    the writing-plans format (`### Task N: <title>`). After the user approves it,
    ask the person which milestone the epic goes into, naming the open
    milestones by the project's roadmap rules, then:
-   `npx -y conport@^0.15.0 plan import <draft> --spec doc-N --milestone <id>`
+   `npx -y conport@^0.17.0 plan import <draft> --spec doc-N --milestone <id>`
    — `<id>` is that milestone, and the import of the plan creates the epic: it
    writes the `plan` document, the epic in that milestone with the spec and
    the plan linked to it by `clarifies`, the epic's tasks, and takes the tag
    `awaiting-plan` off the spec. A spec that already clarifies an epic — one
    made with its spec before this flow — is refused with `spec_has_epic`,
    which names that epic: import into it with
-   `npx -y conport@^0.15.0 plan import <draft> --spec doc-N --epic <id>`, which
+   `npx -y conport@^0.17.0 plan import <draft> --spec doc-N --epic <id>`, which
    takes the tag off too. A plan with no design behind it has no spec:
-   `npx -y conport@^0.15.0 plan import <draft> [--milestone <id>]` creates the
+   `npx -y conport@^0.17.0 plan import <draft> [--milestone <id>]` creates the
    `plan` document, the epic and its tasks — attach that epic to a milestone
    by the project's roadmap rules. Delete the draft and the
    `<draft>.conport.json` that `plan import` wrote beside it.
@@ -94,6 +94,12 @@ creates).
    directly below that line. `plan import` builds a new task's description
    from these two lines and refuses, before writing anything, a section that
    would create a task without them. The terminal finish section needs neither.
+   In a project of several roots every task section also carries, right under
+   its heading, `**Root:** <root>`: the root whose repository the task
+   changes, `**Root:** none` for a task that changes none of them; the Final
+   review section carries none. `plan import` refuses, before writing
+   anything, a section without the line, a root the project lacks and a root
+   on the Final review.
 
    The plan's last section is `### Task N: Final review`: the final whole-branch
    review and the last pass of `conport:sdd-gap-hunter` over the branch, and the
@@ -119,19 +125,19 @@ creates).
    Before submitting it, review it in the order the part *The review of a
    document portion* of that section gives: build the
    reviewer's input with
-   `npx -y conport@^0.15.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
+   `npx -y conport@^0.17.0 arch review-input doc-N --portion .superpowers/drafts/<date>-<topic>-portion.json -o <dir outside the worktree>`,
    run the reviewer (`conport:model-reviewer` in Claude Code), resolve every
    finding, recheck once when something was fixed, and put the report into
    `review` of the portion. Then submit it:
    `arch_submit(project=<project>, portion=<the portion>)` or
-   `npx -y conport@^0.15.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
+   `npx -y conport@^0.17.0 arch submit .superpowers/drafts/<date>-<topic>-portion.json`.
    A refusal lists every error with its action: take them all and submit
    again — a part the spec introduces (a component, an interface, data or a
    setting) without an owner in the model is refused `part_without_owner`:
    claim `contains` to it from the entity that holds it. Delete the file and
    the input directory once the portion is accepted. If the spec is amended later, read the portion back with
    `arch_source`, bring it in line, review it again and submit it again.
-6. **Execution.** `npx -y conport@^0.15.0 plan pull <epic>` →
+6. **Execution.** `npx -y conport@^0.17.0 plan pull <epic>` →
    `.superpowers/plans/doc-M.md`. Superpowers SDD works with this file (its
    `task-brief`, `review-package` and `sdd-workspace` scripts take the plan
    file path). Briefs, reports, reviews and fixes are entries in the task's
@@ -152,10 +158,25 @@ creates).
    who leads it. When another person leads the epic, the server answers
    `task_assigned_to_other`: tell your person `the epic is led by <name>` (the
    email, else the handle) and take nothing over — `take_over=true` only on
-   their word, which a launch with `npx -y conport@^0.16.0 prompt … --take-over`
+   their word, which a launch with `npx -y conport@^0.17.0 prompt … --take-over`
    carries. A child of the epic assigned to another person is neither taken
    nor dispatched by the lead session: its assignee leads it in their own
    session from the epic branch and merges it into the epic branch.
+
+   **An epic across roots.** In a project of several roots, each a git
+   repository of its own, the branch `epic-<id>` is made only in the roots
+   that hold tasks of the epic, each in a worktree of its own. The lead session
+   works in the branch of its own root (the `--worktree` and `--base` of
+   `npx -y conport@^0.17.0 prompt epic`), finds the repository of every other
+   root with `npx -y conport@^0.17.0 root path <root>` and adds the branch
+   there, cut from that root's default branch; a refusal `root_path_unknown`
+   is a question to the person. A task works in the worktree of its root
+   (`root` of the task): its branch is cut from `epic-<id>` of that root, its
+   implementer and its fixer work there, its reviewer compares `BASE` and
+   `HEAD` of that repository, and it merges into `epic-<id>` of that root
+   after the checks of that repository; the final reviewer and the gap hunter
+   take the list `(root, worktree, base)` of every root of the epic, the base
+   of every other root being its default branch.
 
    A task that changes behaviour the spec describes changes the spec in the
    same task, with the block tools (`update_block`, `insert_block`), before
@@ -181,7 +202,9 @@ creates).
      (when the answer has next_offset, call again with offset=next_offset).
      ```
 
-     A reviewer gets, in addition, the two commits to diff: `BASE` and `HEAD`.
+     A reviewer gets, in addition, the two commits to diff: `BASE` and `HEAD`
+     of the repository of the task's root, with its worktree (in a project of
+     one root or none, the repository of the epic).
    - **The agent type.** In Claude Code dispatch the plugin's agents:
      `conport:sdd-implementer` for the implementation,
      `conport:sdd-task-reviewer` for a review, `conport:sdd-fixer` for a fix
@@ -205,17 +228,17 @@ creates).
      id.
    - **A closed task** refuses every entry with `journal_task_closed`: reopen
      the task, then write the entry.
-7. **Editing the plan during the work.** `npx -y conport@^0.15.0 plan pull <epic>`
+7. **Editing the plan during the work.** `npx -y conport@^0.17.0 plan pull <epic>`
    → edit the pulled file above the line `<!-- conport-pull-tail -->` →
-   `npx -y conport@^0.15.0 plan import <pulled file>` →
-   `npx -y conport@^0.15.0 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
+   `npx -y conport@^0.17.0 plan import <pulled file>` →
+   `npx -y conport@^0.17.0 plan pull <epic>` again (it rewrites the tail with the terminal task under its new
    number) → continue SDD. Once execution has started, section numbers never
    change: a new section takes the next free number, and a section no longer
    needed is not removed from the plan — its task is set to `CANCELLED` in
    ConPort with a resolution. The SDD ledger and `task-brief` key on the
    section number. When `plan import` refuses because `<file>` and ConPort's
    plan have both changed since pull: move `<file>` aside to
-   `<file>.mine.md`, run `npx -y conport@^0.15.0 plan pull <epic> -o <file>`,
+   `<file>.mine.md`, run `npx -y conport@^0.17.0 plan pull <epic> -o <file>`,
    carry your edits over from `<file>.mine.md`, run `plan import` again.
 
    A finding is never a new section: it is a fix round (the section BACKLOG
@@ -228,11 +251,11 @@ creates).
    and no other; after it,
    `add_task(project=<project>, parent_task_id=<epic>, title=<title>, description='Why not a fix round: …')`
    — the plugin's hook lets it through after the person's yes (elsewhere wait
-   for an explicit yes in the chat); then `npx -y conport@^0.15.0 plan pull <epic>`,
+   for an explicit yes in the chat); then `npx -y conport@^0.17.0 plan pull <epic>`,
    a section with the next free number and the marker
    `<!-- conport-task: <id> -->` of that task under its heading,
-   `npx -y conport@^0.15.0 plan import <pulled file>`,
-   `npx -y conport@^0.15.0 plan pull <epic>` again. `plan import` refuses a new
+   `npx -y conport@^0.17.0 plan import <pulled file>`,
+   `npx -y conport@^0.17.0 plan pull <epic>` again. `plan import` refuses a new
    section without a marker in an epic whose plan has started with
    `plan_section_needs_task` and one action: file the task with add_task first
    (the person approves it), then put its marker under the heading.
@@ -249,7 +272,7 @@ creates).
 
    In a project whose model has `code` sources (`arch_sources` lists them):
    once an epic that changed the code is merged, run
-   `npx -y conport@^0.15.0 arch check` in the repository root on the main
+   `npx -y conport@^0.17.0 arch check` in the repository root on the main
    branch — there it also sends the facts of git. Then, for each debt
    `code_portion_stale` it brings, read the paths its `detail` names, bring
    the portion in line with the code with `arch_source` and submit it again —
@@ -262,13 +285,21 @@ creates).
    (`inferred_owners` of the answer). After the last submission run the check
    once more: a `code` portion newer than the check owes `check_stale`.
 
+   In a project of several roots the release goes root by root: in each root,
+   `git merge --no-ff epic-<id>` into its base and its own push, in the order
+   the plan of the epic gives; then `npx -y conport@^0.17.0 arch check` in each
+   root, as above, from the repository of that root; then, in each root, the
+   branch `epic-<id>` deleted, locally and on the server, and its worktree
+   removed.
+
 ## When the CLI fails
 
-The CLI reads its API key from `CONPORT_API_KEY` in the environment or in
-`~/.config/conport/.env`, never from the plugin's settings. When a
-`npx -y conport@^0.15.0 …` command fails with `CONPORT_API_KEY is not set`, the
-one action is: set `CONPORT_API_KEY` (env or `~/.config/conport/.env`) and
-retry. When it fails with `No project specified`, or with
+The CLI reads its API key from `CONPORT_API_KEY` in the environment, else
+from `~/.config/conport/conport.key` — the key alone, one line — never from
+the plugin's settings. When a `npx -y conport@^0.17.0 …` command fails with
+`CONPORT_API_KEY is not set`, the one action is: put the key, and only it, in
+`~/.config/conport/conport.key` and retry. A line about `~/.config/conport/.env`
+or `conport.key` names its own action: do it and retry. When it fails with `No project specified`, or with
 `CONPORT_PROJECT_ID is no longer read — set project_name in .conport.json to the project's handle or name`,
 the one action is: pass `--project <handle>` — the `project` that `init`
 returned — to the command and retry. When it says `<file>.conport.json names the project by a retired number`,
